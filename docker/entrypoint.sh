@@ -23,6 +23,16 @@ else
     USERNAME="$(getent passwd "$HOST_UID" | cut -d: -f1)"
 fi
 
+# Grant KVM access if device is available
+if [ -e /dev/kvm ]; then
+    KVM_GID="$(stat -c '%g' /dev/kvm)"
+    if ! getent group "$KVM_GID" &>/dev/null; then
+        groupadd -g "$KVM_GID" kvm
+    fi
+    KVM_GROUP="$(getent group "$KVM_GID" | cut -d: -f1)"
+    usermod -aG "$KVM_GROUP" "$USERNAME"
+fi
+
 # Ensure the user owns their home directory
 chown "$HOST_UID:$HOST_GID" "/home/$USERNAME" 2>/dev/null || true
 

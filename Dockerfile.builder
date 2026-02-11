@@ -26,6 +26,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         unzip \
         wget \
         xz-utils \
+        qemu-system-x86 \
+        qemu-utils \
+        qemu-system-arm \
+        qemu-efi-aarch64 \
     && rm -rf /var/lib/apt/lists/*
 
 # ---------- gosu (step down from root) ----------

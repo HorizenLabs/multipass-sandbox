@@ -12,10 +12,28 @@ HOST_UID       := $(shell id -u)
 HOST_GID       := $(shell id -g)
 WORKDIR        := /workdir
 
+# Architecture (default: host)
+ARCH ?=
+HOST_ARCH := $(shell uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
+
+# Base docker run (for lint/test — no KVM needed)
 DOCKER_RUN := docker run --rm \
 	-v "$(CURDIR):$(WORKDIR)" \
 	-e HOST_UID=$(HOST_UID) \
 	-e HOST_GID=$(HOST_GID) \
+	$(BUILDER_IMAGE):$(BUILDER_TAG)
+
+# Docker run for image builds (with conditional KVM)
+KVM_FLAG := $(shell [ -e /dev/kvm ] && \
+	( [ -z "$(ARCH)" ] || [ "$(ARCH)" = "$(HOST_ARCH)" ] ) && \
+	echo "--device /dev/kvm")
+
+DOCKER_RUN_IMAGE := docker run --rm \
+	-v "$(CURDIR):$(WORKDIR)" \
+	-e HOST_UID=$(HOST_UID) \
+	-e HOST_GID=$(HOST_GID) \
+	-e TARGET_ARCH=$(ARCH) \
+	$(KVM_FLAG) \
 	$(BUILDER_IMAGE):$(BUILDER_TAG)
 
 # ---------- File sets ----------
@@ -128,11 +146,11 @@ lint-hcl: $(BUILDER_STAMP) ## Lint HCL/Packer files with packer fmt
 	fi
 
 # ---------- Image builds ----------
-image-base: ## Build base VM image with Packer
-	$(DOCKER_RUN) bash -c 'cd images/base && bash build.sh'
+image-base: $(BUILDER_STAMP) ## Build base VM image (ARCH=amd64|arm64)
+	$(DOCKER_RUN_IMAGE) bash -c 'cd images/base && bash build.sh'
 
-image-blockchain: ## Build blockchain VM image with Packer
-	$(DOCKER_RUN) bash -c 'cd images/blockchain && bash build.sh'
+image-blockchain: $(BUILDER_STAMP) ## Build blockchain VM image (ARCH=amd64|arm64)
+	$(DOCKER_RUN_IMAGE) bash -c 'cd images/blockchain && bash build.sh'
 
 # ---------- Image publishing (Backblaze B2) ----------
 # Usage: make publish-base VERSION=1.0.0

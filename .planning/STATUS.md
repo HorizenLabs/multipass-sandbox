@@ -50,16 +50,28 @@
 
 ## Phase 5 — Polish & CI: DONE (build system)
 
-- [x] `Dockerfile.builder` — Builder image with packer, shellcheck, hadolint, bats, b2, yamllint, checkmake, py-psscriptanalyzer, gosu
-- [x] `docker/entrypoint.sh` — uid:gid matching entrypoint
+- [x] `Dockerfile.builder` — Builder image with packer, shellcheck, hadolint, bats, b2, yamllint, checkmake, py-psscriptanalyzer, gosu, QEMU (x86+arm64)
+- [x] `docker/entrypoint.sh` — uid:gid matching entrypoint, KVM group handling
 - [x] `Makefile` — Dockerized: builder, lint (6 sub-targets), test, image-base, image-blockchain, publish-base, publish-blockchain
 - [x] `Makefile` — `.stamp-builder` dependency: lint/test auto-build builder image when Dockerfile or entrypoint changes
+- [x] `Makefile` — `ARCH=` variable for cross-architecture builds, conditional `--device /dev/kvm` passthrough
 - [x] `install.sh` — Installer (symlink + dep check)
 - [x] `.gitignore`
 - [x] `README.md`
 - [x] Shellcheck clean — all warnings resolved (SC2154 directives for sourced color vars, real bug fixes)
 - [ ] BATS test suite
 - [ ] GitHub Actions CI pipeline
+
+## Cross-Architecture Image Building: DONE
+
+- [x] `Dockerfile.builder` — Added qemu-system-x86, qemu-utils, qemu-system-arm, qemu-efi-aarch64
+- [x] `docker/entrypoint.sh` — KVM device group detection + usermod for builder user
+- [x] `images/arch-config.sh` — Shared arch detection: HOST_ARCH, TARGET_ARCH, KVM vs TCG, PACKER_ARCH_VARS array
+- [x] `images/base/packer.pkr.hcl` — Parameterized: iso_url, qemu_binary, machine_type, accelerator, cpu_type, efi_boot, efi_firmware_code/vars
+- [x] `images/blockchain/packer.pkr.hcl` — Same parameterization as base
+- [x] `images/base/build.sh` — Sources arch-config.sh, passes PACKER_ARCH_VARS to packer build
+- [x] `images/blockchain/build.sh` — Same as base
+- [x] `Makefile` — ARCH variable, HOST_ARCH detection, KVM_FLAG conditional, DOCKER_RUN_IMAGE for image targets
 
 ## File Transfer: DONE
 

@@ -17,12 +17,20 @@ fi
 
 cd "$SCRIPT_DIR"
 
+# Accept target architecture (default: host)
+export TARGET_ARCH="${TARGET_ARCH:-}"
+
+# Source arch configuration
+# shellcheck source=../arch-config.sh
+source "$MPS_ROOT/images/arch-config.sh"
+
 # Initialize packer plugins
 packer init packer.pkr.hcl
 
 # Build
 packer build \
     -var "mps_root=${MPS_ROOT}" \
+    "${PACKER_ARCH_VARS[@]}" \
     packer.pkr.hcl
 
 echo "=== Base image build complete ==="

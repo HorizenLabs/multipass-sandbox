@@ -53,14 +53,15 @@ A blockchain software development company needs an internal tool to spin up isol
 │       └── heavy.env               # 8 CPU, 8GB RAM, 100GB disk
 │
 ├── images/
+│   ├── arch-config.sh             # Shared arch detection (KVM/TCG, PACKER_ARCH_VARS)
 │   ├── base/
 │   │   ├── build.sh               # Packer build script for base image
-│   │   ├── packer.pkr.hcl         # Packer template
+│   │   ├── packer.pkr.hcl         # Packer template (parameterized for amd64/arm64)
 │   │   └── scripts/
 │   │       └── setup-base.sh      # Provisioning script baked into image
 │   └── blockchain/
 │       ├── build.sh
-│       ├── packer.pkr.hcl
+│       ├── packer.pkr.hcl         # Packer template (parameterized for amd64/arm64)
 │       └── scripts/
 │           ├── install-rust.sh
 │           ├── install-solana.sh
