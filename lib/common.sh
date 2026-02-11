@@ -108,29 +108,96 @@ _mps_apply_profile() {
 
 # ---------- Name Resolution ----------
 
+# Maximum length for Multipass instance names
+MPS_MAX_INSTANCE_NAME_LEN=40
+
+# Generate the auto-name: mps-<folder>-<template>-<profile>
+# Truncates the folder portion and appends a short hash if too long.
+mps_auto_name() {
+    local mount_source="${1:-}"
+    local template="${2:-${MPS_CLOUD_INIT:-${MPS_DEFAULT_CLOUD_INIT:-base}}}"
+    local profile="${3:-${MPS_PROFILE:-${MPS_DEFAULT_PROFILE:-standard}}}"
+    local prefix="${MPS_INSTANCE_PREFIX:-mps}"
+
+    if [[ -z "$mount_source" ]]; then
+        mps_die "Cannot auto-name: no mount path. Use --name to specify a name, or provide a mount path."
+    fi
+
+    local folder
+    folder="$(basename "$mount_source")"
+
+    # Sanitize folder name: lowercase, replace non-alphanumeric with dash, collapse dashes
+    folder="$(echo "$folder" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g; s/--*/-/g; s/^-//; s/-$//')"
+
+    # Build the full name
+    local suffix="${template}-${profile}"
+    local full_name="${prefix}-${folder}-${suffix}"
+
+    # Truncate if too long
+    if [[ ${#full_name} -gt $MPS_MAX_INSTANCE_NAME_LEN ]]; then
+        # Compute a short hash of the original folder name for uniqueness
+        local hash
+        hash="$(echo -n "$folder" | md5sum | cut -c1-4)"
+        # Calculate how much space we have for the folder portion
+        # Format: <prefix>-<folder>-<hash>-<suffix>
+        local overhead=$(( ${#prefix} + 1 + ${#hash} + 1 + ${#suffix} + 1 ))
+        local max_folder=$(( MPS_MAX_INSTANCE_NAME_LEN - overhead ))
+        if [[ $max_folder -lt 1 ]]; then
+            max_folder=1
+        fi
+        local truncated_folder="${folder:0:$max_folder}"
+        # Remove trailing dash from truncation
+        truncated_folder="${truncated_folder%-}"
+        full_name="${prefix}-${truncated_folder}-${hash}-${suffix}"
+    fi
+
+    # Ensure name starts with a letter (Multipass requirement)
+    if [[ ! "$full_name" =~ ^[a-zA-Z] ]]; then
+        full_name="m${full_name}"
+    fi
+
+    echo "$full_name"
+}
+
+# Resolve the instance name.
+# Priority: --name flag > MPS_NAME config > auto-name from mount path
 mps_resolve_name() {
-    local name="${1:-}"
+    local explicit_name="${1:-}"
+    local mount_source="${2:-}"
+    local template="${3:-}"
+    local profile="${4:-}"
 
-    # Explicit name on command line
-    if [[ -n "$name" ]]; then
-        echo "$name"
+    # 1. Explicit --name flag
+    if [[ -n "$explicit_name" ]]; then
+        mps_instance_name "$explicit_name"
         return
     fi
 
-    # From project config
+    # 2. From project config MPS_NAME
     if [[ -n "${MPS_NAME:-}" ]]; then
-        echo "$MPS_NAME"
+        mps_instance_name "$MPS_NAME"
         return
     fi
 
-    # Default
-    echo "default"
+    # 3. Auto-name from mount path
+    if [[ -n "$mount_source" ]]; then
+        mps_auto_name "$mount_source" "$template" "$profile"
+        return
+    fi
+
+    # 4. No name can be derived
+    mps_die "Cannot determine instance name. Use --name to specify one, or provide a mount path."
 }
 
 mps_instance_name() {
     local name="$1"
     local prefix="${MPS_INSTANCE_PREFIX:-mps}"
-    echo "${prefix}-${name}"
+    # Don't double-prefix
+    if [[ "$name" == "${prefix}-"* ]]; then
+        echo "$name"
+    else
+        echo "${prefix}-${name}"
+    fi
 }
 
 # Strip the mps- prefix to get the short name

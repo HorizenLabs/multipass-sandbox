@@ -1,14 +1,15 @@
 #!/usr/bin/env bash
-# commands/status.sh — mps status [name]
+# commands/status.sh — mps status [--name <name>]
 #
 # Show detailed status of a sandbox including resources, image,
 # mounts, and Docker availability.
 #
 # Usage:
-#   mps status [name]
-#   mps status --json myproject
+#   mps status [--name <name>]
+#   mps status --json --name myproject
 #
 # Flags:
+#   --name, -n <name>   Sandbox name (default: auto-resolved from CWD)
 #   --json              Output raw JSON from multipass info
 #   --help, -h          Show this help
 
@@ -19,6 +20,10 @@ cmd_status() {
     # ---- Parse arguments ----
     while [[ $# -gt 0 ]]; do
         case "$1" in
+            --name|-n)
+                arg_name="${2:?--name requires a value}"
+                shift 2
+                ;;
             --json)
                 arg_json=true
                 shift
@@ -31,28 +36,23 @@ cmd_status() {
                 mps_die "Unknown flag: $1 (see 'mps status --help')"
                 ;;
             *)
-                if [[ -z "$arg_name" ]]; then
-                    arg_name="$1"
-                else
-                    mps_die "Unexpected argument: $1 (see 'mps status --help')"
-                fi
-                shift
+                mps_die "Unexpected argument: $1 (see 'mps status --help')"
                 ;;
         esac
     done
 
     # ---- Resolve instance name ----
-    local name
-    name="$(mps_resolve_name "$arg_name")"
-    mps_validate_name "$name"
-
     local instance_name
-    instance_name="$(mps_instance_name "$name")"
+    if [[ -n "$arg_name" ]]; then
+        instance_name="$(mps_instance_name "$arg_name")"
+    else
+        instance_name="$(mps_resolve_name "" "$(pwd)" "${MPS_CLOUD_INIT:-${MPS_DEFAULT_CLOUD_INIT:-base}}" "${MPS_PROFILE:-${MPS_DEFAULT_PROFILE:-standard}}")"
+    fi
     mps_log_debug "Resolved instance name: ${instance_name}"
 
     # ---- Check instance exists ----
     if ! mp_instance_exists "$instance_name"; then
-        mps_die "Instance '${instance_name}' does not exist. Create it with: mps up ${name}"
+        mps_die "Instance '${instance_name}' does not exist. Create it with: mps up --name $(mps_short_name "$instance_name")"
     fi
 
     # ---- Fetch info ----
@@ -122,7 +122,7 @@ cmd_status() {
 
     # ---- Display ----
     echo ""
-    printf "  ${_color_bold}%-16s${_color_reset} %s\n" "Name:" "$name"
+    printf "  ${_color_bold}%-16s${_color_reset} %s\n" "Name:" "$(mps_short_name "$instance_name")"
     printf "  ${_color_bold}%-16s${_color_reset} %b\n" "State:" "$state_display"
 
     if [[ -n "$ipv4" ]]; then
@@ -222,19 +222,17 @@ _status_usage() {
 ${_color_bold}mps status${_color_reset} — Show detailed sandbox status
 
 ${_color_bold}Usage:${_color_reset}
-    mps status [name] [flags]
-
-${_color_bold}Arguments:${_color_reset}
-    name        Sandbox name (default: from .mps.env or 'default')
+    mps status [flags]
 
 ${_color_bold}Flags:${_color_reset}
+    --name, -n <name>   Sandbox name (default: auto-resolved from CWD)
     --json              Output raw JSON
     --help, -h          Show this help
 
 ${_color_bold}Examples:${_color_reset}
-    mps status              Show status of default sandbox
-    mps status dev          Show status of 'dev' sandbox
-    mps status --json dev   Output raw JSON for scripting
+    mps status                      Show status of sandbox for current directory
+    mps status --name dev           Show status of 'dev' sandbox
+    mps status --json --name dev    Output raw JSON for scripting
 
 EOF
 }

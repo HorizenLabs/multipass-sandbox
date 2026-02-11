@@ -1,15 +1,16 @@
 #!/usr/bin/env bash
-# commands/ssh-config.sh — mps ssh-config [name]
+# commands/ssh-config.sh — mps ssh-config [--name <name>]
 #
 # Generate an SSH config block for a running sandbox, suitable for
 # VS Code Remote-SSH and other SSH clients.
 #
 # Usage:
-#   mps ssh-config [name]
-#   mps ssh-config --append myproject
-#   mps ssh-config --print --append myproject
+#   mps ssh-config [--name <name>]
+#   mps ssh-config --append --name myproject
+#   mps ssh-config --print --append --name myproject
 #
 # Flags:
+#   --name, -n <name>   Sandbox name (default: auto-resolved from CWD)
 #   --print             Print SSH config to stdout (default)
 #   --append            Write config to ~/.ssh/config.d/mps-<name>
 #   --help, -h          Show this help
@@ -22,6 +23,10 @@ cmd_ssh_config() {
     # ---- Parse arguments ----
     while [[ $# -gt 0 ]]; do
         case "$1" in
+            --name|-n)
+                arg_name="${2:?--name requires a value}"
+                shift 2
+                ;;
             --print)
                 arg_print=true
                 shift
@@ -38,12 +43,7 @@ cmd_ssh_config() {
                 mps_die "Unknown flag: $1 (see 'mps ssh-config --help')"
                 ;;
             *)
-                if [[ -z "$arg_name" ]]; then
-                    arg_name="$1"
-                else
-                    mps_die "Unexpected argument: $1 (see 'mps ssh-config --help')"
-                fi
-                shift
+                mps_die "Unexpected argument: $1 (see 'mps ssh-config --help')"
                 ;;
         esac
     done
@@ -54,12 +54,12 @@ cmd_ssh_config() {
     fi
 
     # ---- Resolve instance name ----
-    local name
-    name="$(mps_resolve_name "$arg_name")"
-    mps_validate_name "$name"
-
     local instance_name
-    instance_name="$(mps_instance_name "$name")"
+    if [[ -n "$arg_name" ]]; then
+        instance_name="$(mps_instance_name "$arg_name")"
+    else
+        instance_name="$(mps_resolve_name "" "$(pwd)" "${MPS_CLOUD_INIT:-${MPS_DEFAULT_CLOUD_INIT:-base}}" "${MPS_PROFILE:-${MPS_DEFAULT_PROFILE:-standard}}")"
+    fi
     mps_log_debug "Resolved instance name: ${instance_name}"
 
     # ---- Check instance exists and is running ----
@@ -67,11 +67,11 @@ cmd_ssh_config() {
     state="$(mp_instance_state "$instance_name")"
 
     if [[ "$state" == "nonexistent" ]]; then
-        mps_die "Instance '${instance_name}' does not exist. Create it with: mps up ${name}"
+        mps_die "Instance '${instance_name}' does not exist. Create it with: mps up --name $(mps_short_name "$instance_name")"
     fi
 
     if [[ "$state" != "Running" ]]; then
-        mps_die "Instance '${instance_name}' is not running (state: ${state}). Start it with: mps up ${name}"
+        mps_die "Instance '${instance_name}' is not running (state: ${state}). Start it with: mps up --name $(mps_short_name "$instance_name")"
     fi
 
     # ---- Get SSH info ----
@@ -132,12 +132,10 @@ _ssh_config_usage() {
 ${_color_bold}mps ssh-config${_color_reset} — Generate SSH config for a sandbox
 
 ${_color_bold}Usage:${_color_reset}
-    mps ssh-config [name] [flags]
-
-${_color_bold}Arguments:${_color_reset}
-    name        Sandbox name (default: from .mps.env or 'default')
+    mps ssh-config [flags]
 
 ${_color_bold}Flags:${_color_reset}
+    --name, -n <name>   Sandbox name (default: auto-resolved from CWD)
     --print             Print SSH config to stdout (default)
     --append            Write config to ~/.ssh/config.d/mps-<name>
     --help, -h          Show this help
@@ -145,12 +143,13 @@ ${_color_bold}Flags:${_color_reset}
 Both --print and --append can be used together.
 
 ${_color_bold}Examples:${_color_reset}
-    mps ssh-config dev              Print SSH config for 'dev'
-    mps ssh-config --append dev     Write to ~/.ssh/config.d/mps-dev
-    mps ssh-config --print --append dev   Print and write config
+    mps ssh-config                              Print SSH config for current directory
+    mps ssh-config --name dev                   Print SSH config for 'dev'
+    mps ssh-config --append --name dev          Write to ~/.ssh/config.d/mps-dev
+    mps ssh-config --print --append --name dev  Print and write config
 
 ${_color_bold}VS Code Integration:${_color_reset}
-    1. Run: mps ssh-config --append dev
+    1. Run: mps ssh-config --append --name dev
     2. Ensure ~/.ssh/config has: Include config.d/*
     3. In VS Code, use Remote-SSH to connect to 'mps-dev'
 

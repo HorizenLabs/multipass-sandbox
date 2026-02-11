@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
-# commands/down.sh — mps down [name]
+# commands/down.sh — mps down [--name <name>]
 #
 # Stop a running sandbox. If already stopped, prints a message and returns.
 #
 # Usage:
-#   mps down [name]
-#   mps down --force myproject
+#   mps down [--name <name>]
+#   mps down --force --name myproject
 #
 # Flags:
+#   --name, -n <name>   Sandbox name (default: auto-resolved from CWD)
 #   --force             Force-stop the instance (immediate shutdown)
 #   --help, -h          Show this help
 
@@ -18,6 +19,10 @@ cmd_down() {
     # ---- Parse arguments ----
     while [[ $# -gt 0 ]]; do
         case "$1" in
+            --name|-n)
+                arg_name="${2:?--name requires a value}"
+                shift 2
+                ;;
             --force|-f)
                 arg_force=true
                 shift
@@ -30,23 +35,18 @@ cmd_down() {
                 mps_die "Unknown flag: $1 (see 'mps down --help')"
                 ;;
             *)
-                if [[ -z "$arg_name" ]]; then
-                    arg_name="$1"
-                else
-                    mps_die "Unexpected argument: $1 (see 'mps down --help')"
-                fi
-                shift
+                mps_die "Unexpected argument: $1 (see 'mps down --help')"
                 ;;
         esac
     done
 
     # ---- Resolve instance name ----
-    local name
-    name="$(mps_resolve_name "$arg_name")"
-    mps_validate_name "$name"
-
     local instance_name
-    instance_name="$(mps_instance_name "$name")"
+    if [[ -n "$arg_name" ]]; then
+        instance_name="$(mps_instance_name "$arg_name")"
+    else
+        instance_name="$(mps_resolve_name "" "$(pwd)" "${MPS_CLOUD_INIT:-${MPS_DEFAULT_CLOUD_INIT:-base}}" "${MPS_PROFILE:-${MPS_DEFAULT_PROFILE:-standard}}")"
+    fi
     mps_log_debug "Resolved instance name: ${instance_name}"
 
     # ---- Check instance exists ----
@@ -71,7 +71,7 @@ cmd_down() {
     # ---- Stop ----
     mp_stop "$instance_name" "$arg_force"
 
-    mps_log_info "Sandbox '${name}' stopped."
+    mps_log_info "Sandbox '$(mps_short_name "$instance_name")' stopped."
 }
 
 _down_usage() {
@@ -79,19 +79,17 @@ _down_usage() {
 ${_color_bold}mps down${_color_reset} — Stop a running sandbox
 
 ${_color_bold}Usage:${_color_reset}
-    mps down [name] [flags]
-
-${_color_bold}Arguments:${_color_reset}
-    name        Sandbox name (default: from .mps.env or 'default')
+    mps down [flags]
 
 ${_color_bold}Flags:${_color_reset}
+    --name, -n <name>   Sandbox name (default: auto-resolved from CWD)
     --force, -f         Force-stop the instance (immediate shutdown)
     --help, -h          Show this help
 
 ${_color_bold}Examples:${_color_reset}
-    mps down                Stop the default sandbox gracefully
-    mps down myproject      Stop 'myproject' sandbox
-    mps down --force dev    Force-stop 'dev' sandbox immediately
+    mps down                        Stop the sandbox for the current directory
+    mps down --name myproject       Stop 'myproject' sandbox
+    mps down --force --name dev     Force-stop 'dev' sandbox immediately
 
 EOF
 }

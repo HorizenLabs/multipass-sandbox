@@ -35,6 +35,10 @@ cmd_create() {
     # ---- Parse arguments ----
     while [[ $# -gt 0 ]]; do
         case "$1" in
+            --name|-n)
+                arg_name="${2:?--name requires a value}"
+                shift 2
+                ;;
             --image)
                 arg_image="${2:?--image requires a value}"
                 shift 2
@@ -79,10 +83,8 @@ cmd_create() {
                 mps_die "Unknown flag: $1 (see 'mps create --help')"
                 ;;
             *)
-                # Positional arguments: first is name, second is path
-                if [[ -z "$arg_name" ]]; then
-                    arg_name="$1"
-                elif [[ -z "$arg_path" ]]; then
+                # Positional argument: path to mount
+                if [[ -z "$arg_path" ]]; then
                     arg_path="$1"
                 else
                     mps_die "Unexpected argument: $1 (see 'mps create --help')"
@@ -93,6 +95,7 @@ cmd_create() {
     done
 
     # ---- Apply profile if specified on CLI (before resolving defaults) ----
+    local effective_profile="${arg_profile:-${MPS_PROFILE:-${MPS_DEFAULT_PROFILE:-standard}}}"
     if [[ -n "$arg_profile" ]]; then
         export MPS_PROFILE="$arg_profile"
         local profile_file="${MPS_ROOT}/templates/profiles/${arg_profile}.env"
@@ -104,25 +107,29 @@ cmd_create() {
         fi
     fi
 
-    # ---- Resolve instance name ----
-    local name
-    name="$(mps_resolve_name "$arg_name")"
-    mps_validate_name "$name"
-
-    local instance_name
-    instance_name="$(mps_instance_name "$name")"
-    mps_log_debug "Resolved instance name: ${instance_name}"
-
-    # ---- Check instance does not already exist ----
-    if mp_instance_exists "$instance_name"; then
-        mps_die "Instance '${instance_name}' already exists. Use 'mps up' to start it, or 'mps destroy ${name}' first."
-    fi
-
-    # ---- Resolve mount ----
+    # ---- Resolve mount (before name, since auto-name depends on mount path) ----
     if [[ "$arg_no_mount" == "true" ]]; then
         MPS_NO_AUTOMOUNT=true
     fi
     mps_resolve_mount "$arg_path"
+
+    # ---- Resolve cloud-init template name (for auto-naming) ----
+    local effective_template="${arg_cloud_init:-${MPS_CLOUD_INIT:-${MPS_DEFAULT_CLOUD_INIT:-base}}}"
+
+    # ---- Resolve instance name ----
+    # Auto-name: mps-<folder>-<template>-<profile>
+    # Override: --name flag or MPS_NAME config
+    local instance_name
+    instance_name="$(mps_resolve_name "$arg_name" "${MPS_MOUNT_SOURCE:-}" "$effective_template" "$effective_profile")"
+    mps_validate_name "$(mps_short_name "$instance_name")"
+    mps_log_debug "Resolved instance name: ${instance_name}"
+
+    # ---- Check instance does not already exist ----
+    if mp_instance_exists "$instance_name"; then
+        local short
+        short="$(mps_short_name "$instance_name")"
+        mps_die "Instance '${instance_name}' already exists. Use 'mps up' to start it, or 'mps destroy --name ${short}' first."
+    fi
 
     # ---- Resolve cloud-init ----
     local cloud_init_path=""
@@ -183,12 +190,14 @@ cmd_create() {
     mp_wait_cloud_init "$instance_name"
 
     # ---- Save instance metadata ----
-    mps_save_instance_meta "$name"
+    local short_name
+    short_name="$(mps_short_name "$instance_name")"
+    mps_save_instance_meta "$short_name"
 
     # ---- Store port forwarding rules in metadata (for use by 'mps port' later) ----
     if [[ ${#arg_ports[@]} -gt 0 ]]; then
         local meta_file
-        meta_file="$(mps_instance_meta "$name")"
+        meta_file="$(mps_instance_meta "$short_name")"
         local port_rule
         for port_rule in "${arg_ports[@]}"; do
             echo "MPS_PORT_FORWARD+=${port_rule}" >> "$meta_file"
@@ -200,7 +209,7 @@ cmd_create() {
     local ip=""
     ip="$(mp_ipv4 "$instance_name" 2>/dev/null)" || true
 
-    mps_log_info "Sandbox '${name}' is ready."
+    mps_log_info "Sandbox '${instance_name}' is ready."
     echo ""
     printf "  %-14s %s\n" "Instance:" "$instance_name"
     printf "  %-14s %s\n" "Image:" "$image"
@@ -214,7 +223,7 @@ cmd_create() {
         printf "  %-14s %s\n" "IP:" "$ip"
     fi
     echo ""
-    mps_log_info "Connect with: mps shell ${name}"
+    mps_log_info "Connect with: mps shell --name ${short_name}"
 }
 
 _create_usage() {
@@ -222,13 +231,17 @@ _create_usage() {
 ${_color_bold}mps create${_color_reset} — Create a new sandbox
 
 ${_color_bold}Usage:${_color_reset}
-    mps create [name] [path] [flags]
+    mps create [path] [flags]
 
 ${_color_bold}Arguments:${_color_reset}
-    name        Sandbox name (default: from .mps.env or 'default')
     path        Host directory to mount (default: current directory)
 
+${_color_bold}Naming:${_color_reset}
+    Auto-generated: mps-<folder>-<template>-<profile>
+    Override with --name or MPS_NAME in .mps.env
+
 ${_color_bold}Flags:${_color_reset}
+    --name <name>           Override auto-generated instance name
     --image <image>         Ubuntu image, e.g. 22.04, 24.04 (default: ${MPS_DEFAULT_IMAGE:-22.04})
     --cpus <n>              CPU cores (default: ${MPS_DEFAULT_CPUS:-4})
     --memory <size>         Memory, e.g. 4G, 8G (default: ${MPS_DEFAULT_MEMORY:-4G})
@@ -237,15 +250,15 @@ ${_color_bold}Flags:${_color_reset}
     --profile <name>        Resource profile: lite, standard, heavy
     --mount <src:dst>       Additional mount point (can be repeated)
     --port <host:guest>     Port forwarding rule (can be repeated)
-    --no-mount              Do not auto-mount the project directory
+    --no-mount              Do not auto-mount (requires --name)
     --help, -h              Show this help
 
 ${_color_bold}Examples:${_color_reset}
-    mps create                              Use defaults, mount CWD
-    mps create myproject                    Named sandbox, mount CWD
-    mps create myproject ~/code/proj        Named sandbox, mount specific dir
-    mps create --profile heavy --image 24.04 dev
-    mps create --cloud-init blockchain --mount /data:/data dev
+    mps create                              Auto-name from CWD, mount CWD
+    mps create ~/code/proj                  Auto-name from 'proj', mount that dir
+    mps create --name mydev                 Explicit name, mount CWD
+    mps create --profile heavy --cloud-init blockchain
+    mps create --no-mount --name scratch    No mount, explicit name
 
 EOF
 }

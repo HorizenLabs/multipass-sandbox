@@ -1,14 +1,15 @@
 #!/usr/bin/env bash
-# commands/destroy.sh — mps destroy [name]
+# commands/destroy.sh — mps destroy [--name <name>]
 #
 # Permanently remove a sandbox. Deletes the Multipass instance (with purge),
 # removes stored metadata, and cleans up SSH config.
 #
 # Usage:
-#   mps destroy [name]
-#   mps destroy --force myproject
+#   mps destroy [--name <name>]
+#   mps destroy --force --name myproject
 #
 # Flags:
+#   --name, -n <name>   Sandbox name (default: auto-resolved from CWD)
 #   --force             Skip confirmation prompt
 #   --help, -h          Show this help
 
@@ -19,6 +20,10 @@ cmd_destroy() {
     # ---- Parse arguments ----
     while [[ $# -gt 0 ]]; do
         case "$1" in
+            --name|-n)
+                arg_name="${2:?--name requires a value}"
+                shift 2
+                ;;
             --force|-f)
                 arg_force=true
                 shift
@@ -31,23 +36,18 @@ cmd_destroy() {
                 mps_die "Unknown flag: $1 (see 'mps destroy --help')"
                 ;;
             *)
-                if [[ -z "$arg_name" ]]; then
-                    arg_name="$1"
-                else
-                    mps_die "Unexpected argument: $1 (see 'mps destroy --help')"
-                fi
-                shift
+                mps_die "Unexpected argument: $1 (see 'mps destroy --help')"
                 ;;
         esac
     done
 
     # ---- Resolve instance name ----
-    local name
-    name="$(mps_resolve_name "$arg_name")"
-    mps_validate_name "$name"
-
     local instance_name
-    instance_name="$(mps_instance_name "$name")"
+    if [[ -n "$arg_name" ]]; then
+        instance_name="$(mps_instance_name "$arg_name")"
+    else
+        instance_name="$(mps_resolve_name "" "$(pwd)" "${MPS_CLOUD_INIT:-${MPS_DEFAULT_CLOUD_INIT:-base}}" "${MPS_PROFILE:-${MPS_DEFAULT_PROFILE:-standard}}")"
+    fi
     mps_log_debug "Resolved instance name: ${instance_name}"
 
     # ---- Check instance exists ----
@@ -56,8 +56,11 @@ cmd_destroy() {
     fi
 
     # ---- Confirm unless --force ----
+    local short_name
+    short_name="$(mps_short_name "$instance_name")"
+
     if [[ "$arg_force" != "true" ]]; then
-        if ! mps_confirm "Destroy sandbox '${name}'? This cannot be undone."; then
+        if ! mps_confirm "Destroy sandbox '${short_name}'? This cannot be undone."; then
             mps_log_info "Aborted."
             return 0
         fi
@@ -68,7 +71,7 @@ cmd_destroy() {
 
     # ---- Remove metadata file ----
     local meta_file
-    meta_file="$(mps_instance_meta "$name")"
+    meta_file="$(mps_instance_meta "$short_name")"
     if [[ -f "$meta_file" ]]; then
         rm -f "$meta_file"
         mps_log_debug "Removed metadata: ${meta_file}"
@@ -81,7 +84,7 @@ cmd_destroy() {
         mps_log_debug "Removed SSH config: ${ssh_config}"
     fi
 
-    mps_log_info "Sandbox '${name}' destroyed."
+    mps_log_info "Sandbox '${short_name}' destroyed."
 }
 
 _destroy_usage() {
@@ -89,18 +92,17 @@ _destroy_usage() {
 ${_color_bold}mps destroy${_color_reset} — Remove a sandbox permanently
 
 ${_color_bold}Usage:${_color_reset}
-    mps destroy [name] [flags]
-
-${_color_bold}Arguments:${_color_reset}
-    name        Sandbox name (default: from .mps.env or 'default')
+    mps destroy [flags]
 
 ${_color_bold}Flags:${_color_reset}
+    --name, -n <name>   Sandbox name (default: auto-resolved from CWD)
     --force, -f         Skip confirmation prompt
     --help, -h          Show this help
 
 ${_color_bold}Examples:${_color_reset}
-    mps destroy dev             Destroy 'dev' (with confirmation)
-    mps destroy --force dev     Destroy 'dev' without confirmation
+    mps destroy                         Destroy sandbox for current directory (with confirmation)
+    mps destroy --name dev              Destroy 'dev' (with confirmation)
+    mps destroy --force --name dev      Destroy 'dev' without confirmation
 
 EOF
 }

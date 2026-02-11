@@ -17,20 +17,28 @@ cmd_up() {
     local arg_name=""
     local arg_path=""
     local arg_no_mount=false
+    local arg_cloud_init=""
+    local arg_profile=""
     local -a original_args=("$@")
-    local -a arg_extra_mounts=()
 
     # ---- Parse arguments (lightweight — just enough to resolve name/path) ----
     # We keep the original args intact so we can pass them through to cmd_create.
-    local -a positionals=()
-
     while [[ $# -gt 0 ]]; do
         case "$1" in
-            --image|--cpus|--memory|--mem|--disk|--cloud-init|--profile|--mount|--port)
+            --name|-n)
+                arg_name="${2:?--name requires a value}"
+                shift 2
+                ;;
+            --cloud-init)
+                arg_cloud_init="$2"
+                shift 2
+                ;;
+            --profile)
+                arg_profile="$2"
+                shift 2
+                ;;
+            --image|--cpus|--memory|--mem|--disk|--mount|--port)
                 # Flags with values — skip the value too
-                if [[ "$1" == "--mount" ]]; then
-                    arg_extra_mounts+=("${2:?--mount requires a value}")
-                fi
                 shift 2
                 ;;
             --no-mount)
@@ -46,23 +54,27 @@ cmd_up() {
                 shift
                 ;;
             *)
-                positionals+=("$1")
+                # Positional: path to mount
+                if [[ -z "$arg_path" ]]; then
+                    arg_path="$1"
+                fi
                 shift
                 ;;
         esac
     done
 
-    # Extract name and path from positionals
-    arg_name="${positionals[0]:-}"
-    arg_path="${positionals[1]:-}"
+    # ---- Resolve mount first (needed for auto-naming) ----
+    if [[ "$arg_no_mount" == "true" ]]; then
+        MPS_NO_AUTOMOUNT=true
+    fi
+    mps_resolve_mount "$arg_path"
 
     # ---- Resolve instance name ----
-    local name
-    name="$(mps_resolve_name "$arg_name")"
-    mps_validate_name "$name"
+    local effective_template="${arg_cloud_init:-${MPS_CLOUD_INIT:-${MPS_DEFAULT_CLOUD_INIT:-base}}}"
+    local effective_profile="${arg_profile:-${MPS_PROFILE:-${MPS_DEFAULT_PROFILE:-standard}}}"
 
     local instance_name
-    instance_name="$(mps_instance_name "$name")"
+    instance_name="$(mps_resolve_name "$arg_name" "${MPS_MOUNT_SOURCE:-}" "$effective_template" "$effective_profile")"
     mps_log_debug "Resolved instance name: ${instance_name}"
 
     # ---- Check current state ----
@@ -86,13 +98,12 @@ cmd_up() {
             # Re-establish mounts if needed
             _up_restore_mounts "$instance_name" "$arg_path" "$arg_no_mount"
 
-            # Show IP
-            _up_show_info "$name" "$instance_name"
+            _up_show_info "$instance_name"
             ;;
 
         Running)
             mps_log_info "Instance '${instance_name}' is already running."
-            _up_show_info "$name" "$instance_name"
+            _up_show_info "$instance_name"
             ;;
 
         Suspended)
@@ -101,7 +112,7 @@ cmd_up() {
 
             _up_restore_mounts "$instance_name" "$arg_path" "$arg_no_mount"
 
-            _up_show_info "$name" "$instance_name"
+            _up_show_info "$instance_name"
             ;;
 
         *)
@@ -143,8 +154,9 @@ _up_restore_mounts() {
 
 # Print connection info after an instance is up.
 _up_show_info() {
-    local name="$1"
-    local instance_name="$2"
+    local instance_name="$1"
+    local short_name
+    short_name="$(mps_short_name "$instance_name")"
 
     local ip=""
     ip="$(mp_ipv4 "$instance_name" 2>/dev/null)" || true
@@ -155,7 +167,7 @@ _up_show_info() {
         printf "  %-14s %s\n" "IP:" "$ip"
     fi
     echo ""
-    mps_log_info "Connect with: mps shell ${name}"
+    mps_log_info "Connect with: mps shell --name ${short_name}"
 }
 
 _up_usage() {
@@ -163,13 +175,17 @@ _up_usage() {
 ${_color_bold}mps up${_color_reset} — Create (if needed) and start a sandbox
 
 ${_color_bold}Usage:${_color_reset}
-    mps up [name] [path] [flags]
+    mps up [path] [flags]
 
 ${_color_bold}Arguments:${_color_reset}
-    name        Sandbox name (default: from .mps.env or 'default')
     path        Host directory to mount (default: current directory)
 
+${_color_bold}Naming:${_color_reset}
+    Auto-generated: mps-<folder>-<template>-<profile>
+    Override with --name or MPS_NAME in .mps.env
+
 ${_color_bold}Flags:${_color_reset}
+    --name <name>           Override auto-generated instance name
     --image <image>         Ubuntu image (only used on create)
     --cpus <n>              CPU cores (only used on create)
     --memory <size>         Memory (only used on create)
@@ -178,7 +194,7 @@ ${_color_bold}Flags:${_color_reset}
     --profile <name>        Resource profile (only used on create)
     --mount <src:dst>       Additional mount point (can be repeated)
     --port <host:guest>     Port forwarding rule (only used on create)
-    --no-mount              Do not auto-mount the project directory
+    --no-mount              Do not auto-mount (requires --name)
     --help, -h              Show this help
 
 ${_color_bold}Behavior:${_color_reset}
@@ -188,10 +204,10 @@ ${_color_bold}Behavior:${_color_reset}
     status.
 
 ${_color_bold}Examples:${_color_reset}
-    mps up                      Start or create default sandbox
-    mps up myproject            Start or create 'myproject'
-    mps up --profile heavy dev  Create 'dev' with heavy profile if new
-    mps up dev ~/code/proj      Mount specific directory
+    mps up                          Auto-name from CWD, mount CWD
+    mps up ~/code/proj              Auto-name from 'proj', mount that dir
+    mps up --name mydev             Explicit name, mount CWD
+    mps up --profile heavy --cloud-init blockchain
 
 EOF
 }

@@ -6,8 +6,8 @@ _image_usage() {
 ${_color_bold}Usage:${_color_reset} mps image <subcommand> [options]
 
 ${_color_bold}Subcommands:${_color_reset}
-    list               List locally cached images
-    pull <name:tag>    Download an image from the registry
+    list                     List locally cached images
+    pull <name>[:<version>]  Download an image (default: latest version)
 
 ${_color_bold}Options:${_color_reset}
     --remote           (list) Also show remote images from registry
@@ -16,8 +16,9 @@ ${_color_bold}Options:${_color_reset}
 ${_color_bold}Examples:${_color_reset}
     mps image list
     mps image list --remote
-    mps image pull base:latest
-    mps image pull blockchain:latest
+    mps image pull base
+    mps image pull base:1.0.0
+    mps image pull blockchain:2.1.0
 EOF
 }
 
@@ -102,13 +103,18 @@ _image_list() {
             return 1
         }
 
-        printf "  ${_color_bold}%-20s %-10s %s${_color_reset}\n" "NAME" "TAG" "DESCRIPTION"
+        printf "  ${_color_bold}%-20s %-12s %-10s %s${_color_reset}\n" "NAME" "VERSION" "LATEST" "DESCRIPTION"
         echo "$manifest" | jq -r '
             .images | to_entries[] | .key as $name |
-            .value | to_entries[] |
-            "\($name)\t\(.key)\t\(.value.description // "—")"
-        ' | while IFS=$'\t' read -r name tag desc; do
-            printf "  %-20s %-10s %s\n" "$name" "$tag" "$desc"
+            .value | .latest as $latest | .description as $desc |
+            .versions | to_entries[] |
+            "\($name)\t\(.key)\t\($latest // "—")\t\($desc // "—")"
+        ' | while IFS=$'\t' read -r name ver latest desc; do
+            local latest_marker=""
+            if [[ "$ver" == "$latest" ]]; then
+                latest_marker="*"
+            fi
+            printf "  %-20s %-12s %-10s %s\n" "$name" "$ver" "$latest_marker" "$desc"
         done
     fi
 }
@@ -127,14 +133,14 @@ _image_pull() {
     done
 
     if [[ -z "$image_spec" ]]; then
-        mps_die "Usage: mps image pull <name:tag>"
+        mps_die "Usage: mps image pull <name>[:<version>]"
     fi
 
-    # Parse name:tag
+    # Parse name:version (default to "latest" which resolves via manifest)
     local image_name="${image_spec%%:*}"
-    local image_tag="${image_spec#*:}"
-    if [[ "$image_tag" == "$image_name" ]]; then
-        image_tag="latest"
+    local image_version="${image_spec#*:}"
+    if [[ "$image_version" == "$image_name" ]]; then
+        image_version="latest"
     fi
 
     local base_url="${MPS_IMAGE_BASE_URL:-}"
@@ -156,19 +162,28 @@ _image_pull() {
         mps_die "Failed to fetch manifest from ${base_url}/manifest.json"
     }
 
-    # Extract image info
-    local image_url expected_sha256
-    image_url="$(echo "$manifest" | jq -r ".images[\"${image_name}\"][\"${image_tag}\"][\"${arch}\"].url // empty")"
-    expected_sha256="$(echo "$manifest" | jq -r ".images[\"${image_name}\"][\"${image_tag}\"][\"${arch}\"].sha256 // empty")"
-
-    if [[ -z "$image_url" ]]; then
-        mps_die "Image '${image_name}:${image_tag}' not found for architecture '${arch}'"
+    # Resolve "latest" to actual version number
+    if [[ "$image_version" == "latest" ]]; then
+        image_version="$(echo "$manifest" | jq -r ".images[\"${image_name}\"].latest // empty")"
+        if [[ -z "$image_version" ]]; then
+            mps_die "No 'latest' version found for image '${image_name}'"
+        fi
+        mps_log_info "Resolved 'latest' to version ${image_version}"
     fi
 
-    # Full URL (relative to base)
+    # Extract image info from versions
+    local image_url expected_sha256
+    image_url="$(echo "$manifest" | jq -r ".images[\"${image_name}\"].versions[\"${image_version}\"][\"${arch}\"].url // empty")"
+    expected_sha256="$(echo "$manifest" | jq -r ".images[\"${image_name}\"].versions[\"${image_version}\"][\"${arch}\"].sha256 // empty")"
+
+    if [[ -z "$image_url" ]]; then
+        mps_die "Image '${image_name}:${image_version}' not found for architecture '${arch}'"
+    fi
+
+    # Full URL (relative to base, served via Cloudflare proxy over B2)
     local full_url="${base_url}/${image_url}"
     local cache_dir
-    cache_dir="$(mps_cache_dir)/images/${image_name}/${image_tag}"
+    cache_dir="$(mps_cache_dir)/images/${image_name}/${image_version}"
     mkdir -p "$cache_dir"
     local dest_file="${cache_dir}/${arch}.img"
 
