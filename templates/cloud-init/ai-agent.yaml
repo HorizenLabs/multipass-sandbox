@@ -1,0 +1,197 @@
+#cloud-config
+# Multi Pass Sandbox — AI Agent template
+# Extends base with: sandboxing, monitoring, AI/ML tools
+
+package_update: true
+package_upgrade: false
+
+packages:
+  - apt-transport-https
+  - ca-certificates
+  - gnupg
+  - lsb-release
+  - software-properties-common
+  # Build toolchain
+  - build-essential
+  - pkg-config
+  - autoconf
+  - automake
+  - libtool
+  - clang
+  - llvm
+  - cmake
+  # Core CLI tools
+  - git
+  - curl
+  - wget
+  - jq
+  - unzip
+  - zip
+  - xz-utils
+  # Dev tools
+  - tmux
+  - htop
+  - tree
+  - ripgrep
+  - fd-find
+  - vim
+  - nano
+  # SSL/crypto libs
+  - libssl-dev
+  - libffi-dev
+  - zlib1g-dev
+  - libbz2-dev
+  - libreadline-dev
+  - libsqlite3-dev
+  - libncursesw5-dev
+  - libxml2-dev
+  - libxmlsec1-dev
+  - liblzma-dev
+  # Python
+  - python3
+  - python3-pip
+  - python3-venv
+  # Monitoring / sandboxing
+  - auditd
+  - apparmor
+  - apparmor-utils
+  - strace
+  - sysstat
+  - iotop
+  - nethogs
+  - nftables
+
+groups:
+  - docker
+
+users:
+  - default
+
+runcmd:
+  # ---------- Docker (official repo) ----------
+  - |
+    install -m 0755 -d /etc/apt/keyrings
+    curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+    chmod a+r /etc/apt/keyrings/docker.asc
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$VERSION_CODENAME") stable" > /etc/apt/sources.list.d/docker.list
+    apt-get update
+    apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+    systemctl enable docker
+    systemctl start docker
+    usermod -aG docker ubuntu
+
+  # ---------- Neovim ----------
+  - |
+    add-apt-repository -y ppa:neovim-ppa/stable
+    apt-get update
+    apt-get install -y neovim
+
+  # ---------- yq ----------
+  - |
+    YQ_VERSION=$(curl -fsSL https://api.github.com/repos/mikefarah/yq/releases/latest | grep tag_name | cut -d '"' -f 4)
+    ARCH=$(dpkg --print-architecture)
+    curl -fsSL "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_${ARCH}" -o /usr/local/bin/yq
+    chmod +x /usr/local/bin/yq
+
+  # ---------- shellcheck ----------
+  - |
+    SC_VERSION=$(curl -fsSL https://api.github.com/repos/koalaman/shellcheck/releases/latest | grep tag_name | cut -d '"' -f 4)
+    ARCH=$(uname -m)
+    curl -fsSL "https://github.com/koalaman/shellcheck/releases/download/${SC_VERSION}/shellcheck-${SC_VERSION}.linux.${ARCH}.tar.xz" | tar -xJf - --strip-components=1 -C /usr/local/bin "shellcheck-${SC_VERSION}/shellcheck"
+    chmod +x /usr/local/bin/shellcheck
+
+  # ---------- hadolint ----------
+  - |
+    HL_VERSION=$(curl -fsSL https://api.github.com/repos/hadolint/hadolint/releases/latest | grep tag_name | cut -d '"' -f 4)
+    ARCH=$(dpkg --print-architecture)
+    if [ "$ARCH" = "amd64" ]; then HL_ARCH="x86_64"; else HL_ARCH="arm64"; fi
+    curl -fsSL "https://github.com/hadolint/hadolint/releases/download/${HL_VERSION}/hadolint-Linux-${HL_ARCH}" -o /usr/local/bin/hadolint
+    chmod +x /usr/local/bin/hadolint
+
+  # ---------- Node.js via nvm ----------
+  - |
+    sudo -u ubuntu bash -c '
+      export HOME=/home/ubuntu
+      curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/master/install.sh | bash
+      export NVM_DIR="$HOME/.nvm"
+      [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
+      nvm install --lts
+      nvm alias default lts/*
+      npm install -g pnpm yarn
+      curl -fsSL https://bun.sh/install | bash
+    '
+
+  # ---------- Go ----------
+  - |
+    ARCH=$(dpkg --print-architecture)
+    GO_VERSION=$(curl -fsSL "https://go.dev/dl/?mode=json" | jq -r ".[0].version")
+    curl -fsSL "https://go.dev/dl/${GO_VERSION}.linux-${ARCH}.tar.gz" | tar -C /usr/local -xzf -
+    cat >> /etc/profile.d/golang.sh <<'GOEOF'
+    export PATH=$PATH:/usr/local/go/bin
+    export GOPATH=$HOME/go
+    export PATH=$PATH:$GOPATH/bin
+GOEOF
+    chmod +x /etc/profile.d/golang.sh
+
+  # ---------- Rust via rustup ----------
+  - |
+    sudo -u ubuntu bash -c '
+      export HOME=/home/ubuntu
+      curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
+      source "$HOME/.cargo/env"
+      cargo install just
+    '
+
+  # ---------- Python: uv + pyenv ----------
+  - |
+    sudo -u ubuntu bash -c '
+      export HOME=/home/ubuntu
+      curl -LsSf https://astral.sh/uv/install.sh | sh
+      curl -fsSL https://pyenv.run | bash
+      echo "export PYENV_ROOT=\"\$HOME/.pyenv\"" >> "$HOME/.bashrc"
+      echo "[[ -d \"\$PYENV_ROOT/bin\" ]] && export PATH=\"\$PYENV_ROOT/bin:\$PATH\"" >> "$HOME/.bashrc"
+      echo "eval \"\$(pyenv init -)\"" >> "$HOME/.bashrc"
+    '
+
+  # ---------- AI Agent: Sandboxing ----------
+  - |
+    # Enable and configure auditd
+    systemctl enable auditd
+    systemctl start auditd
+    # Add basic audit rules for monitoring agent activity
+    cat >> /etc/audit/rules.d/agent-monitor.rules <<'AUDITEOF'
+    -w /home/ubuntu -p wa -k agent-files
+    -w /tmp -p wa -k agent-tmp
+    -a always,exit -F arch=b64 -S execve -k agent-exec
+AUDITEOF
+    augenrules --load || true
+
+  # ---------- AI Agent: Resource Limits ----------
+  - |
+    # Set up cgroup-based resource limits for agent processes
+    cat >> /etc/security/limits.d/agent.conf <<'LIMITSEOF'
+    ubuntu soft nproc 4096
+    ubuntu hard nproc 8192
+    ubuntu soft nofile 65536
+    ubuntu hard nofile 131072
+LIMITSEOF
+
+  # ---------- AI Agent: Network Monitoring ----------
+  - |
+    # Configure basic nftables firewall logging
+    cat > /etc/nftables.d/agent-monitor.nft <<'NFTEOF'
+    table inet agent_monitor {
+      chain output {
+        type filter hook output priority 0; policy accept;
+        # Log outbound connections for monitoring
+        tcp flags syn log prefix "AGENT_OUTBOUND: " accept
+      }
+    }
+NFTEOF
+    mkdir -p /etc/nftables.d
+    nft -f /etc/nftables.d/agent-monitor.nft 2>/dev/null || true
+
+  # ---------- Final ----------
+  - chown -R ubuntu:ubuntu /home/ubuntu
+
+final_message: "MPS AI agent sandbox provisioning complete."

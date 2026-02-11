@@ -1,0 +1,30 @@
+# Multi Pass Sandbox (mps)
+
+# User config (global overrides are personal)
+.mps.env
+
+# Build artifacts
+build/
+dist/
+*.img
+*.qcow2
+
+# Packer
+images/*/output-*/
+images/*/*.img
+packer_cache/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
+
+# Temp
+*.tmp
+*.log

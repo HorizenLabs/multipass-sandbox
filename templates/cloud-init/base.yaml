@@ -1,0 +1,160 @@
+#cloud-config
+# Multi Pass Sandbox — Base cloud-init template
+# Installs: Docker (official repo), Node.js (nvm), Python, Go, Rust, dev tools
+
+package_update: true
+package_upgrade: false
+
+packages:
+  - apt-transport-https
+  - ca-certificates
+  - gnupg
+  - lsb-release
+  - software-properties-common
+  # Build toolchain
+  - build-essential
+  - pkg-config
+  - autoconf
+  - automake
+  - libtool
+  - clang
+  - llvm
+  - cmake
+  # Core CLI tools
+  - git
+  - curl
+  - wget
+  - jq
+  - unzip
+  - zip
+  - xz-utils
+  # Dev tools
+  - tmux
+  - htop
+  - tree
+  - ripgrep
+  - fd-find
+  - vim
+  - nano
+  # SSL/crypto libs (needed by many build systems)
+  - libssl-dev
+  - libffi-dev
+  - zlib1g-dev
+  - libbz2-dev
+  - libreadline-dev
+  - libsqlite3-dev
+  - libncursesw5-dev
+  - libxml2-dev
+  - libxmlsec1-dev
+  - liblzma-dev
+  # Python
+  - python3
+  - python3-pip
+  - python3-venv
+
+groups:
+  - docker
+
+users:
+  - default
+
+runcmd:
+  # ---------- Docker (official repo) ----------
+  - |
+    install -m 0755 -d /etc/apt/keyrings
+    curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+    chmod a+r /etc/apt/keyrings/docker.asc
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$VERSION_CODENAME") stable" > /etc/apt/sources.list.d/docker.list
+    apt-get update
+    apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+    systemctl enable docker
+    systemctl start docker
+    usermod -aG docker ubuntu
+
+  # ---------- Neovim (latest stable via PPA) ----------
+  - |
+    add-apt-repository -y ppa:neovim-ppa/stable
+    apt-get update
+    apt-get install -y neovim
+
+  # ---------- yq ----------
+  - |
+    YQ_VERSION=$(curl -fsSL https://api.github.com/repos/mikefarah/yq/releases/latest | grep tag_name | cut -d '"' -f 4)
+    ARCH=$(dpkg --print-architecture)
+    curl -fsSL "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_${ARCH}" -o /usr/local/bin/yq
+    chmod +x /usr/local/bin/yq
+
+  # ---------- shellcheck ----------
+  - |
+    SC_VERSION=$(curl -fsSL https://api.github.com/repos/koalaman/shellcheck/releases/latest | grep tag_name | cut -d '"' -f 4)
+    ARCH=$(uname -m)
+    curl -fsSL "https://github.com/koalaman/shellcheck/releases/download/${SC_VERSION}/shellcheck-${SC_VERSION}.linux.${ARCH}.tar.xz" | tar -xJf - --strip-components=1 -C /usr/local/bin "shellcheck-${SC_VERSION}/shellcheck"
+    chmod +x /usr/local/bin/shellcheck
+
+  # ---------- hadolint ----------
+  - |
+    HL_VERSION=$(curl -fsSL https://api.github.com/repos/hadolint/hadolint/releases/latest | grep tag_name | cut -d '"' -f 4)
+    ARCH=$(dpkg --print-architecture)
+    if [ "$ARCH" = "amd64" ]; then HL_ARCH="x86_64"; else HL_ARCH="arm64"; fi
+    curl -fsSL "https://github.com/hadolint/hadolint/releases/download/${HL_VERSION}/hadolint-Linux-${HL_ARCH}" -o /usr/local/bin/hadolint
+    chmod +x /usr/local/bin/hadolint
+
+  # ---------- Node.js via nvm (as ubuntu user) ----------
+  - |
+    sudo -u ubuntu bash -c '
+      export HOME=/home/ubuntu
+      curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/master/install.sh | bash
+      export NVM_DIR="$HOME/.nvm"
+      [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
+      nvm install --lts
+      nvm alias default lts/*
+      # Install global package managers
+      npm install -g pnpm yarn
+      # Install bun
+      curl -fsSL https://bun.sh/install | bash
+    '
+
+  # ---------- Go (latest stable from golang.org) ----------
+  - |
+    ARCH=$(dpkg --print-architecture)
+    GO_VERSION=$(curl -fsSL "https://go.dev/dl/?mode=json" | jq -r ".[0].version")
+    curl -fsSL "https://go.dev/dl/${GO_VERSION}.linux-${ARCH}.tar.gz" | tar -C /usr/local -xzf -
+    # Add to system-wide profile
+    cat >> /etc/profile.d/golang.sh <<'GOEOF'
+    export PATH=$PATH:/usr/local/go/bin
+    export GOPATH=$HOME/go
+    export PATH=$PATH:$GOPATH/bin
+GOEOF
+    chmod +x /etc/profile.d/golang.sh
+
+  # ---------- Rust via rustup (as ubuntu user) ----------
+  - |
+    sudo -u ubuntu bash -c '
+      export HOME=/home/ubuntu
+      curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
+      source "$HOME/.cargo/env"
+      # Install just (command runner)
+      cargo install just
+    '
+
+  # ---------- Python: uv ----------
+  - |
+    sudo -u ubuntu bash -c '
+      export HOME=/home/ubuntu
+      curl -LsSf https://astral.sh/uv/install.sh | sh
+    '
+
+  # ---------- pyenv (as ubuntu user) ----------
+  - |
+    sudo -u ubuntu bash -c '
+      export HOME=/home/ubuntu
+      curl -fsSL https://pyenv.run | bash
+      echo "export PYENV_ROOT=\"\$HOME/.pyenv\"" >> "$HOME/.bashrc"
+      echo "[[ -d \"\$PYENV_ROOT/bin\" ]] && export PATH=\"\$PYENV_ROOT/bin:\$PATH\"" >> "$HOME/.bashrc"
+      echo "eval \"\$(pyenv init -)\"" >> "$HOME/.bashrc"
+    '
+
+  # ---------- Final: ensure ubuntu owns its home ----------
+  - chown -R ubuntu:ubuntu /home/ubuntu
+
+final_message: "MPS base sandbox provisioning complete."

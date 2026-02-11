@@ -1,0 +1,150 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Multi Pass Sandbox (mps) — Main entry point
+# https://github.com/your-org/mps
+
+MPS_VERSION="0.1.0"
+
+# Resolve install directory
+MPS_ROOT="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}" 2>/dev/null || echo "${BASH_SOURCE[0]}")")/.." && pwd)"
+export MPS_ROOT
+
+# Store the directory where mps was invoked
+MPS_PROJECT_DIR="$(pwd)"
+export MPS_PROJECT_DIR
+
+# Source shared libraries
+# shellcheck source=../lib/common.sh
+source "${MPS_ROOT}/lib/common.sh"
+# shellcheck source=../lib/multipass.sh
+source "${MPS_ROOT}/lib/multipass.sh"
+
+# ---------- Help ----------
+
+mps_usage() {
+    cat <<EOF
+${_color_bold}Multi Pass Sandbox (mps)${_color_reset} v${MPS_VERSION}
+Isolated VM-based development environments powered by Multipass.
+
+${_color_bold}Usage:${_color_reset}
+    mps <command> [options]
+
+${_color_bold}Commands:${_color_reset}
+    create [name] [path]   Create a new sandbox
+    up [name] [path]       Create (if needed) and start a sandbox
+    down [name]            Stop a sandbox
+    destroy [name]         Remove a sandbox permanently
+    shell [name]           Open an interactive shell in a sandbox
+    exec [name] -- <cmd>   Execute a command in a sandbox
+    list                   List all sandboxes
+    status [name]          Show detailed sandbox status
+    ssh-config [name]      Generate SSH config for VS Code integration
+    image <subcommand>     Manage sandbox images
+    port <subcommand>      Manage port forwarding
+
+${_color_bold}Options:${_color_reset}
+    --help, -h             Show this help message
+    --version, -v          Show version
+    --debug                Enable debug logging
+
+${_color_bold}Examples:${_color_reset}
+    mps up                 Start sandbox with defaults, mount CWD
+    mps up myproject       Start sandbox named 'myproject', mount CWD
+    mps up myproject .     Start sandbox, mount current directory
+    mps create dev --cloud-init blockchain --profile heavy
+    mps shell dev          Open shell in 'dev' sandbox
+    mps exec dev -- docker ps
+    mps ssh-config dev --append
+    mps destroy dev --force
+
+${_color_bold}Configuration:${_color_reset}
+    Config files are loaded in order (later wins):
+      1. <mps-root>/config/defaults.env
+      2. ~/.mps/config
+      3. .mps.env (per-project)
+      4. CLI flags
+
+EOF
+}
+
+# ---------- Dispatch ----------
+
+main() {
+    # Handle global flags first
+    local command=""
+    local -a args=()
+
+    for arg in "$@"; do
+        case "$arg" in
+            --help|-h)
+                if [[ -z "$command" ]]; then
+                    mps_usage
+                    exit 0
+                else
+                    args+=("$arg")
+                fi
+                ;;
+            --version|-v)
+                if [[ -z "$command" ]]; then
+                    echo "mps version ${MPS_VERSION}"
+                    exit 0
+                else
+                    args+=("$arg")
+                fi
+                ;;
+            --debug)
+                export MPS_DEBUG=true
+                ;;
+            *)
+                if [[ -z "$command" ]]; then
+                    command="$arg"
+                else
+                    args+=("$arg")
+                fi
+                ;;
+        esac
+    done
+
+    if [[ -z "$command" ]]; then
+        mps_usage
+        exit 1
+    fi
+
+    # Load config cascade
+    mps_load_config
+
+    # Skip dependency check if subcommand is --help
+    local needs_deps=true
+    for a in "${args[@]}"; do
+        if [[ "$a" == "--help" || "$a" == "-h" ]]; then
+            needs_deps=false
+            break
+        fi
+    done
+    if [[ "$needs_deps" == "true" ]]; then
+        mps_check_deps
+    fi
+
+    # Dispatch to command script
+    local cmd_script="${MPS_ROOT}/commands/${command}.sh"
+    if [[ ! -f "$cmd_script" ]]; then
+        mps_log_error "Unknown command: '$command'"
+        echo ""
+        mps_usage
+        exit 1
+    fi
+
+    # shellcheck source=/dev/null
+    source "$cmd_script"
+
+    # Call the command's main function: cmd_<command>
+    local cmd_func="cmd_${command//-/_}"
+    if ! declare -f "$cmd_func" &>/dev/null; then
+        mps_die "Command script '$cmd_script' does not define function '$cmd_func'"
+    fi
+
+    "$cmd_func" "${args[@]}"
+}
+
+main "$@"
