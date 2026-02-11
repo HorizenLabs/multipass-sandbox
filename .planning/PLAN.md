@@ -38,7 +38,8 @@ A blockchain software development company needs an internal tool to spin up isol
 │   ├── status.sh                  # mps status
 │   ├── ssh-config.sh              # mps ssh-config
 │   ├── image.sh                   # mps image [list|pull]
-│   └── port.sh                    # mps port [forward|list]
+│   ├── port.sh                    # mps port [forward|list]
+│   └── transfer.sh                # mps transfer (host<->guest file copy)
 │   # (PowerShell equivalents: create.ps1, up.ps1, etc.)
 │
 ├── templates/
@@ -168,6 +169,7 @@ MPS_SSH_AUTO_CONFIG=true
 - `mps list` — Formatted table or --json
 - `mps status [name]` — Detailed info (resources, mounts, Docker health)
 - `mps ssh-config [name]` — Generate SSH config for VS Code (--print, --append)
+- `mps transfer <src...> <dst>` — Transfer files between host and guest (`:` prefix for guest paths)
 
 ---
 

@@ -37,7 +37,7 @@ cmd_up() {
                 arg_profile="$2"
                 shift 2
                 ;;
-            --image|--cpus|--memory|--mem|--disk|--mount|--port)
+            --image|--cpus|--memory|--mem|--disk|--mount|--port|--transfer)
                 # Flags with values — skip the value too
                 shift 2
                 ;;
@@ -194,6 +194,7 @@ ${_color_bold}Flags:${_color_reset}
     --profile <name>        Resource profile (only used on create)
     --mount <src:dst>       Additional mount point (can be repeated)
     --port <host:guest>     Port forwarding rule (only used on create)
+    --transfer <src:dst>    Transfer file from host to guest (only used on create)
     --no-mount              Do not auto-mount (requires --name)
     --help, -h              Show this help
 

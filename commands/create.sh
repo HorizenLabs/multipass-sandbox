@@ -31,6 +31,7 @@ cmd_create() {
     local arg_no_mount=false
     local -a arg_extra_mounts=()
     local -a arg_ports=()
+    local -a arg_transfers=()
 
     # ---- Parse arguments ----
     while [[ $# -gt 0 ]]; do
@@ -69,6 +70,10 @@ cmd_create() {
                 ;;
             --port)
                 arg_ports+=("${2:?--port requires a value}")
+                shift 2
+                ;;
+            --transfer)
+                arg_transfers+=("${2:?--transfer requires a value}")
                 shift 2
                 ;;
             --no-mount)
@@ -205,6 +210,42 @@ cmd_create() {
         mps_log_debug "Stored ${#arg_ports[@]} port forwarding rule(s)"
     fi
 
+    # ---- Transfer files if --transfer was specified ----
+    local transfer_count=0
+    if [[ ${#arg_transfers[@]} -gt 0 ]]; then
+        local transfer_spec
+        for transfer_spec in "${arg_transfers[@]}"; do
+            # Format: <host-path>:<guest-path> (split on first colon)
+            local host_src="${transfer_spec%%:*}"
+            local guest_dst="${transfer_spec#*:}"
+
+            if [[ -z "$host_src" || -z "$guest_dst" || "$host_src" == "$transfer_spec" ]]; then
+                mps_die "Invalid --transfer format: '${transfer_spec}' (expected <host-path>:<guest-path>)"
+            fi
+
+            # Resolve relative host paths to absolute
+            if [[ "$host_src" != /* ]]; then
+                host_src="${MPS_PROJECT_DIR:-$(pwd)}/${host_src}"
+            fi
+
+            if [[ ! -f "$host_src" ]]; then
+                mps_die "Transfer source not found: ${host_src}"
+            fi
+
+            mps_log_info "Transferring '${host_src}' -> '${instance_name}:${guest_dst}'..."
+            mp_transfer "$host_src" "${instance_name}:${guest_dst}"
+            transfer_count=$((transfer_count + 1))
+        done
+
+        # Store in metadata
+        local transfer_meta_file
+        transfer_meta_file="$(mps_instance_meta "$short_name")"
+        for transfer_spec in "${arg_transfers[@]}"; do
+            echo "MPS_TRANSFER+=${transfer_spec}" >> "$transfer_meta_file"
+        done
+        mps_log_debug "Stored ${#arg_transfers[@]} transfer rule(s)"
+    fi
+
     # ---- Print summary ----
     local ip=""
     ip="$(mp_ipv4 "$instance_name" 2>/dev/null)" || true
@@ -218,6 +259,9 @@ cmd_create() {
     printf "  %-14s %s\n" "Disk:" "$disk"
     if [[ -n "${MPS_MOUNT_SOURCE:-}" ]]; then
         printf "  %-14s %s -> %s\n" "Mount:" "$MPS_MOUNT_SOURCE" "$MPS_MOUNT_TARGET"
+    fi
+    if [[ $transfer_count -gt 0 ]]; then
+        printf "  %-14s %s\n" "Transferred:" "${transfer_count} file(s)"
     fi
     if [[ -n "$ip" ]]; then
         printf "  %-14s %s\n" "IP:" "$ip"
@@ -250,6 +294,7 @@ ${_color_bold}Flags:${_color_reset}
     --profile <name>        Resource profile: lite, standard, heavy
     --mount <src:dst>       Additional mount point (can be repeated)
     --port <host:guest>     Port forwarding rule (can be repeated)
+    --transfer <src:dst>    Transfer file from host to guest after creation (can be repeated)
     --no-mount              Do not auto-mount (requires --name)
     --help, -h              Show this help
 

@@ -31,17 +31,18 @@ ${_color_bold}Usage:${_color_reset}
     mps <command> [options]
 
 ${_color_bold}Commands:${_color_reset}
-    create [name] [path]   Create a new sandbox
-    up [name] [path]       Create (if needed) and start a sandbox
-    down [name]            Stop a sandbox
-    destroy [name]         Remove a sandbox permanently
-    shell [name]           Open an interactive shell in a sandbox
-    exec [name] -- <cmd>   Execute a command in a sandbox
-    list                   List all sandboxes
-    status [name]          Show detailed sandbox status
-    ssh-config [name]      Generate SSH config for VS Code integration
-    image <subcommand>     Manage sandbox images
-    port <subcommand>      Manage port forwarding
+    create [flags]              Create a new sandbox
+    up [flags]                  Create (if needed) and start a sandbox
+    down [--name <name>]        Stop a sandbox
+    destroy [--name <name>]     Remove a sandbox permanently
+    shell [--name <name>]       Open an interactive shell in a sandbox
+    exec [--name <name>] -- ..  Execute a command in a sandbox
+    transfer <src...> <dst>     Transfer files between host and sandbox
+    list                        List all sandboxes
+    status [--name <name>]      Show detailed sandbox status
+    ssh-config [--name <name>]  Generate SSH config for VS Code integration
+    image <subcommand>          Manage sandbox images
+    port <subcommand>           Manage port forwarding
 
 ${_color_bold}Options:${_color_reset}
     --help, -h             Show this help message
@@ -49,14 +50,14 @@ ${_color_bold}Options:${_color_reset}
     --debug                Enable debug logging
 
 ${_color_bold}Examples:${_color_reset}
-    mps up                 Start sandbox with defaults, mount CWD
-    mps up myproject       Start sandbox named 'myproject', mount CWD
-    mps up myproject .     Start sandbox, mount current directory
-    mps create dev --cloud-init blockchain --profile heavy
-    mps shell dev          Open shell in 'dev' sandbox
-    mps exec dev -- docker ps
-    mps ssh-config dev --append
-    mps destroy dev --force
+    mps up                                  Start sandbox, auto-name from CWD
+    mps up --name mydev                     Start sandbox with explicit name
+    mps create --cloud-init blockchain --profile heavy
+    mps shell --name mydev                  Open shell in sandbox
+    mps exec --name mydev -- docker ps      Run command in sandbox
+    mps transfer ./f.txt :/home/ubuntu/     Copy file into sandbox
+    mps ssh-config --name mydev --append
+    mps destroy --name mydev --force
 
 ${_color_bold}Configuration:${_color_reset}
     Config files are loaded in order (later wins):

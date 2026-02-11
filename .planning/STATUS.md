@@ -57,10 +57,18 @@
 - [ ] BATS test suite
 - [ ] GitHub Actions CI pipeline
 
+## File Transfer: DONE
+
+- [x] `lib/multipass.sh` — Updated `mp_transfer()` to variadic with error handling
+- [x] `commands/transfer.sh` — Standalone `mps transfer` command with `:` prefix guest path convention
+- [x] `commands/create.sh` — `--transfer` flag for seeding files into new VMs after creation
+- [x] `commands/up.sh` — `--transfer` passthrough to `cmd_create`
+- [x] `bin/mps` — Updated help text with transfer command and `--name` flag pattern
+
 ## Known Issues / TODO
 
 - Port auto-forwarding from `MPS_PORTS` not wired into `mps up` post-start hooks
 - Port forward cleanup not triggered on `mps down`/`mps destroy`
 - No `.ports` file cleanup when destroying instances
 - Cloud-init templates duplicate the full base setup (blockchain/ai-agent copy all of base) — could refactor to merge at build time
-- README.md needs updating to reflect auto-naming, --name flag, B2 image system, and dockerized build
+- README.md needs updating to reflect auto-naming, --name flag, B2 image system, dockerized build, and `mps transfer` command

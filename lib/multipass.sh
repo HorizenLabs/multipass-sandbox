@@ -194,10 +194,13 @@ mp_umount() {
 # ---------- File Transfer ----------
 
 mp_transfer() {
-    local source="$1"
-    local dest="$2"
-    mps_log_debug "Transferring: $source → $dest"
-    multipass transfer "$source" "$dest"
+    if [[ $# -lt 2 ]]; then
+        mps_die "mp_transfer requires at least 2 arguments (source(s) and destination)"
+    fi
+    mps_log_debug "Transferring: $*"
+    if ! multipass transfer "$@"; then
+        mps_die "File transfer failed"
+    fi
 }
 
 # ---------- SSH ----------
