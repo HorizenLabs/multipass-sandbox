@@ -211,6 +211,9 @@ cmd_create() {
         mps_log_debug "Stored ${#arg_ports[@]} port forwarding rule(s)"
     fi
 
+    # ---- Auto-forward ports (from MPS_PORTS config + --port flags) ----
+    mps_auto_forward_ports "$instance_name" "$short_name"
+
     # ---- Transfer files if --transfer was specified ----
     local transfer_count=0
     if [[ ${#arg_transfers[@]} -gt 0 ]]; then
@@ -260,6 +263,15 @@ cmd_create() {
     printf "  %-14s %s\n" "Disk:" "$disk"
     if [[ -n "${MPS_MOUNT_SOURCE:-}" ]]; then
         printf "  %-14s %s -> %s\n" "Mount:" "$MPS_MOUNT_SOURCE" "$MPS_MOUNT_TARGET"
+    fi
+    local port_fwd_count=0
+    local pf_file
+    pf_file="$(mps_ports_file "$short_name")"
+    if [[ -f "$pf_file" ]]; then
+        port_fwd_count="$(wc -l < "$pf_file")"
+    fi
+    if [[ $port_fwd_count -gt 0 ]]; then
+        printf "  %-14s %s\n" "Ports:" "${port_fwd_count} forwarded"
     fi
     if [[ $transfer_count -gt 0 ]]; then
         printf "  %-14s %s\n" "Transferred:" "${transfer_count} file(s)"

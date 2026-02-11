@@ -99,6 +99,15 @@ cmd_up() {
             # Re-establish mounts if needed
             _up_restore_mounts "$instance_name" "$arg_path" "$arg_no_mount"
 
+            # Re-establish port forwards (kill stale, then auto-forward)
+            local short_name
+            short_name="$(mps_short_name "$instance_name")"
+            mps_kill_port_forwards "$short_name"
+            local ports_file
+            ports_file="$(mps_ports_file "$short_name")"
+            [[ -f "$ports_file" ]] && true > "$ports_file"
+            mps_auto_forward_ports "$instance_name" "$short_name"
+
             _up_show_info "$instance_name"
             ;;
 
@@ -112,6 +121,15 @@ cmd_up() {
             mp_start "$instance_name"
 
             _up_restore_mounts "$instance_name" "$arg_path" "$arg_no_mount"
+
+            # Re-establish port forwards (kill stale, then auto-forward)
+            local short_name
+            short_name="$(mps_short_name "$instance_name")"
+            mps_kill_port_forwards "$short_name"
+            local ports_file
+            ports_file="$(mps_ports_file "$short_name")"
+            [[ -f "$ports_file" ]] && true > "$ports_file"
+            mps_auto_forward_ports "$instance_name" "$short_name"
 
             _up_show_info "$instance_name"
             ;;
@@ -162,10 +180,20 @@ _up_show_info() {
     local ip=""
     ip="$(mp_ipv4 "$instance_name" 2>/dev/null)" || true
 
+    local port_fwd_count=0
+    local pf_file
+    pf_file="$(mps_ports_file "$short_name")"
+    if [[ -f "$pf_file" ]]; then
+        port_fwd_count="$(wc -l < "$pf_file")"
+    fi
+
     echo ""
     printf "  %-14s %s\n" "Instance:" "$instance_name"
     if [[ -n "$ip" ]]; then
         printf "  %-14s %s\n" "IP:" "$ip"
+    fi
+    if [[ $port_fwd_count -gt 0 ]]; then
+        printf "  %-14s %s\n" "Ports:" "${port_fwd_count} forwarded"
     fi
     echo ""
     mps_log_info "Connect with: mps shell --name ${short_name}"

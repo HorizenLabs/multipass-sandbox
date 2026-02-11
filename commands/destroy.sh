@@ -78,6 +78,15 @@ cmd_destroy() {
         mps_log_debug "Removed metadata: ${meta_file}"
     fi
 
+    # ---- Kill port forwards and remove .ports file ----
+    mps_kill_port_forwards "$short_name"
+    local ports_file
+    ports_file="$(mps_ports_file "$short_name")"
+    if [[ -f "$ports_file" ]]; then
+        rm -f "$ports_file"
+        mps_log_debug "Removed ports file: ${ports_file}"
+    fi
+
     # ---- Remove SSH config if present ----
     local ssh_config="${HOME}/.ssh/config.d/${instance_name}"
     if [[ -f "$ssh_config" ]]; then

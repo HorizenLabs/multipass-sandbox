@@ -95,58 +95,13 @@ _port_forward() {
         mps_die "Instance '$name' is not running (state: $state). Start it with: mps up $name"
     fi
 
-    # Get IP
-    local ip
-    ip="$(mp_ipv4 "$instance_name")"
-    if [[ -z "$ip" ]]; then
-        mps_die "Cannot determine IP for instance '$name'"
-    fi
-
-    # Get SSH key info
-    local ssh_key="" ssh_user="ubuntu"
-    local ssh_info
-    ssh_info="$(mp_ssh_info "$instance_name")"
-    while IFS='=' read -r key val; do
-        case "$key" in
-            SSH_KEY) ssh_key="$val" ;;
-            USER)    ssh_user="$val" ;;
-        esac
-    done <<< "$ssh_info"
-
-    # Track port forwards in state file
-    local ports_file
-    ports_file="$(mps_state_dir)/${name}.ports"
-
-    # Start SSH port forward in background
     mps_log_info "Forwarding localhost:${host_port} → ${instance_name}:${guest_port}..."
 
-    local -a ssh_cmd=(ssh -N -f
-        -L "${host_port}:localhost:${guest_port}"
-        -o StrictHostKeyChecking=no
-        -o UserKnownHostsFile=/dev/null
-        -o LogLevel=ERROR
-    )
-
-    if [[ -n "$ssh_key" && -f "$ssh_key" ]]; then
-        ssh_cmd+=(-i "$ssh_key")
-    fi
-
-    ssh_cmd+=("${ssh_user}@${ip}")
-
-    if ! "${ssh_cmd[@]}"; then
+    if ! mps_forward_port "$instance_name" "$name" "${host_port}:${guest_port}"; then
         mps_die "Failed to establish port forward"
     fi
 
-    # Find the SSH process PID (most recent ssh with this forwarding)
-    local pid
-    pid="$(pgrep -f "ssh.*-L.*${host_port}:localhost:${guest_port}.*${ip}" | tail -1)"
-
-    if [[ -n "$pid" ]]; then
-        echo "${host_port}:${guest_port}:${pid}" >> "$ports_file"
-        mps_log_info "Port forward active (PID: ${pid}): localhost:${host_port} → ${instance_name}:${guest_port}"
-    else
-        mps_log_warn "Port forward started but could not track PID"
-    fi
+    mps_log_info "Port forward active: localhost:${host_port} → ${instance_name}:${guest_port}"
 }
 
 # ---------- port list ----------

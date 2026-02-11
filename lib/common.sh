@@ -398,3 +398,181 @@ mps_confirm() {
     read -r response
     [[ "$response" =~ ^[Yy]([Ee][Ss])?$ ]]
 }
+
+# ---------- Port Forwarding Helpers ----------
+
+# Return the path to the .ports tracking file for an instance
+mps_ports_file() {
+    local short_name="$1"
+    echo "$(mps_state_dir)/${short_name}.ports"
+}
+
+# Gather port specs from MPS_PORTS config and instance metadata.
+# Deduplicates by host_port (first occurrence wins).
+# Outputs newline-separated host:guest pairs.
+mps_collect_port_specs() {
+    local short_name="$1"
+    local -A seen=()
+    local -a specs=()
+
+    # Source 1: MPS_PORTS config (space-separated host:guest pairs)
+    local port_spec
+    if [[ -n "${MPS_PORTS:-}" ]]; then
+        for port_spec in $MPS_PORTS; do
+            local hp="${port_spec%%:*}"
+            if [[ -z "${seen[$hp]:-}" ]]; then
+                seen[$hp]=1
+                specs+=("$port_spec")
+            fi
+        done
+    fi
+
+    # Source 2: MPS_PORT_FORWARD+ entries in instance metadata
+    local meta_file
+    meta_file="$(mps_instance_meta "$short_name")"
+    if [[ -f "$meta_file" ]]; then
+        while IFS='=' read -r key val; do
+            if [[ "$key" == "MPS_PORT_FORWARD+" ]]; then
+                local hp="${val%%:*}"
+                if [[ -z "${seen[$hp]:-}" ]]; then
+                    seen[$hp]=1
+                    specs+=("$val")
+                fi
+            fi
+        done < "$meta_file"
+    fi
+
+    local s
+    for s in "${specs[@]}"; do
+        echo "$s"
+    done
+}
+
+# Forward a single port via SSH tunnel.
+# Returns 0 on success, 1 on failure (warns but never dies).
+mps_forward_port() {
+    local instance_name="$1"
+    local short_name="$2"
+    local port_spec="$3"
+
+    # Parse and validate
+    local host_port="${port_spec%%:*}"
+    local guest_port="${port_spec#*:}"
+
+    if [[ -z "$host_port" || -z "$guest_port" ]]; then
+        mps_log_warn "Invalid port spec: '${port_spec}' — skipping"
+        return 1
+    fi
+    if [[ ! "$host_port" =~ ^[0-9]+$ ]] || [[ ! "$guest_port" =~ ^[0-9]+$ ]]; then
+        mps_log_warn "Ports must be numbers (got '${port_spec}') — skipping"
+        return 1
+    fi
+
+    # Get instance IP
+    local ip
+    ip="$(mp_ipv4 "$instance_name")" || true
+    if [[ -z "$ip" ]]; then
+        mps_log_warn "Cannot determine IP for '${instance_name}' — skipping port ${port_spec}"
+        return 1
+    fi
+
+    # Get SSH credentials
+    local ssh_key="" ssh_user="ubuntu"
+    local ssh_info
+    ssh_info="$(mp_ssh_info "$instance_name")"
+    while IFS='=' read -r key val; do
+        case "$key" in
+            SSH_KEY) ssh_key="$val" ;;
+            USER)    ssh_user="$val" ;;
+        esac
+    done <<< "$ssh_info"
+
+    # Check for existing active tunnel on same host port
+    local ports_file
+    ports_file="$(mps_ports_file "$short_name")"
+    if [[ -f "$ports_file" ]]; then
+        while IFS=: read -r fhp _ fpid; do
+            if [[ "$fhp" == "$host_port" && -n "$fpid" ]] && kill -0 "$fpid" 2>/dev/null; then
+                mps_log_debug "Port ${host_port} already forwarded (PID ${fpid}) — skipping"
+                return 0
+            fi
+        done < "$ports_file"
+    fi
+
+    # Build SSH tunnel command
+    local -a ssh_cmd=(ssh -N -f
+        -L "${host_port}:localhost:${guest_port}"
+        -o StrictHostKeyChecking=no
+        -o UserKnownHostsFile=/dev/null
+        -o LogLevel=ERROR
+    )
+    if [[ -n "$ssh_key" && -f "$ssh_key" ]]; then
+        ssh_cmd+=(-i "$ssh_key")
+    fi
+    ssh_cmd+=("${ssh_user}@${ip}")
+
+    if ! "${ssh_cmd[@]}"; then
+        mps_log_warn "Failed to forward port ${host_port}:${guest_port}"
+        return 1
+    fi
+
+    # Track PID
+    local pid
+    pid="$(pgrep -f "ssh.*-L.*${host_port}:localhost:${guest_port}.*${ip}" | tail -1)" || true
+    if [[ -n "$pid" ]]; then
+        echo "${host_port}:${guest_port}:${pid}" >> "$ports_file"
+        mps_log_debug "Port forward active (PID ${pid}): localhost:${host_port} → ${instance_name}:${guest_port}"
+    else
+        mps_log_warn "Port forward started but could not track PID for ${port_spec}"
+    fi
+    return 0
+}
+
+# Auto-forward all ports gathered from config and metadata.
+mps_auto_forward_ports() {
+    local instance_name="$1"
+    local short_name="$2"
+    local count=0
+
+    local specs
+    specs="$(mps_collect_port_specs "$short_name")"
+    if [[ -z "$specs" ]]; then
+        return 0
+    fi
+
+    local spec
+    while IFS= read -r spec; do
+        [[ -z "$spec" ]] && continue
+        if mps_forward_port "$instance_name" "$short_name" "$spec"; then
+            count=$((count + 1))
+        fi
+    done <<< "$specs"
+
+    if [[ $count -gt 0 ]]; then
+        mps_log_info "Forwarded ${count} port(s)."
+    fi
+}
+
+# Kill all tracked port forwards for an instance.
+# Returns silently if no .ports file exists.
+mps_kill_port_forwards() {
+    local short_name="$1"
+    local ports_file
+    ports_file="$(mps_ports_file "$short_name")"
+
+    if [[ ! -f "$ports_file" ]]; then
+        return 0
+    fi
+
+    local killed=0
+    while IFS=: read -r _hp _ pid; do
+        if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
+            kill "$pid" 2>/dev/null || true
+            killed=$((killed + 1))
+        fi
+    done < "$ports_file"
+
+    if [[ $killed -gt 0 ]]; then
+        mps_log_debug "Killed ${killed} port forward(s) for '${short_name}'"
+    fi
+}

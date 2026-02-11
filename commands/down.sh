@@ -69,10 +69,18 @@ cmd_down() {
         mps_die "Instance '${instance_name}' is in unexpected state: ${state}"
     fi
 
+    # ---- Kill port forwards ----
+    local short_name
+    short_name="$(mps_short_name "$instance_name")"
+    mps_kill_port_forwards "$short_name"
+    local ports_file
+    ports_file="$(mps_ports_file "$short_name")"
+    [[ -f "$ports_file" ]] && true > "$ports_file"
+
     # ---- Stop ----
     mp_stop "$instance_name" "$arg_force"
 
-    mps_log_info "Sandbox '$(mps_short_name "$instance_name")' stopped."
+    mps_log_info "Sandbox '${short_name}' stopped."
 }
 
 _down_usage() {

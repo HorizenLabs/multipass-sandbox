@@ -32,11 +32,13 @@
 - [ ] Actual Backblaze B2 bucket + Cloudflare proxy setup (handled externally)
 - [ ] CI pipeline (GitHub Actions) for automated image builds
 
-## Phase 3 — Port Forwarding: DONE (scaffolding)
+## Phase 3 — Port Forwarding: DONE
 
 - [x] `commands/port.sh` — `port forward` (SSH tunnel) and `port list` (PID tracking)
-- [ ] Auto-forwarding from `MPS_PORTS` on `mps up`
-- [ ] Port forward cleanup on `mps down`/`mps destroy`
+- [x] Auto-forwarding from `MPS_PORTS` config and `--port` flags on `mps create`/`mps up`
+- [x] Port forward cleanup on `mps down` (kill + truncate) and `mps destroy` (kill + delete)
+- [x] Shared port helpers in `lib/common.sh` (collect, forward, auto-forward, kill)
+- [x] `commands/port.sh` refactored to use shared `mps_forward_port()` helper
 
 ## Phase 4 — PowerShell Parity (Windows): NOT STARTED
 
@@ -69,9 +71,6 @@
 
 ## Known Issues / TODO
 
-- Port auto-forwarding from `MPS_PORTS` not wired into `mps up` post-start hooks
-- Port forward cleanup not triggered on `mps down`/`mps destroy`
-- No `.ports` file cleanup when destroying instances
 - Cloud-init templates duplicate the full base setup (blockchain/ai-agent copy all of base) — could refactor to merge at build time
 - README.md needs updating to reflect auto-naming, --name flag, B2 image system, dockerized build, and `mps transfer` command
 - `lint-powershell` fails because `pwsh` is not installed in the builder image (py-psscriptanalyzer needs it)
