@@ -25,6 +25,9 @@ YAML_FILES   := $(shell find templates/ -name '*.yaml' 2>/dev/null)
 HCL_FILES    := $(shell find images/ -name '*.pkr.hcl' 2>/dev/null)
 DOCKERFILES  := Dockerfile.builder
 
+BUILDER_STAMP := .stamp-builder
+BUILDER_DEPS  := Dockerfile.builder docker/entrypoint.sh
+
 .PHONY: help builder install test lint lint-bash lint-powershell lint-dockerfile lint-makefile lint-yaml lint-hcl image-base image-blockchain publish-base publish-blockchain clean
 
 # ---------- Help ----------
@@ -33,8 +36,11 @@ help: ## Show this help
 		awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-24s\033[0m %s\n", $$1, $$2}'
 
 # ---------- Builder image ----------
-builder: ## Build the mps-builder Docker image
-	docker build -f Dockerfile.builder -t $(BUILDER_IMAGE):$(BUILDER_TAG) .
+builder: $(BUILDER_STAMP) ## Build the mps-builder Docker image
+
+$(BUILDER_STAMP): $(BUILDER_DEPS)
+	docker build --progress plain -f Dockerfile.builder -t $(BUILDER_IMAGE):$(BUILDER_TAG) .
+	@touch $@
 
 # ---------- Install (runs on host) ----------
 install: ## Install mps (symlink to PATH, runs on host)
@@ -42,13 +48,13 @@ install: ## Install mps (symlink to PATH, runs on host)
 	@./install.sh
 
 # ---------- Test ----------
-test: ## Run BATS tests inside builder container
+test: $(BUILDER_STAMP) ## Run BATS tests inside builder container
 	$(DOCKER_RUN) bats tests/
 
 # ---------- Lint (all) ----------
 lint: lint-bash lint-powershell lint-dockerfile lint-makefile lint-yaml lint-hcl ## Run all linters
 
-lint-bash: ## Lint Bash scripts with shellcheck
+lint-bash: $(BUILDER_STAMP) ## Lint Bash scripts with shellcheck
 	$(DOCKER_RUN) bash -c '\
 		exit_code=0; \
 		for f in $(BASH_SCRIPTS); do \
@@ -59,7 +65,7 @@ lint-bash: ## Lint Bash scripts with shellcheck
 		done; \
 		exit $$exit_code'
 
-lint-powershell: ## Lint PowerShell scripts with py-psscriptanalyzer
+lint-powershell: $(BUILDER_STAMP) ## Lint PowerShell scripts with py-psscriptanalyzer
 	@if [ -n "$(PS_SCRIPTS)" ]; then \
 		$(DOCKER_RUN) bash -c '\
 			exit_code=0; \
@@ -74,7 +80,7 @@ lint-powershell: ## Lint PowerShell scripts with py-psscriptanalyzer
 		echo "No PowerShell scripts found, skipping."; \
 	fi
 
-lint-dockerfile: ## Lint Dockerfiles with hadolint
+lint-dockerfile: $(BUILDER_STAMP) ## Lint Dockerfiles with hadolint
 	$(DOCKER_RUN) bash -c '\
 		exit_code=0; \
 		for f in $(DOCKERFILES); do \
@@ -85,12 +91,12 @@ lint-dockerfile: ## Lint Dockerfiles with hadolint
 		done; \
 		exit $$exit_code'
 
-lint-makefile: ## Lint Makefile with checkmake
+lint-makefile: $(BUILDER_STAMP) ## Lint Makefile with checkmake
 	$(DOCKER_RUN) bash -c '\
 		echo "checkmake: Makefile"; \
 		checkmake Makefile || true'
 
-lint-yaml: ## Lint YAML files with yamllint
+lint-yaml: $(BUILDER_STAMP) ## Lint YAML files with yamllint
 	@if [ -n "$(YAML_FILES)" ]; then \
 		$(DOCKER_RUN) bash -c '\
 			exit_code=0; \
@@ -105,7 +111,7 @@ lint-yaml: ## Lint YAML files with yamllint
 		echo "No YAML files found, skipping."; \
 	fi
 
-lint-hcl: ## Lint HCL/Packer files with packer fmt
+lint-hcl: $(BUILDER_STAMP) ## Lint HCL/Packer files with packer fmt
 	@if [ -n "$(HCL_FILES)" ]; then \
 		$(DOCKER_RUN) bash -c '\
 			exit_code=0; \
@@ -142,5 +148,5 @@ publish-blockchain: ## Publish blockchain image to B2 (requires VERSION=x.y.z)
 # ---------- Clean ----------
 clean: ## Remove build artifacts and caches
 	@echo "Cleaning..."
-	@rm -rf build/ dist/
+	@rm -rf build/ dist/ .stamp-*
 	@echo "Done."

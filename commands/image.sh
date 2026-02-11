@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2154  # color vars defined in lib/common.sh
 # commands/image.sh — mps image [list|pull]
 
 _image_usage() {
@@ -187,7 +188,7 @@ _image_pull() {
     mkdir -p "$cache_dir"
     local dest_file="${cache_dir}/${arch}.img"
 
-    mps_log_info "Downloading ${image_name}:${image_tag} (${arch})..."
+    mps_log_info "Downloading ${image_name}:${image_version} (${arch})..."
     if ! curl --progress-bar -fSL "$full_url" -o "$dest_file"; then
         rm -f "$dest_file"
         mps_die "Failed to download image from ${full_url}"

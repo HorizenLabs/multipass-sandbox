@@ -196,6 +196,6 @@ MPS_SSH_AUTO_CONFIG=true
 
 - `install.sh` / `install.ps1`
 - BATS test suite
-- shellcheck clean
+- shellcheck clean (done — SC2154 directives + bug fixes)
 - GitHub Actions CI pipeline
-- Makefile targets
+- Makefile targets (done — `.stamp-builder` auto-builds builder image as dependency of lint/test)

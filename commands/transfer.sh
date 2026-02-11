@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2154  # color vars defined in lib/common.sh
 # commands/transfer.sh — mps transfer [--name <name>] [--] <source...> <destination>
 #
 # Transfer files between host and a running sandbox. Guest paths use a

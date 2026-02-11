@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2154  # color vars defined in lib/common.sh
 # commands/exec.sh — mps exec [--name <name>] -- <command...>
 #
 # Execute a command inside a running sandbox. Everything after '--' is

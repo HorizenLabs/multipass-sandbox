@@ -10,12 +10,10 @@ MPS_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 echo "=== Building MPS Base Image ==="
 
 # Check dependencies
-for cmd in packer; do
-    if ! command -v "$cmd" &>/dev/null; then
-        echo "ERROR: '$cmd' is required but not installed."
-        exit 1
-    fi
-done
+if ! command -v packer &>/dev/null; then
+    echo "ERROR: 'packer' is required but not installed."
+    exit 1
+fi
 
 cd "$SCRIPT_DIR"
 

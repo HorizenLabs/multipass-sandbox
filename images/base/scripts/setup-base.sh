@@ -26,8 +26,8 @@ rm -f /var/lib/dbus/machine-id
 rm -rf /tmp/* /var/tmp/*
 
 # Clear bash history
-> /home/ubuntu/.bash_history
-> /root/.bash_history
+: > /home/ubuntu/.bash_history
+: > /root/.bash_history
 
 # Zero free space for better compression
 dd if=/dev/zero of=/EMPTY bs=1M 2>/dev/null || true

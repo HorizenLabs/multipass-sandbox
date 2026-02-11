@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2154  # color vars defined in lib/common.sh
 # commands/up.sh — mps up [name] [path]
 #
 # Ensure a sandbox is running. Creates it if it does not exist, starts it
@@ -65,7 +66,7 @@ cmd_up() {
 
     # ---- Resolve mount first (needed for auto-naming) ----
     if [[ "$arg_no_mount" == "true" ]]; then
-        MPS_NO_AUTOMOUNT=true
+        export MPS_NO_AUTOMOUNT=true
     fi
     mps_resolve_mount "$arg_path"
 

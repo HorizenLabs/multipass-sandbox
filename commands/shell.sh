@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2154  # color vars defined in lib/common.sh
 # commands/shell.sh — mps shell [--name <name>]
 #
 # Open an interactive shell inside a running sandbox. Optionally set the

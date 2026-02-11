@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2154  # color vars defined in lib/common.sh
 # commands/destroy.sh — mps destroy [--name <name>]
 #
 # Permanently remove a sandbox. Deletes the Multipass instance (with purge),

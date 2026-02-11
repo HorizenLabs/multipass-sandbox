@@ -51,9 +51,11 @@
 - [x] `Dockerfile.builder` — Builder image with packer, shellcheck, hadolint, bats, b2, yamllint, checkmake, py-psscriptanalyzer, gosu
 - [x] `docker/entrypoint.sh` — uid:gid matching entrypoint
 - [x] `Makefile` — Dockerized: builder, lint (6 sub-targets), test, image-base, image-blockchain, publish-base, publish-blockchain
+- [x] `Makefile` — `.stamp-builder` dependency: lint/test auto-build builder image when Dockerfile or entrypoint changes
 - [x] `install.sh` — Installer (symlink + dep check)
 - [x] `.gitignore`
 - [x] `README.md`
+- [x] Shellcheck clean — all warnings resolved (SC2154 directives for sourced color vars, real bug fixes)
 - [ ] BATS test suite
 - [ ] GitHub Actions CI pipeline
 
@@ -72,3 +74,5 @@
 - No `.ports` file cleanup when destroying instances
 - Cloud-init templates duplicate the full base setup (blockchain/ai-agent copy all of base) — could refactor to merge at build time
 - README.md needs updating to reflect auto-naming, --name flag, B2 image system, dockerized build, and `mps transfer` command
+- `lint-powershell` fails because `pwsh` is not installed in the builder image (py-psscriptanalyzer needs it)
+- Hadolint warns on `Dockerfile.builder`: unpinned apt/pip versions and missing `SHELL ["/bin/bash", "-o", "pipefail", "-c"]`

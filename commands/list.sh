@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2154  # color vars defined in lib/common.sh
 # commands/list.sh — mps list
 #
 # List all sandboxes managed by mps. Displays a formatted table with

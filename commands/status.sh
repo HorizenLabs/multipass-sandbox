@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2154  # color vars defined in lib/common.sh
 # commands/status.sh — mps status [--name <name>]
 #
 # Show detailed status of a sandbox including resources, image,

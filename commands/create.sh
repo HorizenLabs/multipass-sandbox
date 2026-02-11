@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2154  # color vars defined in lib/common.sh
 # commands/create.sh — mps create [name] [path]
 #
 # Create a new sandbox VM. Launches a Multipass instance with the given
@@ -114,7 +115,7 @@ cmd_create() {
 
     # ---- Resolve mount (before name, since auto-name depends on mount path) ----
     if [[ "$arg_no_mount" == "true" ]]; then
-        MPS_NO_AUTOMOUNT=true
+        export MPS_NO_AUTOMOUNT=true
     fi
     mps_resolve_mount "$arg_path"
 

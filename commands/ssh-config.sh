@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2154  # color vars defined in lib/common.sh
 # commands/ssh-config.sh — mps ssh-config [--name <name>]
 #
 # Generate an SSH config block for a running sandbox, suitable for
@@ -76,7 +77,6 @@ cmd_ssh_config() {
 
     # ---- Get SSH info ----
     local ssh_ip="" ssh_key="" ssh_user=""
-    local ssh_line
     while IFS='=' read -r key val; do
         case "$key" in
             IP)       ssh_ip="$val" ;;

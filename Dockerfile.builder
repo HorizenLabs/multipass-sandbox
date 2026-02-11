@@ -25,6 +25,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         software-properties-common \
         unzip \
         wget \
+        xz-utils \
     && rm -rf /var/lib/apt/lists/*
 
 # ---------- gosu (step down from root) ----------
