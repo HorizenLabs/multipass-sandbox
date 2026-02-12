@@ -10,6 +10,12 @@ echo "=== MPS Base Image: Post-provisioning ==="
 # Wait for cloud-init to finish (should already be done, but be safe)
 cloud-init status --wait || true
 
+# Remove build-time password (Multipass injects its own SSH keys)
+passwd -l ubuntu
+# Remove build-time sshd override and disable SSH password authentication
+rm -f /etc/ssh/sshd_config.d/50-packer-build.conf
+sed -i 's/^PasswordAuthentication yes/PasswordAuthentication no/' /etc/ssh/sshd_config
+
 # Clean up apt cache
 apt-get autoremove -y
 apt-get clean

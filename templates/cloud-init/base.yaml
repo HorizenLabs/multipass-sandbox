@@ -125,11 +125,11 @@ runcmd:
     GO_VERSION=$(curl -fsSL "https://go.dev/dl/?mode=json" | jq -r ".[0].version")
     curl -fsSL "https://go.dev/dl/${GO_VERSION}.linux-${ARCH}.tar.gz" | tar -C /usr/local -xzf -
     # Add to system-wide profile
-    cat >> /etc/profile.d/golang.sh <<'GOEOF'
-    export PATH=$PATH:/usr/local/go/bin
-    export GOPATH=$HOME/go
-    export PATH=$PATH:$GOPATH/bin
-GOEOF
+    printf '%s\n' \
+      'export PATH=$PATH:/usr/local/go/bin' \
+      'export GOPATH=$HOME/go' \
+      'export PATH=$PATH:$GOPATH/bin' \
+      > /etc/profile.d/golang.sh
     chmod +x /etc/profile.d/golang.sh
 
   # ---------- Rust via rustup (as ubuntu user) ----------

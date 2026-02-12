@@ -17,7 +17,7 @@ variable "mps_root" {
 
 variable "ubuntu_version" {
   type    = string
-  default = "22.04"
+  default = "jammy"
 }
 
 variable "output_dir" {
@@ -25,8 +25,9 @@ variable "output_dir" {
   default = "output-base"
 }
 
-variable "iso_url" {
-  type = string
+variable "target_arch" {
+  type    = string
+  default = "amd64"
 }
 
 variable "qemu_binary" {
@@ -64,9 +65,16 @@ variable "efi_firmware_vars" {
   default = ""
 }
 
+locals {
+  base_cloud_init = trimprefix(
+    file("${var.mps_root}/templates/cloud-init/base.yaml"),
+    "#cloud-config\n"
+  )
+}
+
 source "qemu" "base" {
-  iso_url           = var.iso_url
-  iso_checksum      = "none"
+  iso_url           = "https://cloud-images.ubuntu.com/${var.ubuntu_version}/current/${var.ubuntu_version}-server-cloudimg-${var.target_arch}.img"
+  iso_checksum      = "file:https://cloud-images.ubuntu.com/${var.ubuntu_version}/current/SHA256SUMS"
   disk_image        = true
   output_directory  = var.output_dir
   vm_name           = "mps-base.qcow2"
@@ -82,15 +90,22 @@ source "qemu" "base" {
   memory            = 8192
   cpus              = 4
   ssh_username      = "ubuntu"
+  ssh_password      = "ubuntu"
   ssh_timeout       = "30m"
-  shutdown_command  = "sudo shutdown -P now"
+  shutdown_command  = "echo 'ubuntu' | sudo -S shutdown -P now"
   headless          = true
 
   cd_content = {
     "meta-data" = ""
-    "user-data" = file("${var.mps_root}/templates/cloud-init/base.yaml")
+    "user-data" = templatefile("${path.root}/packer-user-data.pkrtpl.hcl", {
+      base_config = local.base_cloud_init
+    })
   }
   cd_label = "cidata"
+
+  qemuargs = [
+    ["-serial", "mon:stdio"],
+  ]
 }
 
 build {

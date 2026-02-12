@@ -13,7 +13,7 @@ TARGET_ARCH="${TARGET_ARCH:-$HOST_ARCH}"
 case "$TARGET_ARCH" in
     amd64)
         PACKER_ARCH_VARS=(
-            -var "iso_url=https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-amd64.img"
+            -var "target_arch=amd64"
             -var "qemu_binary=qemu-system-x86_64"
             -var "machine_type=pc"
             -var "efi_boot=false"
@@ -23,7 +23,7 @@ case "$TARGET_ARCH" in
         ;;
     arm64)
         PACKER_ARCH_VARS=(
-            -var "iso_url=https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-arm64.img"
+            -var "target_arch=arm64"
             -var "qemu_binary=qemu-system-aarch64"
             -var "machine_type=virt"
             -var "efi_boot=true"

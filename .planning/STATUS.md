@@ -26,6 +26,13 @@
 - [x] `images/manifest.json` — Manifest template with SemVer versions + latest pointer
 - [x] `images/publish.sh` — Publish images to Backblaze B2 via `b2` CLI, update manifest
 - [x] `images/base/build.sh` + `packer.pkr.hcl` + `scripts/setup-base.sh`
+- [x] Packer build verified end-to-end (`make image-base` completes ~10 min)
+- [x] Fixed YAML syntax error in `base.yaml` — heredoc terminator broke YAML block scalar, preventing cloud-init from parsing any directives
+- [x] `images/base/packer-user-data.pkrtpl.hcl` — Build-time cloud-init wrapper that prepends password auth + sshd_config.d override to base template
+- [x] `packer.pkr.hcl` — Added `ssh_password`, `iso_checksum` (SHA256SUMS), templatized `ubuntu_version`/`target_arch`, serial console qemuargs
+- [x] `images/arch-config.sh` — Passes `target_arch` instead of `iso_url` (URL constructed in HCL)
+- [x] `scripts/setup-base.sh` — Post-build credential cleanup (lock password, remove sshd override, disable password SSH)
+- [x] `build.sh` — Output to `/tmp` to avoid cross-device rename on WSL2 Docker volumes; defensive `${VAR:?}` on `rm -rf`
 - [ ] Actual Backblaze B2 bucket + Cloudflare proxy setup (handled externally)
 - [ ] CI pipeline (GitHub Actions) for automated image builds
 
@@ -65,8 +72,8 @@
 - [x] `Dockerfile.builder` — Added qemu-system-x86, qemu-utils, qemu-system-arm, qemu-efi-aarch64
 - [x] `docker/entrypoint.sh` — KVM device group detection + usermod for builder user
 - [x] `images/arch-config.sh` — Shared arch detection: HOST_ARCH, TARGET_ARCH, KVM vs TCG, PACKER_ARCH_VARS array
-- [x] `images/base/packer.pkr.hcl` — Parameterized: iso_url, qemu_binary, machine_type, accelerator, cpu_type, efi_boot, efi_firmware_code/vars
-- [x] `images/base/build.sh` — Sources arch-config.sh, passes PACKER_ARCH_VARS to packer build
+- [x] `images/base/packer.pkr.hcl` — Parameterized: target_arch, ubuntu_version, qemu_binary, machine_type, accelerator, cpu_type, efi_boot, efi_firmware_code/vars; iso_checksum via SHA256SUMS
+- [x] `images/base/build.sh` — Sources arch-config.sh, passes PACKER_ARCH_VARS to packer build; /tmp output dir workaround for WSL2
 - [x] `Makefile` — ARCH variable, HOST_ARCH detection, KVM_FLAG conditional, DOCKER_RUN_IMAGE for image targets
 
 ## File Transfer: DONE
