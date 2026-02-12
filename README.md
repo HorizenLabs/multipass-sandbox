@@ -8,10 +8,10 @@ Isolated VM-based development environments powered by [Multipass](https://multip
 # Install
 ./install.sh
 
-# Create and start a sandbox (mounts current directory)
+# Create and start a sandbox (auto-names from CWD, mounts current directory)
 mps up
 
-# Open a shell
+# Open a shell (auto-resolves sandbox from CWD)
 mps shell
 
 # Run a command
@@ -36,17 +36,39 @@ mps destroy --force
 
 | Command | Description |
 |---------|-------------|
-| `mps create [name] [path]` | Create a new sandbox |
-| `mps up [name] [path]` | Create (if needed) and start a sandbox |
-| `mps down [name]` | Stop a sandbox |
-| `mps destroy [name]` | Remove a sandbox permanently |
-| `mps shell [name]` | Open an interactive shell |
-| `mps exec [name] -- <cmd>` | Execute a command in a sandbox |
+| `mps create [path] [flags]` | Create a new sandbox |
+| `mps up [path] [flags]` | Create (if needed) and start a sandbox |
+| `mps down [--name <name>]` | Stop a sandbox |
+| `mps destroy [--name <name>]` | Remove a sandbox permanently |
+| `mps shell [--name <name>]` | Open an interactive shell |
+| `mps exec [--name <name>] -- <cmd>` | Execute a command in a sandbox |
+| `mps transfer <src...> <dst>` | Transfer files between host and sandbox |
 | `mps list` | List all sandboxes |
-| `mps status [name]` | Show detailed sandbox status |
-| `mps ssh-config [name]` | Generate SSH config for VS Code |
+| `mps status [--name <name>]` | Show detailed sandbox status |
+| `mps ssh-config [--name <name>]` | Generate SSH config for VS Code |
 | `mps image list\|pull` | Manage sandbox images |
 | `mps port forward\|list` | Manage port forwarding |
+
+## Auto-Naming
+
+VMs are automatically named based on your project directory, cloud-init template, and profile:
+
+```
+mps-<folder>-<template>-<profile>
+```
+
+For example, running `mps up` from `~/projects/myapp` produces `mps-myapp-base-standard`.
+
+- Override with `--name <name>` flag or `MPS_NAME` in `.mps.env`
+- Long names (>40 chars) are truncated with a short hash suffix for uniqueness
+- Commands that operate on existing instances auto-resolve the name from CWD
+
+```bash
+mps up                          # Auto-named from CWD
+mps up --name mydev             # Explicit name
+mps shell                       # Auto-resolves sandbox for CWD
+mps shell --name mydev          # Explicit name
+```
 
 ## Mounting
 
@@ -58,16 +80,34 @@ mps up
 # Inside VM: cd /home/user/projects/myapp — same files!
 ```
 
-On Windows, drive letters are converted: `C:\Users\dev\project` → `/c/Users/dev/project`.
-
-Override with a path argument:
+On Windows, drive letters are converted: `C:\Users\dev\project` -> `/c/Users/dev/project`.
 
 ```bash
-mps up myvm /path/to/project    # Mount specific directory instead of CWD
-mps create myvm --no-mount      # No automatic mount
+mps up ~/code/project           # Mount specific directory instead of CWD
+mps create --no-mount --name scratch   # No automatic mount (requires --name)
+mps create --mount ./data:/home/ubuntu/data  # Extra mount (repeatable)
 ```
 
-Extra mounts from `.mps.env` are additive (added on top of the auto-mount).
+Extra mounts from `MPS_MOUNTS` in `.mps.env` are additive (on top of the auto-mount). Set `MPS_NO_AUTOMOUNT=true` to disable the CWD auto-mount.
+
+## File Transfer
+
+Transfer files between host and sandbox using the `:` prefix convention for guest paths:
+
+```bash
+# Host -> guest
+mps transfer ./config.json :/home/ubuntu/config.json
+mps transfer file1.txt file2.txt :/home/ubuntu/
+
+# Guest -> host
+mps transfer :/home/ubuntu/output.log ./output.log
+
+# With explicit sandbox name
+mps transfer --name mydev ./script.sh :/tmp/script.sh
+
+# Seed files during creation
+mps create --transfer ./setup.sh:/home/ubuntu/setup.sh
+```
 
 ## Configuration
 
@@ -88,6 +128,7 @@ MPS_DISK=100G
 MPS_PROFILE=heavy
 MPS_PORTS="8899:8899 8900:8900 3000:3000"
 MPS_MOUNTS="./data:~/extra-data"
+MPS_NO_AUTOMOUNT=false
 ```
 
 ## Profiles
@@ -95,42 +136,30 @@ MPS_MOUNTS="./data:~/extra-data"
 | Profile | CPUs | RAM | Disk |
 |---------|------|-----|------|
 | `lite` | 2 | 2GB | 20GB |
-| `standard` | 4 | 4GB | 50GB |
+| `standard` (default) | 4 | 4GB | 50GB |
 | `heavy` | 8 | 8GB | 100GB |
 
 ```bash
-mps create dev --profile heavy
+mps create --profile heavy
+mps create --profile lite --cpus 1 --memory 1G   # Profile + overrides
 ```
 
 ## Cloud-init Templates
 
 | Template | Includes |
 |----------|----------|
-| `base` | Docker (official), Node.js (nvm), Python (pip/venv/uv), Go, Rust (rustup), build tools, CLI tools, Solana CLI, Anchor, Foundry, Hardhat |
-
-```bash
-mps create dev --profile heavy
-```
-
-## VS Code Integration
-
-Generate an SSH config for VS Code Remote-SSH:
-
-```bash
-# Print to stdout
-mps ssh-config myvm
-
-# Write to ~/.ssh/config.d/
-mps ssh-config myvm --append
-```
-
-Then in VS Code: Remote-SSH → Connect to Host → `mps-myvm`.
+| `base` | Docker (official), Node.js (nvm + pnpm/yarn/bun), Python (pip/venv/uv/pyenv), Go, Rust (rustup + just), build tools (clang/llvm/cmake), CLI tools (ripgrep/fd/jq/yq/tmux), Solana CLI, Anchor, Foundry, Hardhat |
 
 ## Port Forwarding
 
+Ports are forwarded via SSH tunnels. Forward on create/up, or manage individually:
+
 ```bash
-# Forward host:3000 → VM:3000
-mps port forward myvm 3000:3000
+# Forward host:3000 -> VM:3000
+mps port forward 3000:3000
+
+# Forward during creation
+mps create --port 3000:3000 --port 8080:8080
 
 # List active forwards
 mps port list
@@ -139,24 +168,63 @@ mps port list
 # MPS_PORTS="8899:8899 3000:3000"
 ```
 
-## Building Images
+Ports are automatically cleaned up on `mps down` and `mps destroy`.
 
-Pre-built images skip cloud-init provisioning for faster startup:
+## VS Code Integration
+
+Generate an SSH config for VS Code Remote-SSH:
 
 ```bash
-make image-base          # Build base QCOW2 image with Packer
+# Print to stdout
+mps ssh-config
 
-mps image list --remote  # Browse available images
+# Append to ~/.ssh/config.d/
+mps ssh-config --append
+```
+
+Then in VS Code: Remote-SSH -> Connect to Host -> `mps-<name>`.
+
+## Pre-built Images
+
+Pre-built QCOW2 images skip cloud-init provisioning for faster startup. Images are distributed via Backblaze B2 with Cloudflare proxy, versioned with SemVer, and verified with SHA256 checksums.
+
+```bash
+# Browse available images
+mps image list --remote
+
+# Pull an image
 mps image pull base:latest
+mps image pull base:1.0.0
+
+# Build locally with Packer (runs inside Docker)
+make image-base                     # Native architecture
+make image-base ARCH=arm64          # Cross-architecture
 ```
 
 ## Development
 
+All build, lint, and test commands run inside Docker containers for reproducibility. The Makefile auto-builds the container images when their Dockerfiles change.
+
 ```bash
-make lint    # shellcheck all scripts
-make test    # Run BATS tests
-make help    # Show all targets
+make linter          # Build the linter image
+make builder         # Build the builder image (Packer, QEMU, b2)
+make lint            # Run all linters (shellcheck, hadolint, yamllint, checkmake, packer fmt, py-psscriptanalyzer)
+make test            # Run BATS tests
+make image-base      # Build base VM image with Packer
+make publish-base VERSION=1.0.0   # Publish to Backblaze B2
+make help            # Show all targets
 ```
+
+### Linters
+
+| File type | Linter |
+|-----------|--------|
+| Bash | shellcheck |
+| PowerShell | py-psscriptanalyzer |
+| Dockerfile | hadolint |
+| Makefile | checkmake |
+| YAML | yamllint |
+| HCL/Packer | packer fmt |
 
 ## License
 

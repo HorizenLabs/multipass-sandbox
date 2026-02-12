@@ -1,6 +1,11 @@
 # Multi Pass Sandbox (mps) — Windows Installer
 # Adds bin/mps.ps1 to PATH and creates ~/.mps/ directory structure.
 
+# PSScriptAnalyzer suppressions: Write-Host is intentional for colored installer output
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '')]
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseBOMForUnicodeEncodedFile', '')]
+param()
+
 $ErrorActionPreference = "Stop"
 
 $MpsRoot = Split-Path -Parent $MyInvocation.MyCommand.Path

@@ -86,6 +86,6 @@
 
 ## Known Issues / TODO
 
-- README.md needs updating to reflect auto-naming, --name flag, B2 image system, dockerized build, and `mps transfer` command
-- `lint-powershell` fails because `pwsh` is not installed in the builder image (py-psscriptanalyzer needs it)
 - Hadolint warns on `Dockerfile.builder`: unpinned apt/pip versions and missing `SHELL ["/bin/bash", "-o", "pipefail", "-c"]`
+- BATS test suite not yet written
+- GitHub Actions CI pipeline not yet configured
