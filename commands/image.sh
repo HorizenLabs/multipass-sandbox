@@ -19,7 +19,6 @@ ${_color_bold}Examples:${_color_reset}
     mps image list --remote
     mps image pull base
     mps image pull base:1.0.0
-    mps image pull blockchain:2.1.0
 EOF
 }
 

@@ -85,7 +85,6 @@ MPS_NAME=myproject-dev
 MPS_CPUS=8
 MPS_MEMORY=16G
 MPS_DISK=100G
-MPS_CLOUD_INIT=blockchain
 MPS_PROFILE=heavy
 MPS_PORTS="8899:8899 8900:8900 3000:3000"
 MPS_MOUNTS="./data:~/extra-data"
@@ -107,12 +106,10 @@ mps create dev --profile heavy
 
 | Template | Includes |
 |----------|----------|
-| `base` | Docker (official), Node.js (nvm), Python (pip/venv/uv), Go, Rust (rustup), build tools, CLI tools |
-| `blockchain` | Base + Solana CLI, Anchor, Foundry, Hardhat |
-| `ai-agent` | Base + audit/monitoring, AppArmor, resource limits, network logging |
+| `base` | Docker (official), Node.js (nvm), Python (pip/venv/uv), Go, Rust (rustup), build tools, CLI tools, Solana CLI, Anchor, Foundry, Hardhat |
 
 ```bash
-mps create dev --cloud-init blockchain
+mps create dev --profile heavy
 ```
 
 ## VS Code Integration
@@ -148,7 +145,6 @@ Pre-built images skip cloud-init provisioning for faster startup:
 
 ```bash
 make image-base          # Build base QCOW2 image with Packer
-make image-blockchain    # Build blockchain image
 
 mps image list --remote  # Browse available images
 mps image pull base:latest

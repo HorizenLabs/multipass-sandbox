@@ -6,9 +6,7 @@
 - [x] `lib/common.sh` — Logging, config cascade, path conversion, mount resolution, auto-naming, validation
 - [x] `lib/multipass.sh` — Multipass CLI wrappers with JSON parsing
 - [x] `bin/mps` — Main entry point with subcommand dispatch
-- [x] `templates/cloud-init/base.yaml` — Base cloud-init (Docker, Node.js, Python, Go, Rust, dev tools)
-- [x] `templates/cloud-init/blockchain.yaml` — Blockchain dev template (Solana, Foundry, Hardhat)
-- [x] `templates/cloud-init/ai-agent.yaml` — AI agent template (auditd, AppArmor, nftables)
+- [x] `templates/cloud-init/base.yaml` — Base cloud-init (Docker, Node.js, Python, Go, Rust, dev tools, Solana, Anchor, Foundry, Hardhat)
 - [x] `templates/profiles/lite.env` — 2 CPU, 2GB RAM, 20GB disk
 - [x] `templates/profiles/standard.env` — 4 CPU, 4GB RAM, 50GB disk
 - [x] `templates/profiles/heavy.env` — 8 CPU, 8GB RAM, 100GB disk
@@ -28,7 +26,6 @@
 - [x] `images/manifest.json` — Manifest template with SemVer versions + latest pointer
 - [x] `images/publish.sh` — Publish images to Backblaze B2 via `b2` CLI, update manifest
 - [x] `images/base/build.sh` + `packer.pkr.hcl` + `scripts/setup-base.sh`
-- [x] `images/blockchain/build.sh` + `packer.pkr.hcl` + `scripts/install-{rust,solana,foundry}.sh`
 - [ ] Actual Backblaze B2 bucket + Cloudflare proxy setup (handled externally)
 - [ ] CI pipeline (GitHub Actions) for automated image builds
 
@@ -50,10 +47,11 @@
 
 ## Phase 5 — Polish & CI: DONE (build system)
 
-- [x] `Dockerfile.builder` — Builder image with packer, shellcheck, hadolint, bats, b2, yamllint, checkmake, py-psscriptanalyzer, gosu, QEMU (x86+arm64)
+- [x] `Dockerfile.builder` — Builder image with Packer, b2, gosu, QEMU (x86+arm64)
+- [x] `Dockerfile.linter` — Linter/test image with shellcheck, hadolint, BATS, yamllint, checkmake, py-psscriptanalyzer, Packer (for fmt)
 - [x] `docker/entrypoint.sh` — uid:gid matching entrypoint, KVM group handling
-- [x] `Makefile` — Dockerized: builder, lint (6 sub-targets), test, image-base, image-blockchain, publish-base, publish-blockchain
-- [x] `Makefile` — `.stamp-builder` dependency: lint/test auto-build builder image when Dockerfile or entrypoint changes
+- [x] `Makefile` — Dockerized: builder, linter, lint (6 sub-targets), test, image-base, publish-base
+- [x] `Makefile` — `.stamp-builder`/`.stamp-linter` dependencies: auto-build images when Dockerfile or entrypoint changes
 - [x] `Makefile` — `ARCH=` variable for cross-architecture builds, conditional `--device /dev/kvm` passthrough
 - [x] `install.sh` — Installer (symlink + dep check)
 - [x] `.gitignore`
@@ -68,9 +66,7 @@
 - [x] `docker/entrypoint.sh` — KVM device group detection + usermod for builder user
 - [x] `images/arch-config.sh` — Shared arch detection: HOST_ARCH, TARGET_ARCH, KVM vs TCG, PACKER_ARCH_VARS array
 - [x] `images/base/packer.pkr.hcl` — Parameterized: iso_url, qemu_binary, machine_type, accelerator, cpu_type, efi_boot, efi_firmware_code/vars
-- [x] `images/blockchain/packer.pkr.hcl` — Same parameterization as base
 - [x] `images/base/build.sh` — Sources arch-config.sh, passes PACKER_ARCH_VARS to packer build
-- [x] `images/blockchain/build.sh` — Same as base
 - [x] `Makefile` — ARCH variable, HOST_ARCH detection, KVM_FLAG conditional, DOCKER_RUN_IMAGE for image targets
 
 ## File Transfer: DONE
@@ -83,7 +79,6 @@
 
 ## Known Issues / TODO
 
-- Cloud-init templates duplicate the full base setup (blockchain/ai-agent copy all of base) — could refactor to merge at build time
 - README.md needs updating to reflect auto-naming, --name flag, B2 image system, dockerized build, and `mps transfer` command
 - `lint-powershell` fails because `pwsh` is not installed in the builder image (py-psscriptanalyzer needs it)
 - Hadolint warns on `Dockerfile.builder`: unpinned apt/pip versions and missing `SHELL ["/bin/bash", "-o", "pipefail", "-c"]`

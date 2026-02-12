@@ -10,7 +10,7 @@ Internal CLI tool for spinning up isolated VM-based development environments usi
 - **Dependencies**: `multipass`, `jq`
 - **Image builds**: Packer (QCOW2), published to Backblaze B2 (served via Cloudflare)
 - **Image versioning**: SemVer (x.y.z) with `latest` pointer
-- **Build/Test**: All run inside `mps-builder` Docker container for reproducibility
+- **Build/Test**: All run inside Docker containers (`mps-builder` for image builds, `mps-linter` for lint/test)
 - **Tests**: BATS (planned)
 
 ## Project Structure
@@ -19,11 +19,12 @@ Internal CLI tool for spinning up isolated VM-based development environments usi
 - `lib/common.sh` — Logging, config cascade, path conversion, mount resolution, auto-naming
 - `lib/multipass.sh` — Thin wrappers around `multipass` CLI with `--format json` + `jq`
 - `commands/*.sh` — One file per subcommand, each exports `cmd_<name>()` function
-- `templates/cloud-init/` — Cloud-init YAML templates (base, blockchain, ai-agent)
+- `templates/cloud-init/` — Cloud-init YAML templates (base)
 - `templates/profiles/` — Resource profiles (lite, standard, heavy)
 - `config/defaults.env` — Shipped defaults
 - `images/` — Packer build scripts + `publish.sh` for B2 upload + `manifest.json`
-- `Dockerfile.builder` + `docker/entrypoint.sh` — Builder image with all dev tools
+- `Dockerfile.builder` + `docker/entrypoint.sh` — Builder image (Packer, QEMU, b2)
+- `Dockerfile.linter` — Linter/test image (shellcheck, hadolint, BATS, yamllint, etc.)
 - `Makefile` — All targets run inside builder container via `docker run`
 
 ## Key Conventions
@@ -42,9 +43,10 @@ Internal CLI tool for spinning up isolated VM-based development environments usi
 
 ## Build System
 
-All build/test/lint runs inside the `mps-builder` Docker image:
+Build/test/lint runs inside Docker containers — linter image for lint/test, builder image for Packer builds:
 ```
-make builder          # Build the builder image
+make linter           # Build the linter image (shellcheck, hadolint, BATS, etc.)
+make builder          # Build the builder image (Packer, QEMU, b2)
 make lint             # Run all linters (shellcheck, hadolint, yamllint, checkmake, packer fmt, py-psscriptanalyzer)
 make test             # Run BATS tests
 make image-base       # Build base VM image with Packer

@@ -53,7 +53,7 @@ ${_color_bold}Options:${_color_reset}
 ${_color_bold}Examples:${_color_reset}
     mps up                                  Start sandbox, auto-name from CWD
     mps up --name mydev                     Start sandbox with explicit name
-    mps create --cloud-init blockchain --profile heavy
+    mps create --profile heavy --cpus 8 --memory 16G
     mps shell --name mydev                  Open shell in sandbox
     mps exec --name mydev -- docker ps      Run command in sandbox
     mps transfer ./f.txt :/home/ubuntu/     Copy file into sandbox

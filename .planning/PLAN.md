@@ -44,9 +44,7 @@ A blockchain software development company needs an internal tool to spin up isol
 │
 ├── templates/
 │   ├── cloud-init/
-│   │   ├── base.yaml              # Base: Docker + core dev tools
-│   │   ├── blockchain.yaml        # Blockchain: Solana, Foundry, Hardhat
-│   │   └── ai-agent.yaml          # AI agent: sandboxing + monitoring
+│   │   └── base.yaml              # Base: Docker, core dev tools, blockchain tools
 │   └── profiles/
 │       ├── lite.env                # 2 CPU, 2GB RAM, 20GB disk
 │       ├── standard.env            # 4 CPU, 4GB RAM, 50GB disk
@@ -54,18 +52,11 @@ A blockchain software development company needs an internal tool to spin up isol
 │
 ├── images/
 │   ├── arch-config.sh             # Shared arch detection (KVM/TCG, PACKER_ARCH_VARS)
-│   ├── base/
-│   │   ├── build.sh               # Packer build script for base image
-│   │   ├── packer.pkr.hcl         # Packer template (parameterized for amd64/arm64)
-│   │   └── scripts/
-│   │       └── setup-base.sh      # Provisioning script baked into image
-│   └── blockchain/
-│       ├── build.sh
+│   └── base/
+│       ├── build.sh               # Packer build script for base image
 │       ├── packer.pkr.hcl         # Packer template (parameterized for amd64/arm64)
 │       └── scripts/
-│           ├── install-rust.sh
-│           ├── install-solana.sh
-│           └── install-foundry.sh
+│           └── setup-base.sh      # Provisioning script baked into image
 │
 ├── config/
 │   └── defaults.env               # Default configuration values
@@ -153,11 +144,7 @@ MPS_SSH_AUTO_CONFIG=true
 
 ### 1.6 Cloud-init templates
 
-**`base.yaml`**: Docker (official repo, v2 compose plugin only), Node.js (nvm + pnpm/yarn/bun), Python (pip/venv/uv/pyenv), Go (golang.org), Rust (rustup + just), build-essential + clang/llvm, vim/neovim/nano, tmux/htop/ripgrep/fd-find, shellcheck, hadolint, yq
-
-**`blockchain.yaml`**: base + Solana CLI/Anchor, Foundry (forge/cast/anvil/chisel), Hardhat
-
-**`ai-agent.yaml`**: base + auditd, AppArmor, resource limits, nftables monitoring
+**`base.yaml`**: Docker (official repo, v2 compose plugin only), Node.js (nvm + pnpm/yarn/bun), Python (pip/venv/uv/pyenv), Go (golang.org), Rust (rustup + just), build-essential + clang/llvm, vim/neovim/nano, tmux/htop/ripgrep/fd-find, shellcheck, hadolint, yq, Solana CLI/Anchor, Foundry (forge/cast/anvil/chisel), Hardhat
 
 ### 1.7 Commands
 
@@ -179,7 +166,7 @@ MPS_SSH_AUTO_CONFIG=true
 - `mps image list` — Local cached images + `--remote` from manifest
 - `mps image pull <name:tag>` — Download QCOW2 with SHA256 verification
 - Manifest format: `manifest.json` on S3 with per-arch URLs and checksums
-- Packer build pipeline for base and blockchain images
+- Packer build pipeline for base image
 
 ## Phase 3 — Port Forwarding & Advanced Networking
 

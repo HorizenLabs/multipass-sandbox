@@ -237,7 +237,7 @@ ${_color_bold}Examples:${_color_reset}
     mps up                          Auto-name from CWD, mount CWD
     mps up ~/code/proj              Auto-name from 'proj', mount that dir
     mps up --name mydev             Explicit name, mount CWD
-    mps up --profile heavy --cloud-init blockchain
+    mps up --profile heavy --cpus 8 --memory 16G
 
 EOF
 }

@@ -1,6 +1,7 @@
 #cloud-config
 # Multi Pass Sandbox — Base cloud-init template
-# Installs: Docker (official repo), Node.js (nvm), Python, Go, Rust, dev tools
+# Installs: Docker (official repo), Node.js (nvm), Python, Go, Rust, dev tools,
+#           Solana CLI, Anchor, Foundry, Hardhat
 
 package_update: true
 package_upgrade: false
@@ -47,10 +48,14 @@ packages:
   - libxml2-dev
   - libxmlsec1-dev
   - liblzma-dev
+  - libudev-dev
   # Python
   - python3
   - python3-pip
   - python3-venv
+  # Protobuf (needed by some blockchain tools)
+  - protobuf-compiler
+  - libprotobuf-dev
 
 groups:
   - docker
@@ -152,6 +157,39 @@ GOEOF
       echo "export PYENV_ROOT=\"\$HOME/.pyenv\"" >> "$HOME/.bashrc"
       echo "[[ -d \"\$PYENV_ROOT/bin\" ]] && export PATH=\"\$PYENV_ROOT/bin:\$PATH\"" >> "$HOME/.bashrc"
       echo "eval \"\$(pyenv init -)\"" >> "$HOME/.bashrc"
+    '
+
+  # ---------- Solana CLI + Anchor ----------
+  - |
+    sudo -u ubuntu bash -c '
+      export HOME=/home/ubuntu
+      source "$HOME/.cargo/env"
+      # Solana CLI
+      sh -c "$(curl -fsSL https://release.anza.xyz/stable/install)"
+      echo "export PATH=\"\$HOME/.local/share/solana/install/active_release/bin:\$PATH\"" >> "$HOME/.bashrc"
+      # Anchor
+      cargo install --git https://github.com/coral-xyz/anchor avm --force
+      source "$HOME/.cargo/env"
+      avm install latest
+      avm use latest
+    '
+
+  # ---------- Foundry (forge, cast, anvil, chisel) ----------
+  - |
+    sudo -u ubuntu bash -c '
+      export HOME=/home/ubuntu
+      curl -fsSL https://foundry.paradigm.xyz | bash
+      source "$HOME/.bashrc"
+      "$HOME/.foundry/bin/foundryup"
+    '
+
+  # ---------- Hardhat (via npm) ----------
+  - |
+    sudo -u ubuntu bash -c '
+      export HOME=/home/ubuntu
+      export NVM_DIR="$HOME/.nvm"
+      [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
+      npm install -g hardhat
     '
 
   # ---------- Final: ensure ubuntu owns its home ----------

@@ -1,5 +1,5 @@
 # Multi Pass Sandbox (mps) — Makefile
-# All build, test, and lint commands run inside the builder Docker container
+# All build, test, and lint commands run inside Docker containers
 # for reproducibility between local dev and CI/CD.
 
 SHELL := /bin/bash
@@ -8,6 +8,8 @@ SHELL := /bin/bash
 # ---------- Docker builder config ----------
 BUILDER_IMAGE  := mps-builder
 BUILDER_TAG    := latest
+LINTER_IMAGE   := mps-linter
+LINTER_TAG     := latest
 HOST_UID       := $(shell id -u)
 HOST_GID       := $(shell id -g)
 WORKDIR        := /workdir
@@ -16,14 +18,14 @@ WORKDIR        := /workdir
 ARCH ?=
 HOST_ARCH := $(shell uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
 
-# Base docker run (for lint/test — no KVM needed)
+# Docker run for lint/test (uses linter image — no QEMU needed)
 DOCKER_RUN := docker run --rm \
 	-v "$(CURDIR):$(WORKDIR)" \
 	-e HOST_UID=$(HOST_UID) \
 	-e HOST_GID=$(HOST_GID) \
-	$(BUILDER_IMAGE):$(BUILDER_TAG)
+	$(LINTER_IMAGE):$(LINTER_TAG)
 
-# Docker run for image builds (with conditional KVM)
+# Docker run for image builds (uses builder image, with conditional KVM)
 KVM_FLAG := $(shell [ -e /dev/kvm ] && \
 	( [ -z "$(ARCH)" ] || [ "$(ARCH)" = "$(HOST_ARCH)" ] ) && \
 	echo "--device /dev/kvm")
@@ -41,12 +43,18 @@ BASH_SCRIPTS := $(shell find bin/ lib/ commands/ images/ -name '*.sh' -o -name '
 PS_SCRIPTS   := $(shell find . -name '*.ps1' 2>/dev/null)
 YAML_FILES   := $(shell find templates/ -name '*.yaml' 2>/dev/null)
 HCL_FILES    := $(shell find images/ -name '*.pkr.hcl' 2>/dev/null)
-DOCKERFILES  := Dockerfile.builder
+DOCKERFILES  := Dockerfile.builder Dockerfile.linter
 
 BUILDER_STAMP := .stamp-builder
 BUILDER_DEPS  := Dockerfile.builder docker/entrypoint.sh
 
-.PHONY: help builder install test lint lint-bash lint-powershell lint-dockerfile lint-makefile lint-yaml lint-hcl image-base image-blockchain publish-base publish-blockchain clean
+LINTER_STAMP := .stamp-linter
+LINTER_DEPS  := Dockerfile.linter docker/entrypoint.sh
+
+.PHONY: all help builder linter install test lint lint-bash lint-powershell lint-dockerfile lint-makefile lint-yaml lint-hcl image-base publish-base clean
+
+# ---------- All ----------
+all: lint ## Run all linters (alias)
 
 # ---------- Help ----------
 help: ## Show this help
@@ -60,19 +68,26 @@ $(BUILDER_STAMP): $(BUILDER_DEPS)
 	docker build --progress plain -f Dockerfile.builder -t $(BUILDER_IMAGE):$(BUILDER_TAG) .
 	@touch $@
 
+# ---------- Linter image ----------
+linter: $(LINTER_STAMP) ## Build the mps-linter Docker image
+
+$(LINTER_STAMP): $(LINTER_DEPS)
+	docker build --progress plain -f Dockerfile.linter -t $(LINTER_IMAGE):$(LINTER_TAG) .
+	@touch $@
+
 # ---------- Install (runs on host) ----------
 install: ## Install mps (symlink to PATH, runs on host)
 	@chmod +x bin/mps install.sh
 	@./install.sh
 
 # ---------- Test ----------
-test: $(BUILDER_STAMP) ## Run BATS tests inside builder container
+test: $(LINTER_STAMP) ## Run BATS tests inside linter container
 	$(DOCKER_RUN) bats tests/
 
 # ---------- Lint (all) ----------
 lint: lint-bash lint-powershell lint-dockerfile lint-makefile lint-yaml lint-hcl ## Run all linters
 
-lint-bash: $(BUILDER_STAMP) ## Lint Bash scripts with shellcheck
+lint-bash: $(LINTER_STAMP) ## Lint Bash scripts with shellcheck
 	$(DOCKER_RUN) bash -c '\
 		exit_code=0; \
 		for f in $(BASH_SCRIPTS); do \
@@ -83,7 +98,7 @@ lint-bash: $(BUILDER_STAMP) ## Lint Bash scripts with shellcheck
 		done; \
 		exit $$exit_code'
 
-lint-powershell: $(BUILDER_STAMP) ## Lint PowerShell scripts with py-psscriptanalyzer
+lint-powershell: $(LINTER_STAMP) ## Lint PowerShell scripts with py-psscriptanalyzer
 	@if [ -n "$(PS_SCRIPTS)" ]; then \
 		$(DOCKER_RUN) bash -c '\
 			exit_code=0; \
@@ -98,7 +113,7 @@ lint-powershell: $(BUILDER_STAMP) ## Lint PowerShell scripts with py-psscriptana
 		echo "No PowerShell scripts found, skipping."; \
 	fi
 
-lint-dockerfile: $(BUILDER_STAMP) ## Lint Dockerfiles with hadolint
+lint-dockerfile: $(LINTER_STAMP) ## Lint Dockerfiles with hadolint
 	$(DOCKER_RUN) bash -c '\
 		exit_code=0; \
 		for f in $(DOCKERFILES); do \
@@ -109,12 +124,12 @@ lint-dockerfile: $(BUILDER_STAMP) ## Lint Dockerfiles with hadolint
 		done; \
 		exit $$exit_code'
 
-lint-makefile: $(BUILDER_STAMP) ## Lint Makefile with checkmake
+lint-makefile: $(LINTER_STAMP) ## Lint Makefile with checkmake
 	$(DOCKER_RUN) bash -c '\
 		echo "checkmake: Makefile"; \
 		checkmake Makefile || true'
 
-lint-yaml: $(BUILDER_STAMP) ## Lint YAML files with yamllint
+lint-yaml: $(LINTER_STAMP) ## Lint YAML files with yamllint
 	@if [ -n "$(YAML_FILES)" ]; then \
 		$(DOCKER_RUN) bash -c '\
 			exit_code=0; \
@@ -129,7 +144,7 @@ lint-yaml: $(BUILDER_STAMP) ## Lint YAML files with yamllint
 		echo "No YAML files found, skipping."; \
 	fi
 
-lint-hcl: $(BUILDER_STAMP) ## Lint HCL/Packer files with packer fmt
+lint-hcl: $(LINTER_STAMP) ## Lint HCL/Packer files with packer fmt
 	@if [ -n "$(HCL_FILES)" ]; then \
 		$(DOCKER_RUN) bash -c '\
 			exit_code=0; \
@@ -149,19 +164,11 @@ lint-hcl: $(BUILDER_STAMP) ## Lint HCL/Packer files with packer fmt
 image-base: $(BUILDER_STAMP) ## Build base VM image (ARCH=amd64|arm64)
 	$(DOCKER_RUN_IMAGE) bash -c 'cd images/base && bash build.sh'
 
-image-blockchain: $(BUILDER_STAMP) ## Build blockchain VM image (ARCH=amd64|arm64)
-	$(DOCKER_RUN_IMAGE) bash -c 'cd images/blockchain && bash build.sh'
-
 # ---------- Image publishing (Backblaze B2) ----------
 # Usage: make publish-base VERSION=1.0.0
-#        make publish-blockchain VERSION=1.0.0
 publish-base: ## Publish base image to Backblaze B2 (requires VERSION=x.y.z)
 	@test -n "$(VERSION)" || (echo "ERROR: VERSION is required (e.g., make publish-base VERSION=1.0.0)"; exit 1)
 	$(DOCKER_RUN) bash images/publish.sh base $(VERSION) images/base/output-base/mps-base.qcow2
-
-publish-blockchain: ## Publish blockchain image to B2 (requires VERSION=x.y.z)
-	@test -n "$(VERSION)" || (echo "ERROR: VERSION is required (e.g., make publish-blockchain VERSION=1.0.0)"; exit 1)
-	$(DOCKER_RUN) bash images/publish.sh blockchain $(VERSION) images/blockchain/output-blockchain/mps-blockchain.qcow2
 
 # ---------- Clean ----------
 clean: ## Remove build artifacts and caches

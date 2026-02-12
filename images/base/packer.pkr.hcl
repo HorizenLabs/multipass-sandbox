@@ -70,7 +70,7 @@ source "qemu" "base" {
   disk_image        = true
   output_directory  = var.output_dir
   vm_name           = "mps-base.qcow2"
-  disk_size         = "50G"
+  disk_size         = "100G"
   format            = "qcow2"
   qemu_binary       = var.qemu_binary
   machine_type      = var.machine_type
@@ -79,11 +79,11 @@ source "qemu" "base" {
   efi_boot          = var.efi_boot
   efi_firmware_code = var.efi_firmware_code
   efi_firmware_vars = var.efi_firmware_vars
-  memory            = 4096
+  memory            = 8192
   cpus              = 4
   ssh_username      = "ubuntu"
-  ssh_timeout       = "20m"
-  shutdown_command   = "sudo shutdown -P now"
+  ssh_timeout       = "30m"
+  shutdown_command  = "sudo shutdown -P now"
   headless          = true
 
   cd_content = {

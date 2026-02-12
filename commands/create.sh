@@ -315,7 +315,7 @@ ${_color_bold}Examples:${_color_reset}
     mps create                              Auto-name from CWD, mount CWD
     mps create ~/code/proj                  Auto-name from 'proj', mount that dir
     mps create --name mydev                 Explicit name, mount CWD
-    mps create --profile heavy --cloud-init blockchain
+    mps create --profile heavy --cpus 8 --memory 16G
     mps create --no-mount --name scratch    No mount, explicit name
 
 EOF
