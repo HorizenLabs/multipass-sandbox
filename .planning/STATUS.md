@@ -63,6 +63,15 @@
 - [x] `mps image list` — SOURCE column showing imported vs pulled
 - [x] `Makefile` — `import-base` target: build + import host-arch image in one step
 
+### Phase 4 Reopened (2) — Secure Dependency Installation: DONE
+
+- [x] Packer — HashiCorp apt repo with GPG-verified signing key (both Dockerfiles)
+- [x] b2 CLI — standalone binary from GitHub (v4.5.1) replaces pip package, SHA256 verification via `_hashes.txt`; removed python3/pip/venv from builder
+- [x] shellcheck — updated v0.10.0 → v0.11.0
+- [x] BATS — updated v1.11.0 → v1.13.0
+- [x] hadolint — updated v2.12.0 → v2.14.0, SHA256 checksum verification from GitHub release
+- [x] checkmake — updated v0.2.2 → v0.3.2, moved from `mrtazz/checkmake` to `checkmake/checkmake`, checksum verification
+
 ### Phase 4 Reopened — Polish & Refactor: DONE
 
 - [x] SSH key refactor — user-provided keys, on-demand injection via `mps ssh-config`
@@ -83,6 +92,20 @@
   - [x] Output extension changed from `.qcow2` to `.qcow2.img` across packer, build.sh, Makefile, image.sh
   - [x] `qemu-img convert` compaction step added to `build.sh`
   - [x] `.gitignore` updated for `*.qcow2.img`
+
+### Phase 4 Reopened (3) — Image Build Improvements: DONE
+
+- [x] Removed blockchain image flavor from `manifest.json` (consolidated into base)
+- [x] `build.sh` — Always generate SHA256 checksums after compaction
+- [x] Renamed `scripts/setup-base.sh` → `scripts/post-provision-base.sh`
+- [x] `post-provision-base.sh` — Clear Rust/Cargo build caches (registry, git, package-cache)
+- [x] `cloud-init.yaml` — `package_upgrade: true`
+- [x] `cloud-init.yaml` — yq: SHA-256 checksum verification via rhash `checksums` file
+- [x] `cloud-init.yaml` — hadolint: SHA-256 checksum verification via `.sha256` sidecar
+- [x] `cloud-init.yaml` — `just` moved from `cargo install` to apt package
+- [x] `cloud-init.yaml` — Added `cargo-audit` (via cargo install)
+- [x] `cloud-init.yaml` — Removed `pyenv` (uv manages Python versions)
+- [x] `cloud-init.yaml` — Added `libclang-dev` to packages
 
 ## Phase 5 — Testing: NOT STARTED
 

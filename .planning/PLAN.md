@@ -192,6 +192,29 @@ MPS_SSH_AUTO_CONFIG=true
 - Image build: HWE edge kernel, old kernel removal, 16G disk size, `.qcow2.img` extension, qemu-img compaction
 - `mps port forward` requires prior `mps ssh-config` setup (clear error message if not configured)
 
+### Phase 4 Reopened (2) — Secure Dependency Installation
+
+- Packer installed via HashiCorp apt repo with GPG-verified signing key (both Dockerfiles)
+- b2 CLI: standalone binary (v4.5.1) from GitHub replaces pip package, SHA256-verified; python3/pip/venv removed from builder
+- shellcheck updated to v0.11.0
+- BATS updated to v1.13.0
+- hadolint updated to v2.14.0 with SHA256 checksum verification
+- checkmake updated to v0.3.2 from `checkmake/checkmake` repo with checksum verification
+
+### Phase 4 Reopened (3) — Image Build Improvements
+
+- Removed blockchain image flavor from `manifest.json` (tools consolidated into base image)
+- `build.sh`: Always generate SHA256 checksums after qemu-img compaction (packer-generated ones become stale)
+- Renamed `scripts/setup-base.sh` → `scripts/post-provision-base.sh`
+- `post-provision-base.sh`: Clear Rust/Cargo build caches (registry, git, package-cache) to reduce image size
+- `cloud-init.yaml`: `package_upgrade: true` for fully up-to-date images
+- `cloud-init.yaml`: yq installation with SHA-256 checksum verification (from rhash `checksums` file, field $19)
+- `cloud-init.yaml`: hadolint installation with SHA-256 checksum verification (`.sha256` sidecar file)
+- `cloud-init.yaml`: `just` moved from `cargo install` to apt package (available in Ubuntu 24.04 universe)
+- `cloud-init.yaml`: Added `cargo-audit` (installed via cargo)
+- `cloud-init.yaml`: Removed `pyenv` (uv handles Python version management)
+- `cloud-init.yaml`: Added `libclang-dev` to packages
+
 ## Phase 5 — Testing
 
 - BATS test suite for `lib/common.sh`, `lib/multipass.sh`, and command scripts

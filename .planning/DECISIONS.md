@@ -77,6 +77,51 @@ Cascade (later wins): `config/defaults.env` → `~/.mps/config` → `.mps.env` �
 
 **Why setpriv over gosu**: gosu re-execs as the target user but does not apply supplementary groups added via `usermod`. When the builder user needed KVM group membership for QEMU acceleration, gosu silently dropped it, causing "permission denied" on `/dev/kvm`. `setpriv --groups` explicitly passes supplementary group IDs, fixing the issue. setpriv is also a util-linux builtin (no extra install needed).
 
+## Secure Dependency Installation
+
+**Decision**: Non-OS dependencies installed with integrity verification where possible. No pip packages in builder image.
+
+| Tool | Image | Install method | Verification |
+|---|---|---|---|
+| Packer | both | HashiCorp apt repo | GPG-signed repo (`hashicorp-archive-keyring.gpg`) |
+| b2 CLI v4.5.1 | builder | Standalone binary from GitHub | SHA256 from `_hashes.txt` sidecar file |
+| shellcheck v0.11.0 | linter | GitHub release tarball | None (no hashes published) |
+| hadolint v2.14.0 | linter | GitHub release binary | SHA256 checksum from `.sha256` sidecar file |
+| checkmake v0.3.2 | linter | GitHub release binary (`checkmake/checkmake` repo) | SHA256 checksum from `checksums.txt` |
+| BATS v1.13.0 | linter | GitHub release tarball | None (no hashes published) |
+| PowerShell | linter | Microsoft apt repo | GPG-signed repo (Microsoft prod signing key) |
+| yamllint, py-psscriptanalyzer | linter | pip | None (unchanged) |
+
+**b2 standalone binary**: Replaces pip-based `b2[full]` package. Eliminates `python3`, `python3-pip`, `python3-venv` from builder image. The `b2v4-linux` binary provides a stable v4 API with continued security fixes.
+
+**checkmake repo move**: Original `mrtazz/checkmake` repo is archived. The project moved to `checkmake/checkmake`, which publishes checksums and uses `v`-prefixed version tags in filenames (e.g., `checkmake-v0.3.2.linux.amd64`).
+
+## Cloud-init Dependency Verification
+
+**Decision**: Tools installed from GitHub releases in the base image cloud-init are SHA-256 verified where publishers provide checksums.
+
+| Tool | Verification | Notes |
+|---|---|---|
+| yq | SHA-256 from rhash `checksums` file (field $19) | Multi-hash format; SHA-256 is the 18th hash algorithm listed in `checksums_hashes_order` |
+| hadolint | SHA-256 from `.sha256` sidecar file | Same pattern as `Dockerfile.linter` |
+| shellcheck | None | No checksums published by upstream |
+
+## Python Version Management
+
+**Decision**: `uv` only — `pyenv` removed. uv can manage Python versions directly (`uv python install 3.12`), making pyenv redundant.
+
+## Just (Command Runner)
+
+**Decision**: Installed via apt (Ubuntu 24.04 universe repo, v1.21.0) instead of `cargo install`. Faster install, no Rust build cache bloat during image provisioning.
+
+## Cargo Build Cache Cleanup
+
+**Decision**: Clear `~/.cargo/registry`, `~/.cargo/git`, and `~/.cargo/.package-cache` in post-provisioning. Cargo binaries in `~/.cargo/bin/` are preserved. Reduces image size since Anchor/AVM builds from source generate large intermediate artifacts.
+
+## Image Flavors
+
+**Decision**: Single `base` image. Blockchain tools (Solana, Anchor, Foundry, Hardhat) are included in the base image — no separate `blockchain` flavor. Manifest updated accordingly.
+
 ## Linting Coverage
 
 | File type | Linter | Files |
@@ -138,9 +183,10 @@ Cascade (later wins): `config/defaults.env` → `~/.mps/config` → `.mps.env` �
 
 ## Image Disk Sizing
 
-**Decision**: 16G virtual disk size for QCOW2 images. Multipass + cloud-init `growpart` auto-expands at launch.
+**Decision**: 10G virtual disk size for QCOW2 images. Multipass + cloud-init `growpart` auto-expands at launch.
 
-- 16G < lite profile's 20G disk, so all profiles work without manual resize
+- 10G < lite profile's 20G disk, so all profiles work without manual resize
+- Reduced from 16G after measuring actual usage: 6.7G used (67% of 10G), ~3G headroom
 - Smaller virtual size means faster downloads and less wasted space in B2
 - `qemu-img convert` compaction step in `build.sh` for optimal on-disk size after Packer build
 

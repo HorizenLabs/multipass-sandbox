@@ -24,6 +24,11 @@ apt-get autoremove --purge -y
 apt-get clean
 rm -rf /var/lib/apt/lists/*
 
+# Clean up Rust/Cargo build caches (binaries in ~/.cargo/bin are preserved)
+rm -rf /home/ubuntu/.cargo/registry \
+       /home/ubuntu/.cargo/git \
+       /home/ubuntu/.cargo/.package-cache
+
 # Clean up cloud-init for re-initialization on first boot
 cloud-init clean --logs
 

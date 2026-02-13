@@ -23,12 +23,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         gnupg \
         jq \
         make \
-        python3 \
-        python3-pip \
-        python3-venv \
         software-properties-common \
         unzip \
-        wget \
         xz-utils \
         qemu-system-x86 \
         qemu-utils \
@@ -38,21 +34,31 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         xorriso \
     && rm -rf /var/lib/apt/lists/*
 
-# ---------- Packer ----------
-RUN set -eux; \
-    PACKER_VERSION="1.11.2"; \
-    ARCH="$(dpkg --print-architecture)"; \
-    curl -fsSL "https://releases.hashicorp.com/packer/${PACKER_VERSION}/packer_${PACKER_VERSION}_linux_${ARCH}.zip" \
-        -o /tmp/packer.zip; \
-    unzip /tmp/packer.zip -d /usr/local/bin; \
-    rm /tmp/packer.zip; \
-    packer --version
+# ---------- Packer (HashiCorp apt repo, GPG-verified) ----------
+# hadolint ignore=DL3008
+RUN curl -fsSL https://apt.releases.hashicorp.com/gpg \
+        | gpg --dearmor -o /usr/share/keyrings/hashicorp-archive-keyring.gpg \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com $(grep -oP '(?<=UBUNTU_CODENAME=).*' /etc/os-release || lsb_release -cs) main" \
+        > /etc/apt/sources.list.d/hashicorp.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends packer \
+    && rm -rf /var/lib/apt/lists/* \
+    && packer --version
 
-# ---------- Python tools: b2 CLI ----------
-# hadolint ignore=DL3013
-RUN pip3 install --no-cache-dir --break-system-packages \
-        "b2[full]" \
-    && b2 version
+# ---------- b2 CLI (standalone binary from GitHub, SHA256-verified) ----------
+RUN set -eux; \
+    B2_VERSION="4.5.1"; \
+    ARCH="$(dpkg --print-architecture)"; \
+    if [ "$ARCH" = "amd64" ]; then B2_BIN="b2v4-linux"; else B2_BIN="b2v4-linux-aarch64"; fi; \
+    curl -fsSL "https://github.com/Backblaze/B2_Command_Line_Tool/releases/download/v${B2_VERSION}/${B2_BIN}" \
+        -o /tmp/"${B2_BIN}"; \
+    curl -fsSL "https://github.com/Backblaze/B2_Command_Line_Tool/releases/download/v${B2_VERSION}/${B2_BIN}_hashes.txt" \
+        -o /tmp/"${B2_BIN}_hashes.txt"; \
+    EXPECTED=$(grep '^sha256 ' /tmp/"${B2_BIN}_hashes.txt" | awk '{print $2}'); \
+    echo "${EXPECTED}  /tmp/${B2_BIN}" | sha256sum -c -; \
+    install -m 755 /tmp/"${B2_BIN}" /usr/local/bin/b2; \
+    rm /tmp/"${B2_BIN}" /tmp/"${B2_BIN}_hashes.txt"; \
+    b2 version
 
 # ---------- Entrypoint ----------
 COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh

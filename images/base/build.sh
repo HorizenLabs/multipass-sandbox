@@ -64,11 +64,13 @@ for arch in "${ARCHITECTURES[@]}"; do
             "${PACKER_OUTPUT_DIR}/mps-base-${arch}.qcow2.img"
     fi
 
+    # Generate SHA256 checksum (must be after compaction)
+    echo "Generating SHA256 checksum..."
+    (cd "${PACKER_OUTPUT_DIR}" && sha256sum "mps-base-${arch}.qcow2.img" > "mps-base-${arch}.qcow2.img.sha256")
+
     # Copy arch-specific artifacts to output
     cp -a "${PACKER_OUTPUT_DIR}/mps-base-${arch}.qcow2.img" "$OUTPUT_DIR/"
-    if [[ -f "${PACKER_OUTPUT_DIR}/mps-base-${arch}.qcow2.img.sha256" ]]; then
-        cp -a "${PACKER_OUTPUT_DIR}/mps-base-${arch}.qcow2.img.sha256" "$OUTPUT_DIR/"
-    fi
+    cp -a "${PACKER_OUTPUT_DIR}/mps-base-${arch}.qcow2.img.sha256" "$OUTPUT_DIR/"
     rm -rf "${PACKER_OUTPUT_DIR:?err_unset}"
 
     echo "=== ${arch} build complete ==="

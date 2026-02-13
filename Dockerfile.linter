@@ -32,47 +32,58 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # ---------- shellcheck ----------
 RUN set -eux; \
-    SC_VERSION="v0.10.0"; \
+    SC_VERSION="v0.11.0"; \
     ARCH="$(uname -m)"; \
     curl -fsSL "https://github.com/koalaman/shellcheck/releases/download/${SC_VERSION}/shellcheck-${SC_VERSION}.linux.${ARCH}.tar.xz" \
         | tar -xJf - --strip-components=1 -C /usr/local/bin "shellcheck-${SC_VERSION}/shellcheck"; \
     shellcheck --version
 
-# ---------- hadolint ----------
+# ---------- hadolint (SHA256-verified) ----------
 RUN set -eux; \
-    HL_VERSION="v2.12.0"; \
+    HL_VERSION="v2.14.0"; \
     ARCH="$(dpkg --print-architecture)"; \
     if [ "$ARCH" = "amd64" ]; then HL_ARCH="x86_64"; else HL_ARCH="arm64"; fi; \
-    curl -fsSL "https://github.com/hadolint/hadolint/releases/download/${HL_VERSION}/hadolint-Linux-${HL_ARCH}" \
-        -o /usr/local/bin/hadolint; \
-    chmod +x /usr/local/bin/hadolint; \
+    HL_FILE="hadolint-Linux-${HL_ARCH}"; \
+    curl -fsSL "https://github.com/hadolint/hadolint/releases/download/${HL_VERSION}/${HL_FILE}" \
+        -o /tmp/"${HL_FILE}"; \
+    curl -fsSL "https://github.com/hadolint/hadolint/releases/download/${HL_VERSION}/${HL_FILE}.sha256" \
+        -o /tmp/"${HL_FILE}.sha256"; \
+    echo "$(awk '{print $1}' /tmp/"${HL_FILE}.sha256")  /tmp/${HL_FILE}" | sha256sum -c -; \
+    install -m 755 /tmp/"${HL_FILE}" /usr/local/bin/hadolint; \
+    rm /tmp/"${HL_FILE}" /tmp/"${HL_FILE}.sha256"; \
     hadolint --version
 
 # ---------- BATS (Bash Automated Testing System) ----------
 RUN set -eux; \
-    BATS_VERSION="1.11.0"; \
+    BATS_VERSION="1.13.0"; \
     curl -fsSL "https://github.com/bats-core/bats-core/archive/refs/tags/v${BATS_VERSION}.tar.gz" \
         | tar -xzf - -C /opt; \
     /opt/bats-core-${BATS_VERSION}/install.sh /usr/local; \
     bats --version
 
-# ---------- Packer (needed for packer fmt in lint-hcl) ----------
-RUN set -eux; \
-    PACKER_VERSION="1.11.2"; \
-    ARCH="$(dpkg --print-architecture)"; \
-    curl -fsSL "https://releases.hashicorp.com/packer/${PACKER_VERSION}/packer_${PACKER_VERSION}_linux_${ARCH}.zip" \
-        -o /tmp/packer.zip; \
-    unzip /tmp/packer.zip -d /usr/local/bin; \
-    rm /tmp/packer.zip; \
-    packer --version
+# ---------- Packer (HashiCorp apt repo, GPG-verified; needed for packer fmt in lint-hcl) ----------
+# hadolint ignore=DL3008
+RUN curl -fsSL https://apt.releases.hashicorp.com/gpg \
+        | gpg --dearmor -o /usr/share/keyrings/hashicorp-archive-keyring.gpg \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com $(grep -oP '(?<=UBUNTU_CODENAME=).*' /etc/os-release || lsb_release -cs) main" \
+        > /etc/apt/sources.list.d/hashicorp.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends packer \
+    && rm -rf /var/lib/apt/lists/* \
+    && packer --version
 
-# ---------- checkmake (Makefile linter) ----------
+# ---------- checkmake (Makefile linter, checksum-verified) ----------
 RUN set -eux; \
-    CHECKMAKE_VERSION="0.2.2"; \
+    CHECKMAKE_VERSION="0.3.2"; \
     ARCH="$(dpkg --print-architecture)"; \
-    curl -fsSL "https://github.com/mrtazz/checkmake/releases/download/${CHECKMAKE_VERSION}/checkmake-${CHECKMAKE_VERSION}.linux.${ARCH}" \
-        -o /usr/local/bin/checkmake; \
-    chmod +x /usr/local/bin/checkmake; \
+    CM_FILE="checkmake-v${CHECKMAKE_VERSION}.linux.${ARCH}"; \
+    curl -fsSL "https://github.com/checkmake/checkmake/releases/download/v${CHECKMAKE_VERSION}/${CM_FILE}" \
+        -o /tmp/"${CM_FILE}"; \
+    curl -fsSL "https://github.com/checkmake/checkmake/releases/download/v${CHECKMAKE_VERSION}/checksums.txt" \
+        -o /tmp/checksums.txt; \
+    echo "$(grep "${CM_FILE}" /tmp/checksums.txt | awk '{print $1}')  /tmp/${CM_FILE}" | sha256sum -c -; \
+    install -m 755 /tmp/"${CM_FILE}" /usr/local/bin/checkmake; \
+    rm /tmp/"${CM_FILE}" /tmp/checksums.txt; \
     checkmake --version || true
 
 # ---------- PowerShell Core (needed by py-psscriptanalyzer) ----------

@@ -2,12 +2,7 @@
   "schema_version": 1,
   "images": {
     "base": {
-      "description": "Ubuntu 24.04 + Docker + core dev tools (Node.js, Python, Go, Rust)",
-      "versions": {},
-      "latest": null
-    },
-    "blockchain": {
-      "description": "Base + Solana CLI, Anchor, Foundry, Hardhat",
+      "description": "Ubuntu 24.04 + Docker + core dev tools (Node.js, Python, Go, Rust) + blockchain (Solana, Anchor, Foundry, Hardhat)",
       "versions": {},
       "latest": null
     }
