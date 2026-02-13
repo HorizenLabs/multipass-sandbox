@@ -39,12 +39,16 @@ if [[ ! -f "$IMAGE_FILE" ]]; then
     exit 1
 fi
 
-# Detect architecture
-ARCH="$(dpkg --print-architecture 2>/dev/null || uname -m)"
-case "$ARCH" in
-    x86_64) ARCH="amd64" ;;
-    aarch64) ARCH="arm64" ;;
-esac
+# Detect architecture (prefer TARGET_ARCH env var for cross-built images)
+if [[ -n "${TARGET_ARCH:-}" ]]; then
+    ARCH="$TARGET_ARCH"
+else
+    ARCH="$(dpkg --print-architecture 2>/dev/null || uname -m)"
+    case "$ARCH" in
+        x86_64) ARCH="amd64" ;;
+        aarch64) ARCH="arm64" ;;
+    esac
+fi
 
 echo "=== Publishing ${IMAGE_NAME}:${VERSION} (${ARCH}) ==="
 

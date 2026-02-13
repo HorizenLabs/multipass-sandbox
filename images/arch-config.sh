@@ -27,8 +27,8 @@ case "$TARGET_ARCH" in
             -var "qemu_binary=qemu-system-aarch64"
             -var "machine_type=virt"
             -var "efi_boot=true"
-            -var "efi_firmware_code=/usr/share/qemu-efi-aarch64/QEMU_EFI.fd"
-            -var "efi_firmware_vars=/usr/share/qemu-efi-aarch64/QEMU_VARS.fd"
+            -var "efi_firmware_code=/usr/share/AAVMF/AAVMF_CODE.fd"
+            -var "efi_firmware_vars=/usr/share/AAVMF/AAVMF_VARS.fd"
         )
         ;;
     *)
@@ -45,7 +45,7 @@ else
     PACKER_ARCH_VARS+=( -var "accelerator=tcg" )
     case "$TARGET_ARCH" in
         amd64) PACKER_ARCH_VARS+=( -var "cpu_type=qemu64" ) ;;
-        arm64) PACKER_ARCH_VARS+=( -var "cpu_type=cortex-a72" ) ;;
+        arm64) PACKER_ARCH_VARS+=( -var "cpu_type=max,pauth-impdef=on,sve=off" ) ;;
     esac
     echo "Accelerator: TCG (emulation — this will be slow)"
 fi

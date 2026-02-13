@@ -26,9 +26,8 @@ DOCKER_RUN := docker run --rm \
 	$(LINTER_IMAGE):$(LINTER_TAG)
 
 # Docker run for image builds (uses builder image, with conditional KVM)
-KVM_FLAG := $(shell [ -e /dev/kvm ] && \
-	( [ -z "$(ARCH)" ] || [ "$(ARCH)" = "$(HOST_ARCH)" ] ) && \
-	echo "--device /dev/kvm")
+# Always pass /dev/kvm if available — arch-config.sh decides KVM vs TCG per-arch
+KVM_FLAG := $(shell [ -e /dev/kvm ] && echo "--device /dev/kvm")
 
 DOCKER_RUN_IMAGE := docker run --rm \
 	-v "$(CURDIR):$(WORKDIR)" \
@@ -51,7 +50,7 @@ BUILDER_DEPS  := Dockerfile.builder docker/entrypoint.sh
 LINTER_STAMP := .stamp-linter
 LINTER_DEPS  := Dockerfile.linter docker/entrypoint.sh
 
-.PHONY: all help builder linter install test lint lint-bash lint-powershell lint-dockerfile lint-makefile lint-yaml lint-hcl image-base publish-base clean
+.PHONY: all help builder linter install test lint lint-bash lint-powershell lint-dockerfile lint-makefile lint-yaml lint-hcl image-base import-base publish-base clean
 
 # ---------- All ----------
 all: lint ## Run all linters (alias)
@@ -161,14 +160,23 @@ lint-hcl: $(LINTER_STAMP) ## Lint HCL/Packer files with packer fmt
 	fi
 
 # ---------- Image builds ----------
-image-base: $(BUILDER_STAMP) ## Build base VM image (ARCH=amd64|arm64)
+image-base: $(BUILDER_STAMP) ## Build base VM image (both archs, or ARCH=amd64|arm64)
 	$(DOCKER_RUN_IMAGE) bash -c 'cd images/base && bash build.sh'
+
+# ---------- Image import (local) ----------
+import-base: image-base ## Import host-arch base image into mps cache
+	@arch=$$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/'); \
+	./bin/mps image import images/base/output-base/mps-base-$$arch.qcow2 --name base --tag local
 
 # ---------- Image publishing (Backblaze B2) ----------
 # Usage: make publish-base VERSION=1.0.0
 publish-base: ## Publish base image to Backblaze B2 (requires VERSION=x.y.z)
 	@test -n "$(VERSION)" || (echo "ERROR: VERSION is required (e.g., make publish-base VERSION=1.0.0)"; exit 1)
-	$(DOCKER_RUN) bash images/publish.sh base $(VERSION) images/base/output-base/mps-base.qcow2
+	$(DOCKER_RUN) bash -c '\
+		for arch in amd64 arm64; do \
+			echo "Publishing $$arch..."; \
+			TARGET_ARCH=$$arch bash images/publish.sh base $(VERSION) images/base/output-base/mps-base-$$arch.qcow2; \
+		done'
 
 # ---------- Clean ----------
 clean: ## Remove build artifacts and caches

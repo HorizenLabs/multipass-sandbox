@@ -143,7 +143,9 @@ cmd_create() {
     mps_log_debug "Cloud-init template: ${cloud_init_path}"
 
     # ---- Resolve resource values: CLI flags > config/profile > defaults ----
-    local image="${arg_image:-${MPS_IMAGE:-${MPS_DEFAULT_IMAGE:-22.04}}}"
+    local image_spec="${arg_image:-${MPS_IMAGE:-${MPS_DEFAULT_IMAGE:-24.04}}}"
+    local image
+    image="$(mps_resolve_image "$image_spec")"
     local cpus="${arg_cpus:-${MPS_CPUS:-${MPS_DEFAULT_CPUS:-4}}}"
     local memory="${arg_memory:-${MPS_MEMORY:-${MPS_DEFAULT_MEMORY:-4G}}}"
     local disk="${arg_disk:-${MPS_DISK:-${MPS_DEFAULT_DISK:-50G}}}"
@@ -257,7 +259,7 @@ cmd_create() {
     mps_log_info "Sandbox '${instance_name}' is ready."
     echo ""
     printf "  %-14s %s\n" "Instance:" "$instance_name"
-    printf "  %-14s %s\n" "Image:" "$image"
+    printf "  %-14s %s\n" "Image:" "$image_spec"
     printf "  %-14s %s\n" "CPUs:" "$cpus"
     printf "  %-14s %s\n" "Memory:" "$memory"
     printf "  %-14s %s\n" "Disk:" "$disk"
@@ -299,7 +301,7 @@ ${_color_bold}Naming:${_color_reset}
 
 ${_color_bold}Flags:${_color_reset}
     --name <name>           Override auto-generated instance name
-    --image <image>         Ubuntu image, e.g. 22.04, 24.04 (default: ${MPS_DEFAULT_IMAGE:-22.04})
+    --image <image>         Image: mps name (base, base:1.0.0) or Ubuntu version (24.04)
     --cpus <n>              CPU cores (default: ${MPS_DEFAULT_CPUS:-4})
     --memory <size>         Memory, e.g. 4G, 8G (default: ${MPS_DEFAULT_MEMORY:-4G})
     --disk <size>           Disk, e.g. 50G, 100G (default: ${MPS_DEFAULT_DISK:-50G})

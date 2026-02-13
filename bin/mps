@@ -42,7 +42,7 @@ ${_color_bold}Commands:${_color_reset}
     list                        List all sandboxes
     status [--name <name>]      Show detailed sandbox status
     ssh-config [--name <name>]  Generate SSH config for VS Code integration
-    image <subcommand>          Manage sandbox images
+    image <subcommand>          Manage sandbox images (list, pull, import)
     port <subcommand>           Manage port forwarding
 
 ${_color_bold}Options:${_color_reset}

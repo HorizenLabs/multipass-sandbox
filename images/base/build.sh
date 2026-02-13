@@ -2,7 +2,8 @@
 set -euo pipefail
 
 # Build the base MPS image using Packer
-# Requires: packer, qemu (or virtualbox)
+# Builds both amd64 and arm64 by default, or a single arch if TARGET_ARCH is set.
+# Requires: packer, qemu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MPS_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
@@ -17,33 +18,53 @@ fi
 
 cd "$SCRIPT_DIR"
 
-# Accept target architecture (default: host)
-export TARGET_ARCH="${TARGET_ARCH:-}"
+# Determine which architectures to build
+if [[ -n "${TARGET_ARCH:-}" ]]; then
+    ARCHITECTURES=("$TARGET_ARCH")
+else
+    ARCHITECTURES=("amd64" "arm64")
+fi
 
-# Source arch configuration
-# shellcheck source=../arch-config.sh
-source "$MPS_ROOT/images/arch-config.sh"
-
-# Initialize packer plugins
+# Initialize packer plugins (once, shared across arch builds)
 packer init packer.pkr.hcl
 
 # Use a native filesystem path for Packer output to avoid rename failures
 # on Docker-mounted volumes (WSL2/Windows 9p mounts don't support cross-device rename)
 OUTPUT_DIR="${SCRIPT_DIR}/output-base"
-PACKER_OUTPUT_DIR="/tmp/packer-output-base"
-rm -rf "${PACKER_OUTPUT_DIR:?err_unset}"
-
-# Build
-packer build \
-    -var "mps_root=${MPS_ROOT}" \
-    -var "output_dir=${PACKER_OUTPUT_DIR}" \
-    "${PACKER_ARCH_VARS[@]}" \
-    packer.pkr.hcl
-
-# Move artifacts to the expected output location
-rm -rf "${OUTPUT_DIR:?err_unset}"
 mkdir -p "$OUTPUT_DIR"
-cp -a "$PACKER_OUTPUT_DIR"/. "$OUTPUT_DIR"/
-rm -rf "${PACKER_OUTPUT_DIR:?err_unset}"
 
-echo "=== Base image build complete ==="
+for arch in "${ARCHITECTURES[@]}"; do
+    echo ""
+    echo "=== Building for ${arch} ==="
+
+    # Set TARGET_ARCH for arch-config.sh
+    export TARGET_ARCH="$arch"
+
+    # Source arch configuration (sets PACKER_ARCH_VARS)
+    # shellcheck source=../arch-config.sh
+    source "$MPS_ROOT/images/arch-config.sh"
+
+    PACKER_OUTPUT_DIR="/tmp/packer-output-base-${arch}"
+    rm -rf "${PACKER_OUTPUT_DIR:?err_unset}"
+
+    packer build \
+        -var "mps_root=${MPS_ROOT}" \
+        -var "output_dir=${PACKER_OUTPUT_DIR}" \
+        -var "vm_name=mps-base-${arch}.qcow2" \
+        "${PACKER_ARCH_VARS[@]}" \
+        packer.pkr.hcl
+
+    # Copy arch-specific artifacts to output
+    cp -a "${PACKER_OUTPUT_DIR}/mps-base-${arch}.qcow2" "$OUTPUT_DIR/"
+    if [[ -f "${PACKER_OUTPUT_DIR}/mps-base-${arch}.qcow2.sha256" ]]; then
+        cp -a "${PACKER_OUTPUT_DIR}/mps-base-${arch}.qcow2.sha256" "$OUTPUT_DIR/"
+    fi
+    rm -rf "${PACKER_OUTPUT_DIR:?err_unset}"
+
+    echo "=== ${arch} build complete ==="
+done
+
+echo ""
+echo "=== All builds complete ==="
+echo "Artifacts in: ${OUTPUT_DIR}/"
+ls -lh "$OUTPUT_DIR/"

@@ -118,7 +118,7 @@ Key functions:
 
 **`config/defaults.env`**:
 ```bash
-MPS_DEFAULT_IMAGE=22.04
+MPS_DEFAULT_IMAGE=24.04
 MPS_DEFAULT_CPUS=4
 MPS_DEFAULT_MEMORY=4G
 MPS_DEFAULT_DISK=50G
@@ -167,6 +167,9 @@ MPS_SSH_AUTO_CONFIG=true
 - `mps image pull <name:tag>` — Download QCOW2 with SHA256 verification
 - Manifest format: `manifest.json` on S3 with per-arch URLs and checksums
 - Packer build pipeline for base image
+- `make image-base` produces both amd64 and arm64 images regardless of host architecture
+- Base image uses Ubuntu 24.04 (noble) instead of 22.04 (jammy)
+- QEMU TCG optimized: `-cpu max,pauth-impdef=on,sve=off`, `disk_cache=unsafe`, `-display none`
 
 ## Phase 3 — Port Forwarding & Advanced Networking
 
@@ -174,16 +177,25 @@ MPS_SSH_AUTO_CONFIG=true
 - `mps port list [name]` — Active forwards from PID file
 - Auto-forwarding from `MPS_PORTS` config on `mps up`
 
-## Phase 4 — PowerShell Parity (Windows)
+## Phase 4 — Polish & Build System
+
+- `install.sh` / `install.ps1`
+- Shellcheck clean (done — SC2154 directives + bug fixes)
+- Makefile targets (done — `.stamp-builder`/`.stamp-linter` auto-build images as dependency of lint/test)
+- Dockerized build system: `Dockerfile.builder` (Packer, QEMU, b2), `Dockerfile.linter` (shellcheck, hadolint, BATS, pwsh, py-psscriptanalyzer, yamllint, checkmake, Packer)
+
+## Phase 5 — Testing
+
+- BATS test suite for `lib/common.sh`, `lib/multipass.sh`, and command scripts
+
+## Phase 6 — CI/CD
+
+- GitHub Actions CI pipeline (lint + test on push/PR)
+- Automated image builds
+- Backblaze B2 bucket + Cloudflare proxy setup (handled externally)
+
+## Phase 7 — PowerShell Parity (Windows)
 
 - `bin/mps.ps1` + `commands/*.ps1` + `lib/*.ps1`
 - `ConvertFrom-Json` instead of `jq`
 - Windows path handling
-
-## Phase 5 — Polish & CI
-
-- `install.sh` / `install.ps1`
-- BATS test suite
-- shellcheck clean (done — SC2154 directives + bug fixes)
-- GitHub Actions CI pipeline
-- Makefile targets (done — `.stamp-builder` auto-builds builder image as dependency of lint/test)

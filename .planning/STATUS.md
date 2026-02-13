@@ -33,8 +33,9 @@
 - [x] `images/arch-config.sh` — Passes `target_arch` instead of `iso_url` (URL constructed in HCL)
 - [x] `scripts/setup-base.sh` — Post-build credential cleanup (lock password, remove sshd override, disable password SSH)
 - [x] `build.sh` — Output to `/tmp` to avoid cross-device rename on WSL2 Docker volumes; defensive `${VAR:?}` on `rm -rf`
-- [ ] Actual Backblaze B2 bucket + Cloudflare proxy setup (handled externally)
-- [ ] CI pipeline (GitHub Actions) for automated image builds
+- [x] `make image-base` builds both amd64 and arm64 images regardless of host architecture (cross-arch via QEMU TCG)
+- [x] Base image uses Ubuntu 24.04 (noble) instead of 22.04 (jammy)
+- [x] QEMU TCG performance: `-cpu max,pauth-impdef=on,sve=off`, `disk_cache=unsafe`, `-display none` (arm64 build 2h18m → 1h29m, 35% faster)
 
 ## Phase 3 — Port Forwarding: DONE
 
@@ -44,18 +45,10 @@
 - [x] Shared port helpers in `lib/common.sh` (collect, forward, auto-forward, kill)
 - [x] `commands/port.sh` refactored to use shared `mps_forward_port()` helper
 
-## Phase 4 — PowerShell Parity (Windows): NOT STARTED
+## Phase 4 — Polish & Build System: DONE
 
-- [ ] `bin/mps.ps1`
-- [ ] `lib/common.ps1`
-- [ ] `lib/multipass.ps1`
-- [ ] `commands/*.ps1`
-- [x] `install.ps1` — Windows installer (basic)
-
-## Phase 5 — Polish & CI: DONE (build system)
-
-- [x] `Dockerfile.builder` — Builder image with Packer, b2, gosu, QEMU (x86+arm64)
-- [x] `Dockerfile.linter` — Linter/test image with shellcheck, hadolint, BATS, yamllint, checkmake, py-psscriptanalyzer, Packer (for fmt)
+- [x] `Dockerfile.builder` — Builder image with Packer, b2, QEMU (x86+arm64)
+- [x] `Dockerfile.linter` — Linter/test image with shellcheck, hadolint, BATS, yamllint, checkmake, pwsh, py-psscriptanalyzer, Packer (for fmt)
 - [x] `docker/entrypoint.sh` — uid:gid matching entrypoint, KVM group handling
 - [x] `Makefile` — Dockerized: builder, linter, lint (6 sub-targets), test, image-base, publish-base
 - [x] `Makefile` — `.stamp-builder`/`.stamp-linter` dependencies: auto-build images when Dockerfile or entrypoint changes
@@ -64,14 +57,35 @@
 - [x] `.gitignore`
 - [x] `README.md`
 - [x] Shellcheck clean — all warnings resolved (SC2154 directives for sourced color vars, real bug fixes)
+- [x] `mps image import` — Import local QCOW2 files into `~/.mps/cache/images/` with auto-detected name/arch, SHA256 verify, `.meta` sidecar
+- [x] `mps create --image base` — Unified image resolution: cache lookup → `file://` URL for Multipass, fallthrough for Ubuntu versions
+- [x] `lib/common.sh` — `mps_detect_arch()`, `mps_resolve_image()`, SemVer comparison helpers
+- [x] `mps image list` — SOURCE column showing imported vs pulled
+- [x] `Makefile` — `import-base` target: build + import host-arch image in one step
+
+## Phase 5 — Testing: NOT STARTED
+
 - [ ] BATS test suite
+
+## Phase 6 — CI/CD: NOT STARTED
+
 - [ ] GitHub Actions CI pipeline
+- [ ] CI pipeline for automated image builds
+- [ ] Backblaze B2 bucket + Cloudflare proxy setup (handled externally)
+
+## Phase 7 — PowerShell Parity (Windows): NOT STARTED
+
+- [ ] `bin/mps.ps1`
+- [ ] `lib/common.ps1`
+- [ ] `lib/multipass.ps1`
+- [ ] `commands/*.ps1`
+- [x] `install.ps1` — Windows installer (basic, PSScriptAnalyzer clean)
 
 ## Cross-Architecture Image Building: DONE
 
 - [x] `Dockerfile.builder` — Added qemu-system-x86, qemu-utils, qemu-system-arm, qemu-efi-aarch64
 - [x] `docker/entrypoint.sh` — KVM device group detection + usermod for builder user
-- [x] `images/arch-config.sh` — Shared arch detection: HOST_ARCH, TARGET_ARCH, KVM vs TCG, PACKER_ARCH_VARS array
+- [x] `images/arch-config.sh` — Shared arch detection: HOST_ARCH, TARGET_ARCH, KVM vs TCG, PACKER_ARCH_VARS array; EFI firmware uses AAVMF pflash files (64MB) for arm64
 - [x] `images/base/packer.pkr.hcl` — Parameterized: target_arch, ubuntu_version, qemu_binary, machine_type, accelerator, cpu_type, efi_boot, efi_firmware_code/vars; iso_checksum via SHA256SUMS
 - [x] `images/base/build.sh` — Sources arch-config.sh, passes PACKER_ARCH_VARS to packer build; /tmp output dir workaround for WSL2
 - [x] `Makefile` — ARCH variable, HOST_ARCH detection, KVM_FLAG conditional, DOCKER_RUN_IMAGE for image targets
@@ -86,6 +100,4 @@
 
 ## Known Issues / TODO
 
-- Hadolint warns on `Dockerfile.builder`: unpinned apt/pip versions and missing `SHELL ["/bin/bash", "-o", "pipefail", "-c"]`
-- BATS test suite not yet written
-- GitHub Actions CI pipeline not yet configured
+(none currently)

@@ -17,7 +17,7 @@ variable "mps_root" {
 
 variable "ubuntu_version" {
   type    = string
-  default = "jammy"
+  default = "noble"
 }
 
 variable "output_dir" {
@@ -65,6 +65,11 @@ variable "efi_firmware_vars" {
   default = ""
 }
 
+variable "vm_name" {
+  type    = string
+  default = "mps-base.qcow2"
+}
+
 locals {
   base_cloud_init = trimprefix(
     file("${var.mps_root}/templates/cloud-init/base.yaml"),
@@ -77,7 +82,7 @@ source "qemu" "base" {
   iso_checksum      = "file:https://cloud-images.ubuntu.com/${var.ubuntu_version}/current/SHA256SUMS"
   disk_image        = true
   output_directory  = var.output_dir
-  vm_name           = "mps-base.qcow2"
+  vm_name           = var.vm_name
   disk_size         = "100G"
   format            = "qcow2"
   qemu_binary       = var.qemu_binary
@@ -94,6 +99,7 @@ source "qemu" "base" {
   ssh_timeout       = "30m"
   shutdown_command  = "echo 'ubuntu' | sudo -S shutdown -P now"
   headless          = true
+  disk_cache        = "unsafe"
 
   cd_content = {
     "meta-data" = ""
@@ -105,6 +111,7 @@ source "qemu" "base" {
 
   qemuargs = [
     ["-serial", "mon:stdio"],
+    ["-display", "none"],
   ]
 }
 
@@ -120,6 +127,6 @@ build {
 
   post-processor "checksum" {
     checksum_types = ["sha256"]
-    output         = "${var.output_dir}/mps-base.qcow2.sha256"
+    output         = "${var.output_dir}/${var.vm_name}.sha256"
   }
 }

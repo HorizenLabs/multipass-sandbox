@@ -221,6 +221,150 @@ mps_cache_dir() {
     echo "$dir"
 }
 
+# ---------- Architecture Detection ----------
+
+mps_detect_arch() {
+    local arch
+    arch="$(dpkg --print-architecture 2>/dev/null || uname -m)"
+    case "$arch" in
+        x86_64) echo "amd64" ;;
+        aarch64) echo "arm64" ;;
+        *) echo "$arch" ;;
+    esac
+}
+
+# ---------- Image Resolution ----------
+
+# Resolve an image spec to a file:// URL (if cached) or pass through unchanged.
+# Input: "base", "base:1.0.0", "base:local", "base:latest", "24.04"
+# Output: "file:///home/.../.mps/cache/images/base/1.0.0/amd64.img" or "24.04"
+mps_resolve_image() {
+    local image_spec="$1"
+    local name="${image_spec%%:*}"
+    local tag="${image_spec#*:}"
+    if [[ "$tag" == "$name" ]]; then
+        tag="latest"
+    fi
+
+    local cache_dir
+    cache_dir="$(mps_cache_dir)/images"
+    local image_dir="${cache_dir}/${name}"
+
+    # If the image name directory doesn't exist, pass through (e.g. "24.04")
+    if [[ ! -d "$image_dir" ]]; then
+        echo "$image_spec"
+        return
+    fi
+
+    local arch
+    arch="$(mps_detect_arch)"
+
+    # Resolve "latest" to best available version
+    if [[ "$tag" == "latest" ]]; then
+        tag="$(_mps_resolve_latest_version "$image_dir" "$arch")"
+        if [[ -z "$tag" ]]; then
+            # Name dir exists but no matching arch — list what's available
+            local available=""
+            for tag_dir in "$image_dir"/*/; do
+                [[ -d "$tag_dir" ]] || continue
+                for img_file in "$tag_dir"/*.img; do
+                    [[ -f "$img_file" ]] || continue
+                    local a
+                    a="$(basename "$img_file" .img)"
+                    available="${available:+${available}, }$(basename "$tag_dir")/${a}"
+                done
+            done
+            if [[ -n "$available" ]]; then
+                mps_die "Image '${name}' found but no ${arch} build. Available: ${available}"
+            fi
+            # No images at all in the dir — fall through
+            echo "$image_spec"
+            return
+        fi
+    fi
+
+    local img_file="${image_dir}/${tag}/${arch}.img"
+    if [[ -f "$img_file" ]]; then
+        local abs_path
+        abs_path="$(cd "$(dirname "$img_file")" && pwd)/$(basename "$img_file")"
+        echo "file://${abs_path}"
+        return
+    fi
+
+    # Tag dir exists but wrong arch
+    if [[ -d "${image_dir}/${tag}" ]]; then
+        local available=""
+        for f in "${image_dir}/${tag}"/*.img; do
+            [[ -f "$f" ]] || continue
+            available="${available:+${available}, }$(basename "$f" .img)"
+        done
+        if [[ -n "$available" ]]; then
+            mps_die "Image '${name}:${tag}' found but not for ${arch}. Available arch(es): ${available}"
+        fi
+    fi
+
+    # No match — pass through to Multipass
+    echo "$image_spec"
+}
+
+# Scan version subdirs, return highest SemVer that has a matching arch file.
+# Falls back to "local" if no SemVer versions exist.
+_mps_resolve_latest_version() {
+    local image_dir="$1"
+    local arch="$2"
+    local best=""
+
+    for tag_dir in "$image_dir"/*/; do
+        [[ -d "$tag_dir" ]] || continue
+        local tag
+        tag="$(basename "$tag_dir")"
+        [[ -f "${tag_dir}/${arch}.img" ]] || continue
+
+        # Skip non-SemVer tags for comparison (handle "local" separately)
+        if [[ "$tag" == "local" ]]; then
+            continue
+        fi
+        if [[ ! "$tag" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            continue
+        fi
+
+        if [[ -z "$best" ]] || _mps_semver_gt "$tag" "$best"; then
+            best="$tag"
+        fi
+    done
+
+    # If we found a SemVer version, use it
+    if [[ -n "$best" ]]; then
+        echo "$best"
+        return
+    fi
+
+    # Fall back to "local" if it has the right arch
+    if [[ -f "${image_dir}/local/${arch}.img" ]]; then
+        echo "local"
+        return
+    fi
+
+    # Nothing matched
+    echo ""
+}
+
+# Compare two SemVer strings (a > b). Returns 0 if a > b, 1 otherwise.
+_mps_semver_gt() {
+    local a="$1" b="$2"
+    local a_major a_minor a_patch b_major b_minor b_patch
+
+    IFS='.' read -r a_major a_minor a_patch <<< "$a"
+    IFS='.' read -r b_major b_minor b_patch <<< "$b"
+
+    if (( a_major > b_major )); then return 0; fi
+    if (( a_major < b_major )); then return 1; fi
+    if (( a_minor > b_minor )); then return 0; fi
+    if (( a_minor < b_minor )); then return 1; fi
+    if (( a_patch > b_patch )); then return 0; fi
+    return 1
+}
+
 mps_instance_meta() {
     local name="$1"
     echo "$(mps_state_dir)/${name}.env"
