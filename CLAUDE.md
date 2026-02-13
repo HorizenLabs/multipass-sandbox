@@ -8,7 +8,7 @@ Internal CLI tool for spinning up isolated VM-based development environments usi
 - **VM Engine**: Canonical Multipass
 - **Config**: KEY=VALUE .env files (no YAML parsing in Bash)
 - **Dependencies**: `multipass`, `jq`
-- **Image builds**: Packer (QCOW2), published to Backblaze B2 (served via Cloudflare)
+- **Image builds**: Packer (QCOW2, `.qcow2.img` extension), published to Backblaze B2 (served via Cloudflare)
 - **Image versioning**: SemVer (x.y.z) with `latest` pointer
 - **Build/Test**: All run inside Docker containers (`mps-builder` for image builds, `mps-linter` for lint/test)
 - **Tests**: BATS (planned)
@@ -19,7 +19,8 @@ Internal CLI tool for spinning up isolated VM-based development environments usi
 - `lib/common.sh` — Logging, config cascade, path conversion, mount resolution, auto-naming
 - `lib/multipass.sh` — Thin wrappers around `multipass` CLI with `--format json` + `jq`
 - `commands/*.sh` — One file per subcommand, each exports `cmd_<name>()` function
-- `templates/cloud-init/` — Cloud-init YAML templates (base)
+- `templates/cloud-init/` — Minimal cloud-init templates for VM launch customization
+- `images/base/cloud-init.yaml` — Full provisioning template baked into images via Packer
 - `templates/profiles/` — Resource profiles (lite, standard, heavy)
 - `config/defaults.env` — Shipped defaults
 - `images/` — Packer build scripts + `publish.sh` for B2 upload + `manifest.json`
@@ -53,7 +54,7 @@ make image-base       # Build base VM image with Packer
 make publish-base VERSION=1.0.0   # Publish to Backblaze B2
 ```
 
-The Makefile detects host uid:gid and the entrypoint uses gosu to step down from root, so build artifacts match host ownership.
+The Makefile detects host uid:gid and the entrypoint uses setpriv to step down from root, so build artifacts match host ownership.
 
 ## Planning & Status
 

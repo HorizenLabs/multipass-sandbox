@@ -16,8 +16,11 @@ passwd -l ubuntu
 rm -f /etc/ssh/sshd_config.d/50-packer-build.conf
 sed -i 's/^PasswordAuthentication yes/PasswordAuthentication no/' /etc/ssh/sshd_config
 
+# Remove old kernel (replaced by HWE edge kernel)
+apt-get remove -y linux-virtual linux-headers-virtual linux-image-virtual 2>/dev/null || true
+apt-get autoremove --purge -y
+
 # Clean up apt cache
-apt-get autoremove -y
 apt-get clean
 rm -rf /var/lib/apt/lists/*
 

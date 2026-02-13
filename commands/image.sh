@@ -170,7 +170,7 @@ _image_import() {
 
     # Auto-detect name from filename: mps-<name>-<arch>.qcow2 → name
     if [[ -z "$name" ]]; then
-        if [[ "$filename" =~ ^mps-(.+)-(amd64|arm64)\.(qcow2|img)$ ]]; then
+        if [[ "$filename" =~ ^mps-(.+)-(amd64|arm64)\.(qcow2\.img|qcow2|img)$ ]]; then
             name="${BASH_REMATCH[1]}"
         else
             # Strip extension and use as name

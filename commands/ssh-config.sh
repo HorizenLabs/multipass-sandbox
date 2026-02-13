@@ -2,30 +2,36 @@
 # shellcheck disable=SC2154  # color vars defined in lib/common.sh
 # commands/ssh-config.sh — mps ssh-config [--name <name>]
 #
-# Generate an SSH config block for a running sandbox, suitable for
-# VS Code Remote-SSH and other SSH clients.
+# Resolve user's SSH key, inject it into the VM, and generate an SSH config
+# block for VS Code Remote-SSH and other SSH clients.
 #
 # Usage:
 #   mps ssh-config [--name <name>]
 #   mps ssh-config --append --name myproject
-#   mps ssh-config --print --append --name myproject
+#   mps ssh-config --ssh-key ~/.ssh/id_ed25519 --name myproject
 #
 # Flags:
-#   --name, -n <name>   Sandbox name (default: auto-resolved from CWD)
-#   --print             Print SSH config to stdout (default)
-#   --append            Write config to ~/.ssh/config.d/mps-<name>
-#   --help, -h          Show this help
+#   --name, -n <name>       Sandbox name (default: auto-resolved from CWD)
+#   --ssh-key <path>        Path to SSH key (public or private)
+#   --print                 Print SSH config to stdout (default)
+#   --append                Write config to ~/.ssh/config.d/mps-<name>
+#   --help, -h              Show this help
 
 cmd_ssh_config() {
     local arg_name=""
     local arg_print=false
     local arg_append=false
+    local arg_ssh_key=""
 
     # ---- Parse arguments ----
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --name|-n)
                 arg_name="${2:?--name requires a value}"
+                shift 2
+                ;;
+            --ssh-key)
+                arg_ssh_key="${2:?--ssh-key requires a value}"
                 shift 2
                 ;;
             --print)
@@ -55,12 +61,13 @@ cmd_ssh_config() {
     fi
 
     # ---- Resolve instance name ----
-    local instance_name
+    local instance_name short_name
     if [[ -n "$arg_name" ]]; then
         instance_name="$(mps_instance_name "$arg_name")"
     else
         instance_name="$(mps_resolve_name "" "$(pwd)" "${MPS_CLOUD_INIT:-${MPS_DEFAULT_CLOUD_INIT:-base}}" "${MPS_PROFILE:-${MPS_DEFAULT_PROFILE:-standard}}")"
     fi
+    short_name="$(mps_short_name "$instance_name")"
     mps_log_debug "Resolved instance name: ${instance_name}"
 
     # ---- Check instance exists and is running ----
@@ -68,28 +75,26 @@ cmd_ssh_config() {
     state="$(mp_instance_state "$instance_name")"
 
     if [[ "$state" == "nonexistent" ]]; then
-        mps_die "Instance '${instance_name}' does not exist. Create it with: mps up --name $(mps_short_name "$instance_name")"
+        mps_die "Instance '${instance_name}' does not exist. Create it with: mps up --name ${short_name}"
     fi
 
     if [[ "$state" != "Running" ]]; then
-        mps_die "Instance '${instance_name}' is not running (state: ${state}). Start it with: mps up --name $(mps_short_name "$instance_name")"
+        mps_die "Instance '${instance_name}' is not running (state: ${state}). Start it with: mps up --name ${short_name}"
     fi
 
-    # ---- Get SSH info ----
-    local ssh_ip="" ssh_key="" ssh_user=""
-    while IFS='=' read -r key val; do
-        case "$key" in
-            IP)       ssh_ip="$val" ;;
-            SSH_KEY)  ssh_key="$val" ;;
-            USER)     ssh_user="$val" ;;
-        esac
-    done < <(mp_ssh_info "$instance_name")
+    # ---- Resolve key, inject into VM, get private key path ----
+    local ssh_key
+    ssh_key="$(mps_ensure_ssh_key "$instance_name" "$short_name" "$arg_ssh_key")"
 
+    # ---- Get IP ----
+    local ssh_ip
+    ssh_ip="$(mp_ipv4 "$instance_name")"
     if [[ -z "$ssh_ip" ]]; then
         mps_die "Could not determine IP address for '${instance_name}'"
     fi
 
     # ---- Build config block ----
+    local ssh_user="ubuntu"
     local config_block
     config_block="$(cat <<EOF
 Host ${instance_name}
@@ -129,29 +134,41 @@ EOF
 
 _ssh_config_usage() {
     cat <<EOF
-${_color_bold}mps ssh-config${_color_reset} — Generate SSH config for a sandbox
+${_color_bold}mps ssh-config${_color_reset} — Configure SSH access for a sandbox
 
 ${_color_bold}Usage:${_color_reset}
     mps ssh-config [flags]
 
 ${_color_bold}Flags:${_color_reset}
-    --name, -n <name>   Sandbox name (default: auto-resolved from CWD)
-    --print             Print SSH config to stdout (default)
-    --append            Write config to ~/.ssh/config.d/mps-<name>
-    --help, -h          Show this help
+    --name, -n <name>       Sandbox name (default: auto-resolved from CWD)
+    --ssh-key <path>        Path to SSH key (public or private; default: auto-detect)
+    --print                 Print SSH config to stdout (default)
+    --append                Write config to ~/.ssh/config.d/mps-<name>
+    --help, -h              Show this help
 
 Both --print and --append can be used together.
 
+${_color_bold}SSH Key Resolution:${_color_reset}
+    1. --ssh-key <path> flag (pubkey or private key path)
+    2. MPS_SSH_KEY config variable
+    3. Auto-detect from ~/.ssh/: id_ed25519 > id_ecdsa > id_rsa
+    4. Error with instructions if none found
+
 ${_color_bold}Examples:${_color_reset}
-    mps ssh-config                              Print SSH config for current directory
-    mps ssh-config --name dev                   Print SSH config for 'dev'
-    mps ssh-config --append --name dev          Write to ~/.ssh/config.d/mps-dev
-    mps ssh-config --print --append --name dev  Print and write config
+    mps ssh-config --name dev                              Auto-detect key, inject, print config
+    mps ssh-config --ssh-key ~/.ssh/id_ed25519 --name dev  Use specific key
+    mps ssh-config --append --name dev                     Write to ~/.ssh/config.d/mps-dev
+    mps ssh-config --print --append --name dev             Print and write config
 
 ${_color_bold}VS Code Integration:${_color_reset}
     1. Run: mps ssh-config --append --name dev
     2. Ensure ~/.ssh/config has: Include config.d/*
     3. In VS Code, use Remote-SSH to connect to 'mps-dev'
+
+${_color_bold}Port Forwarding:${_color_reset}
+    Run ssh-config before using port forwarding:
+    1. mps ssh-config --name dev
+    2. mps port forward dev 3000:3000
 
 EOF
 }

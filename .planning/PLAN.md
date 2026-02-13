@@ -44,7 +44,7 @@ A blockchain software development company needs an internal tool to spin up isol
 │
 ├── templates/
 │   ├── cloud-init/
-│   │   └── base.yaml              # Base: Docker, core dev tools, blockchain tools
+│   │   └── base.yaml              # Minimal customization template (for VM launch)
 │   └── profiles/
 │       ├── lite.env                # 2 CPU, 2GB RAM, 20GB disk
 │       ├── standard.env            # 4 CPU, 4GB RAM, 50GB disk
@@ -54,9 +54,10 @@ A blockchain software development company needs an internal tool to spin up isol
 │   ├── arch-config.sh             # Shared arch detection (KVM/TCG, PACKER_ARCH_VARS)
 │   └── base/
 │       ├── build.sh               # Packer build script for base image
+│       ├── cloud-init.yaml        # Full provisioning template (baked into images)
 │       ├── packer.pkr.hcl         # Packer template (parameterized for amd64/arm64)
 │       └── scripts/
-│           └── setup-base.sh      # Provisioning script baked into image
+│           └── setup-base.sh      # Post-provisioning cleanup for image distribution
 │
 ├── config/
 │   └── defaults.env               # Default configuration values
@@ -183,6 +184,13 @@ MPS_SSH_AUTO_CONFIG=true
 - Shellcheck clean (done — SC2154 directives + bug fixes)
 - Makefile targets (done — `.stamp-builder`/`.stamp-linter` auto-build images as dependency of lint/test)
 - Dockerized build system: `Dockerfile.builder` (Packer, QEMU, b2), `Dockerfile.linter` (shellcheck, hadolint, BATS, pwsh, py-psscriptanalyzer, yamllint, checkmake, Packer)
+
+### Phase 4 Reopened — Polish & Refactor
+
+- SSH key refactor: user-provided keys via `mps ssh-config`, on-demand injection, no sudo
+- Repo restructure: moved full cloud-init to `images/base/cloud-init.yaml`, new minimal `templates/cloud-init/base.yaml`
+- Image build: HWE edge kernel, old kernel removal, 16G disk size, `.qcow2.img` extension, qemu-img compaction
+- `mps port forward` requires prior `mps ssh-config` setup (clear error message if not configured)
 
 ## Phase 5 — Testing
 

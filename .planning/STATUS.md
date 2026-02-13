@@ -63,6 +63,27 @@
 - [x] `mps image list` — SOURCE column showing imported vs pulled
 - [x] `Makefile` — `import-base` target: build + import host-arch image in one step
 
+### Phase 4 Reopened — Polish & Refactor: DONE
+
+- [x] SSH key refactor — user-provided keys, on-demand injection via `mps ssh-config`
+  - [x] `lib/common.sh` — SSH key helpers: `mps_resolve_ssh_pubkey()`, `mps_resolve_ssh_privkey()`, `mps_inject_ssh_key()`, `mps_ensure_ssh_key()`, `mps_require_ssh_key()`
+  - [x] `commands/ssh-config.sh` — `--ssh-key` flag, key injection, no more `mp_ssh_info()` dependency
+  - [x] `lib/common.sh` `mps_forward_port()` — uses `mps_require_ssh_key()` instead of `mp_ssh_info()`
+  - [x] `lib/multipass.sh` `mp_ssh_info()` — removed OS-specific Multipass key path detection, reads from instance metadata
+  - [x] `config/defaults.env` — replaced `MPS_SSH_AUTO_CONFIG` with `MPS_SSH_KEY=` (empty = auto-detect)
+- [x] Repo restructure — cloud-init templates
+  - [x] Moved `templates/cloud-init/base.yaml` → `images/base/cloud-init.yaml` (full provisioning for image builds)
+  - [x] Created new minimal `templates/cloud-init/base.yaml` (customization template for VM launch)
+  - [x] Updated `packer.pkr.hcl` to reference `${path.root}/cloud-init.yaml`
+  - [x] Updated `Makefile` YAML_FILES to search `images/` in addition to `templates/`
+- [x] Image build improvements
+  - [x] HWE edge kernel (`linux-virtual-hwe-24.04-edge`) added to cloud-init
+  - [x] Old kernel removal in `setup-base.sh`
+  - [x] `disk_size` reduced from 100G to 16G (Multipass + growpart auto-expands at launch)
+  - [x] Output extension changed from `.qcow2` to `.qcow2.img` across packer, build.sh, Makefile, image.sh
+  - [x] `qemu-img convert` compaction step added to `build.sh`
+  - [x] `.gitignore` updated for `*.qcow2.img`
+
 ## Phase 5 — Testing: NOT STARTED
 
 - [ ] BATS test suite

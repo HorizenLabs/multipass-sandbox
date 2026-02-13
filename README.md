@@ -146,9 +146,10 @@ mps create --profile lite --cpus 1 --memory 1G   # Profile + overrides
 
 ## Cloud-init Templates
 
-| Template | Includes |
-|----------|----------|
-| `base` | Docker (official), Node.js (nvm + pnpm/yarn/bun), Python (pip/venv/uv/pyenv), Go, Rust (rustup + just), build tools (clang/llvm/cmake), CLI tools (ripgrep/fd/jq/yq/tmux), Solana CLI, Anchor, Foundry, Hardhat |
+| Template | Location | Purpose |
+|----------|----------|---------|
+| `base` | `templates/cloud-init/base.yaml` | Minimal customization template (commented-out examples). Used at VM launch from pre-built images. |
+| (build) | `images/base/cloud-init.yaml` | Full provisioning template baked into images via Packer. Docker, Node.js, Python, Go, Rust, build tools, Solana, Anchor, Foundry, Hardhat. |
 
 ## Port Forwarding
 
@@ -172,17 +173,24 @@ Ports are automatically cleaned up on `mps down` and `mps destroy`.
 
 ## VS Code Integration
 
-Generate an SSH config for VS Code Remote-SSH:
+Generate an SSH config for VS Code Remote-SSH. This resolves your SSH key, injects it into the VM, and generates the config — no `sudo` required.
 
 ```bash
-# Print to stdout
-mps ssh-config
+# Auto-detect key, inject, print config
+mps ssh-config --name dev
+
+# Use a specific key
+mps ssh-config --ssh-key ~/.ssh/id_ed25519 --name dev
 
 # Append to ~/.ssh/config.d/
-mps ssh-config --append
+mps ssh-config --append --name dev
 ```
 
+SSH key resolution order: `--ssh-key` flag > `MPS_SSH_KEY` config > auto-detect from `~/.ssh/` (ed25519 > ecdsa > rsa).
+
 Then in VS Code: Remote-SSH -> Connect to Host -> `mps-<name>`.
+
+**Note:** Port forwarding requires SSH to be configured first. Run `mps ssh-config` before `mps port forward`.
 
 ## Pre-built Images
 
@@ -196,7 +204,7 @@ mps image list --remote
 mps image pull base:latest
 mps image pull base:1.0.0
 
-# Build locally with Packer (runs inside Docker)
+# Build locally with Packer (runs inside Docker, outputs .qcow2.img)
 make image-base                     # Native architecture
 make image-base ARCH=arm64          # Cross-architecture
 ```

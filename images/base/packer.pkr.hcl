@@ -67,12 +67,12 @@ variable "efi_firmware_vars" {
 
 variable "vm_name" {
   type    = string
-  default = "mps-base.qcow2"
+  default = "mps-base.qcow2.img"
 }
 
 locals {
   base_cloud_init = trimprefix(
-    file("${var.mps_root}/templates/cloud-init/base.yaml"),
+    file("${path.root}/cloud-init.yaml"),
     "#cloud-config\n"
   )
 }
@@ -83,7 +83,7 @@ source "qemu" "base" {
   disk_image        = true
   output_directory  = var.output_dir
   vm_name           = var.vm_name
-  disk_size         = "100G"
+  disk_size         = "16G"
   format            = "qcow2"
   qemu_binary       = var.qemu_binary
   machine_type      = var.machine_type

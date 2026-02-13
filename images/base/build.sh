@@ -50,14 +50,24 @@ for arch in "${ARCHITECTURES[@]}"; do
     packer build \
         -var "mps_root=${MPS_ROOT}" \
         -var "output_dir=${PACKER_OUTPUT_DIR}" \
-        -var "vm_name=mps-base-${arch}.qcow2" \
+        -var "vm_name=mps-base-${arch}.qcow2.img" \
         "${PACKER_ARCH_VARS[@]}" \
         packer.pkr.hcl
 
+    # Compact QCOW2 for optimal on-disk size
+    if command -v qemu-img &>/dev/null; then
+        echo "Compacting image..."
+        qemu-img convert -O qcow2 \
+            "${PACKER_OUTPUT_DIR}/mps-base-${arch}.qcow2.img" \
+            "${PACKER_OUTPUT_DIR}/mps-base-${arch}.compact.qcow2.img"
+        mv "${PACKER_OUTPUT_DIR}/mps-base-${arch}.compact.qcow2.img" \
+            "${PACKER_OUTPUT_DIR}/mps-base-${arch}.qcow2.img"
+    fi
+
     # Copy arch-specific artifacts to output
-    cp -a "${PACKER_OUTPUT_DIR}/mps-base-${arch}.qcow2" "$OUTPUT_DIR/"
-    if [[ -f "${PACKER_OUTPUT_DIR}/mps-base-${arch}.qcow2.sha256" ]]; then
-        cp -a "${PACKER_OUTPUT_DIR}/mps-base-${arch}.qcow2.sha256" "$OUTPUT_DIR/"
+    cp -a "${PACKER_OUTPUT_DIR}/mps-base-${arch}.qcow2.img" "$OUTPUT_DIR/"
+    if [[ -f "${PACKER_OUTPUT_DIR}/mps-base-${arch}.qcow2.img.sha256" ]]; then
+        cp -a "${PACKER_OUTPUT_DIR}/mps-base-${arch}.qcow2.img.sha256" "$OUTPUT_DIR/"
     fi
     rm -rf "${PACKER_OUTPUT_DIR:?err_unset}"
 

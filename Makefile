@@ -40,7 +40,7 @@ DOCKER_RUN_IMAGE := docker run --rm \
 # ---------- File sets ----------
 BASH_SCRIPTS := $(shell find bin/ lib/ commands/ images/ -name '*.sh' -o -name 'mps' 2>/dev/null | grep -v '.ps1') install.sh
 PS_SCRIPTS   := $(shell find . -name '*.ps1' 2>/dev/null)
-YAML_FILES   := $(shell find templates/ -name '*.yaml' 2>/dev/null)
+YAML_FILES   := $(shell find templates/ images/ -name '*.yaml' 2>/dev/null)
 HCL_FILES    := $(shell find images/ -name '*.pkr.hcl' 2>/dev/null)
 DOCKERFILES  := Dockerfile.builder Dockerfile.linter
 
@@ -166,7 +166,7 @@ image-base: $(BUILDER_STAMP) ## Build base VM image (both archs, or ARCH=amd64|a
 # ---------- Image import (local) ----------
 import-base: image-base ## Import host-arch base image into mps cache
 	@arch=$$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/'); \
-	./bin/mps image import images/base/output-base/mps-base-$$arch.qcow2 --name base --tag local
+	./bin/mps image import images/base/output-base/mps-base-$$arch.qcow2.img --name base --tag local
 
 # ---------- Image publishing (Backblaze B2) ----------
 # Usage: make publish-base VERSION=1.0.0
@@ -175,7 +175,7 @@ publish-base: ## Publish base image to Backblaze B2 (requires VERSION=x.y.z)
 	$(DOCKER_RUN) bash -c '\
 		for arch in amd64 arm64; do \
 			echo "Publishing $$arch..."; \
-			TARGET_ARCH=$$arch bash images/publish.sh base $(VERSION) images/base/output-base/mps-base-$$arch.qcow2; \
+			TARGET_ARCH=$$arch bash images/publish.sh base $(VERSION) images/base/output-base/mps-base-$$arch.qcow2.img; \
 		done'
 
 # ---------- Clean ----------

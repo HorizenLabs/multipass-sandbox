@@ -214,27 +214,15 @@ mp_ssh_info() {
         mps_die "Cannot determine IP for instance '$instance_name'"
     fi
 
-    # Multipass SSH key location varies by OS
+    # Read SSH key from instance metadata (set by mps ssh-config)
+    local short_name
+    short_name="$(mps_short_name "$instance_name")"
     local ssh_key=""
-    local os
-    os="$(mps_detect_os)"
-    case "$os" in
-        linux)
-            ssh_key="/var/snap/multipass/common/data/multipassd/ssh-keys/id_rsa"
-            if [[ ! -f "$ssh_key" ]]; then
-                ssh_key="${HOME}/.local/share/multipass/ssh-keys/id_rsa"
-            fi
-            ;;
-        macos)
-            ssh_key="/var/root/Library/Application Support/multipassd/ssh-keys/id_rsa"
-            if [[ ! -f "$ssh_key" ]]; then
-                ssh_key="${HOME}/Library/Application Support/multipassd/ssh-keys/id_rsa"
-            fi
-            ;;
-        windows)
-            ssh_key="C:/ProgramData/Multipass/data/ssh-keys/id_rsa"
-            ;;
-    esac
+    local meta_file
+    meta_file="$(mps_instance_meta "$short_name")"
+    if [[ -f "$meta_file" ]]; then
+        ssh_key="$(grep '^MPS_SSH_KEY=' "$meta_file" 2>/dev/null | cut -d= -f2)" || true
+    fi
 
     echo "IP=$ip"
     echo "SSH_KEY=$ssh_key"

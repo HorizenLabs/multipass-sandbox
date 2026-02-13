@@ -543,6 +543,141 @@ mps_confirm() {
     [[ "$response" =~ ^[Yy]([Ee][Ss])?$ ]]
 }
 
+# ---------- SSH Key Helpers ----------
+
+# Resolve SSH public key path.
+# Priority: explicit path > MPS_SSH_KEY config > ~/.ssh/ auto-detect
+# If given a private key path (no .pub), appends .pub.
+mps_resolve_ssh_pubkey() {
+    local explicit_path="${1:-${MPS_SSH_KEY:-}}"
+
+    if [[ -n "$explicit_path" ]]; then
+        # If user gave a private key path, derive the pubkey path
+        if [[ "$explicit_path" != *.pub ]]; then
+            explicit_path="${explicit_path}.pub"
+        fi
+        if [[ -f "$explicit_path" ]]; then
+            echo "$explicit_path"
+            return
+        fi
+        mps_die "SSH public key not found: ${explicit_path}"
+    fi
+
+    # Auto-detect from ~/.ssh/
+    local key_name
+    for key_name in id_ed25519.pub id_ecdsa.pub id_rsa.pub; do
+        if [[ -f "${HOME}/.ssh/${key_name}" ]]; then
+            echo "${HOME}/.ssh/${key_name}"
+            return
+        fi
+    done
+
+    mps_die "No SSH key found. Provide one with --ssh-key <path>, set MPS_SSH_KEY in config, or generate a key with: ssh-keygen -t ed25519"
+}
+
+# Derive SSH private key path from public key path (strip .pub).
+# Verifies the private key file exists.
+mps_resolve_ssh_privkey() {
+    local explicit_path="${1:-}"
+    local pubkey_path
+    pubkey_path="$(mps_resolve_ssh_pubkey "$explicit_path")"
+
+    local privkey_path="${pubkey_path%.pub}"
+    if [[ ! -f "$privkey_path" ]]; then
+        mps_die "SSH private key not found: ${privkey_path} (derived from ${pubkey_path})"
+    fi
+    echo "$privkey_path"
+}
+
+# Inject SSH public key into a running instance.
+# Checks instance metadata to avoid re-injection.
+# Writes MPS_SSH_KEY and MPS_SSH_INJECTED=true to metadata.
+mps_inject_ssh_key() {
+    local instance_name="$1"
+    local short_name="$2"
+    local pubkey_path="$3"
+    local privkey_path="$4"
+
+    # Check if already injected
+    local meta_file
+    meta_file="$(mps_instance_meta "$short_name")"
+    if [[ -f "$meta_file" ]]; then
+        local injected=""
+        injected="$(grep '^MPS_SSH_INJECTED=' "$meta_file" 2>/dev/null | cut -d= -f2)" || true
+        if [[ "$injected" == "true" ]]; then
+            mps_log_debug "SSH key already injected for '${short_name}'"
+            return 0
+        fi
+    fi
+
+    # Read public key content
+    local pubkey_content
+    pubkey_content="$(cat "$pubkey_path")"
+
+    mps_log_info "Injecting SSH key into '${short_name}'..."
+    if ! multipass exec "$instance_name" -- bash -c \
+        "mkdir -p ~/.ssh && chmod 700 ~/.ssh && echo '${pubkey_content}' >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys"; then
+        mps_die "Failed to inject SSH key into '${instance_name}'"
+    fi
+
+    # Record in instance metadata
+    if [[ -f "$meta_file" ]]; then
+        # Append to existing metadata
+        printf "MPS_SSH_KEY=%s\nMPS_SSH_INJECTED=true\n" "$privkey_path" >> "$meta_file"
+    else
+        # Create metadata file with SSH info
+        printf "MPS_SSH_KEY=%s\nMPS_SSH_INJECTED=true\n" "$privkey_path" > "$meta_file"
+    fi
+
+    mps_log_info "SSH key injected."
+}
+
+# Orchestrator: resolve key, inject if needed, return private key path.
+# Used by ssh-config only.
+mps_ensure_ssh_key() {
+    local instance_name="$1"
+    local short_name="$2"
+    local ssh_key_arg="${3:-}"
+
+    local pubkey_path privkey_path
+    pubkey_path="$(mps_resolve_ssh_pubkey "$ssh_key_arg")"
+    privkey_path="${pubkey_path%.pub}"
+
+    if [[ ! -f "$privkey_path" ]]; then
+        mps_die "SSH private key not found: ${privkey_path} (derived from ${pubkey_path})"
+    fi
+
+    mps_inject_ssh_key "$instance_name" "$short_name" "$pubkey_path" "$privkey_path"
+
+    echo "$privkey_path"
+}
+
+# Check that SSH has been configured for an instance (via mps ssh-config).
+# Returns private key path from metadata.
+# If not configured, errors with instructions.
+mps_require_ssh_key() {
+    local instance_name="$1"
+    local short_name="$2"
+
+    local meta_file
+    meta_file="$(mps_instance_meta "$short_name")"
+
+    if [[ -f "$meta_file" ]]; then
+        local injected=""
+        injected="$(grep '^MPS_SSH_INJECTED=' "$meta_file" 2>/dev/null | cut -d= -f2)" || true
+        if [[ "$injected" == "true" ]]; then
+            local ssh_key=""
+            ssh_key="$(grep '^MPS_SSH_KEY=' "$meta_file" 2>/dev/null | cut -d= -f2)" || true
+            if [[ -n "$ssh_key" && -f "$ssh_key" ]]; then
+                echo "$ssh_key"
+                return 0
+            fi
+        fi
+    fi
+
+    mps_die "SSH not configured for '${short_name}'. Run: mps ssh-config --name ${short_name}"
+}
+
 # ---------- Port Forwarding Helpers ----------
 
 # Return the path to the .ports tracking file for an instance
@@ -620,16 +755,21 @@ mps_forward_port() {
         return 1
     fi
 
-    # Get SSH credentials
+    # Get SSH credentials (requires prior mps ssh-config setup)
     local ssh_key="" ssh_user="ubuntu"
-    local ssh_info
-    ssh_info="$(mp_ssh_info "$instance_name")"
-    while IFS='=' read -r key val; do
-        case "$key" in
-            SSH_KEY) ssh_key="$val" ;;
-            USER)    ssh_user="$val" ;;
-        esac
-    done <<< "$ssh_info"
+    local meta_file
+    meta_file="$(mps_instance_meta "$short_name")"
+    if [[ -f "$meta_file" ]]; then
+        local injected=""
+        injected="$(grep '^MPS_SSH_INJECTED=' "$meta_file" 2>/dev/null | cut -d= -f2)" || true
+        if [[ "$injected" == "true" ]]; then
+            ssh_key="$(grep '^MPS_SSH_KEY=' "$meta_file" 2>/dev/null | cut -d= -f2)" || true
+        fi
+    fi
+    if [[ -z "$ssh_key" || ! -f "$ssh_key" ]]; then
+        mps_log_warn "SSH not configured for '${short_name}' — skipping port ${port_spec}. Run: mps ssh-config --name ${short_name}"
+        return 1
+    fi
 
     # Check for existing active tunnel on same host port
     local ports_file
