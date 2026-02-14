@@ -18,7 +18,7 @@ Decisions made during planning sessions, preserved to avoid re-asking.
 
 **CLI Dev Tools**: `git`, `curl`, `wget`, `jq`, `yq`, `tmux`, `htop`, `tree`, `ripgrep`, `fd-find`, `vim`, `neovim`, `nano`, `shellcheck`, `hadolint`
 
-**Shell**: Bash as default. No zsh/oh-my-zsh.
+**Shell**: Bash as default. zsh installed but not set as default shell.
 
 ## Mount Behavior
 
@@ -165,6 +165,29 @@ Additional:
 ## QCOW2 File Extension
 
 **Decision**: `.qcow2.img` — preserves format info while being Multipass-compatible (requires `.img`).
+
+## AI Coding Assistants
+
+**Decision**: Pre-install agentic CLI/TUI coding assistants in the base image. Users bring their own API keys.
+
+| Tool | Install Method | Runtime Deps |
+|---|---|---|
+| Claude Code | Native binary installer (`curl \| bash`) | None |
+| Crush | bun (`@charmland/crush`) | Node.js (via bun) |
+| OpenCode | bun (`opencode-ai`) | Node.js (via bun) |
+| Gemini CLI | bun (`@google/gemini-cli`) | Node.js (via bun) |
+| Codex CLI | bun (`@openai/codex`) | Node.js (via bun) |
+
+**Selection criteria**: CLI/TUI agentic tools with large communities, primarily free to use, open source preferred. Excluded: IDE-only plugins, paid-only tools, small/niche projects.
+
+**Claude Code Plugin Marketplaces**: Two marketplaces registered at image build time:
+
+| Marketplace | Source | Access |
+|---|---|---|
+| `hl-claude-marketplace` | Git submodule at `vendor/hl-claude-marketplace` | Private (HorizenLabs) |
+| `trailofbits/skills` | GitHub shorthand (cloned at build time) | Public |
+
+**Private marketplace strategy**: Git submodule with relative URL (`../hl-claude-marketplace.git`). Resolves against parent repo remote, automatically using the same protocol (HTTPS or SSH). No credentials needed inside the Packer VM — files are copied via Packer `file` provisioner, then registered with `claude plugin marketplace add /local/path`. Build script verifies submodule is initialized before starting.
 
 ## Windows Support
 

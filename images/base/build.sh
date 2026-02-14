@@ -16,6 +16,13 @@ if ! command -v packer &>/dev/null; then
     exit 1
 fi
 
+# Verify git submodule (private Claude Code marketplace)
+if [[ ! -f "$MPS_ROOT/vendor/hl-claude-marketplace/.claude-plugin/marketplace.json" ]]; then
+    echo "ERROR: Git submodule 'vendor/hl-claude-marketplace' is not initialized."
+    echo "Run: git submodule update --init"
+    exit 1
+fi
+
 cd "$SCRIPT_DIR"
 
 # Determine which architectures to build

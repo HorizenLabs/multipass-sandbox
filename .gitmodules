@@ -1,0 +1,3 @@
+[submodule "vendor/hl-claude-marketplace"]
+	path = vendor/hl-claude-marketplace
+	url = ../hl-claude-marketplace.git

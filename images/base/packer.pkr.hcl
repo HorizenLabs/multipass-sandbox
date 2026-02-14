@@ -118,6 +118,23 @@ source "qemu" "base" {
 build {
   sources = ["source.qemu.base"]
 
+  # Copy private Claude Code marketplace into VM (from git submodule, no credentials needed)
+  provisioner "file" {
+    source      = "${var.mps_root}/vendor/hl-claude-marketplace"
+    destination = "/tmp/hl-claude-marketplace"
+  }
+
+  # Register Claude Code plugin marketplaces (must run before post-provision cleanup)
+  provisioner "shell" {
+    inline = [
+      "export HOME=/home/ubuntu",
+      "export PATH=\"$HOME/.claude/bin:$HOME/.local/bin:$PATH\"",
+      "claude plugin marketplace add /tmp/hl-claude-marketplace",
+      "claude plugin marketplace add trailofbits/skills",
+    ]
+    execute_command = "chmod +x {{ .Path }}; sudo -u ubuntu bash {{ .Path }}"
+  }
+
   provisioner "shell" {
     scripts = [
       "scripts/post-provision-base.sh",

@@ -29,6 +29,7 @@ Internal CLI tool for spinning up isolated VM-based development environments usi
 - `Makefile` — All targets run inside Docker containers via `docker run`
 - `install.sh` / `install.ps1` — Installer scripts
 - `checkmake.ini`, `.yamllint` — Linter configuration files
+- `vendor/hl-claude-marketplace` — Git submodule: private Claude Code plugin marketplace (relative URL)
 - `.planning/` — Implementation plan, architecture decisions, status tracking
 
 ## Commands

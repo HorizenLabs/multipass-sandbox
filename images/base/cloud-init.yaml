@@ -1,7 +1,8 @@
 #cloud-config
 # Multi Pass Sandbox — Base cloud-init template
 # Installs: Docker (official repo), Node.js (nvm), Python (uv), Go, Rust, dev tools,
-#           Solana CLI, Anchor, Foundry, Hardhat
+#           Solana CLI, Anchor, Foundry, Hardhat,
+#           AI coding assistants (Claude Code, Crush, OpenCode, Gemini CLI, Codex CLI)
 # Checksums verified: yq (SHA-256), hadolint (SHA-256)
 
 package_update: true
@@ -39,6 +40,7 @@ packages:
   - fd-find
   - vim
   - nano
+  - zsh
   # SSL/crypto libs (needed by many build systems)
   - libssl-dev
   - libffi-dev
@@ -117,7 +119,7 @@ runcmd:
     install -m 755 /tmp/"${HL_FILE}" /usr/local/bin/hadolint
     rm /tmp/"${HL_FILE}" /tmp/"${HL_FILE}.sha256"
 
-  # ---------- Node.js via nvm (as ubuntu user) ----------
+  # ---------- Node.js via nvm + bun (as ubuntu user) ----------
   - |
     sudo -u ubuntu bash -c '
       export HOME=/home/ubuntu
@@ -126,10 +128,11 @@ runcmd:
       [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
       nvm install --lts
       nvm alias default lts/*
-      # Install global package managers
-      npm install -g pnpm yarn
-      # Install bun
+      # Install bun runtime
       curl -fsSL https://bun.sh/install | bash
+      export PATH="$HOME/.bun/bin:$PATH"
+      # Install global package managers via bun
+      bun install -g pnpm yarn
     '
 
   # ---------- Go (latest stable from golang.org) ----------
@@ -185,13 +188,27 @@ runcmd:
       "$HOME/.foundry/bin/foundryup"
     '
 
-  # ---------- Hardhat (via npm) ----------
+  # ---------- Hardhat (via bun) ----------
   - |
     sudo -u ubuntu bash -c '
       export HOME=/home/ubuntu
-      export NVM_DIR="$HOME/.nvm"
-      [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
-      npm install -g hardhat
+      export PATH="$HOME/.bun/bin:$PATH"
+      bun install -g hardhat
+    '
+
+  # ---------- AI coding assistants ----------
+  # Claude Code (native binary installer)
+  - |
+    sudo -u ubuntu bash -c '
+      export HOME=/home/ubuntu
+      curl -fsSL https://claude.ai/install.sh | bash
+    '
+  # Crush, OpenCode, Gemini CLI, Codex CLI (via bun)
+  - |
+    sudo -u ubuntu bash -c '
+      export HOME=/home/ubuntu
+      export PATH="$HOME/.bun/bin:$PATH"
+      bun install -g @charmland/crush opencode-ai @google/gemini-cli @openai/codex
     '
 
   # ---------- Final: ensure ubuntu owns its home ----------
