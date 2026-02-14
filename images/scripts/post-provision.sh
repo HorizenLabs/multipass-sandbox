@@ -1,14 +1,18 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Post-provisioning script for base image
+# Post-provisioning script for MPS images (all flavors)
 # Runs after cloud-init has completed during Packer build.
 # Cleans up and prepares the image for distribution.
 
-echo "=== MPS Base Image: Post-provisioning ==="
+echo "=== MPS Image: Post-provisioning ==="
 
 # Wait for cloud-init to finish (should already be done, but be safe)
 cloud-init status --wait || true
+
+# Ensure ubuntu owns its entire home directory
+# (must run after all layers — Go, Rust, Solana etc. create files as ubuntu)
+chown -R ubuntu:ubuntu /home/ubuntu
 
 # Remove build-time password (Multipass injects its own SSH keys)
 passwd -l ubuntu
@@ -25,6 +29,7 @@ apt-get clean
 rm -rf /var/lib/apt/lists/*
 
 # Clean up Rust/Cargo build caches (binaries in ~/.cargo/bin are preserved)
+# No-op if Rust isn't installed (rm -rf on non-existent dirs is fine)
 rm -rf /home/ubuntu/.cargo/registry \
        /home/ubuntu/.cargo/git \
        /home/ubuntu/.cargo/.package-cache

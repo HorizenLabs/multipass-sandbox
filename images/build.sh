@@ -1,0 +1,137 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Build an MPS image flavor using Packer
+# Merges cloud-init layers with yq, then runs Packer.
+#
+# Usage:
+#   bash build.sh <flavor>
+#   bash build.sh base
+#   bash build.sh smart-contract-audit
+#
+# Flavors (each includes all preceding layers):
+#   base                  — base
+#   protocol-dev          — base + protocol-dev
+#   smart-contract-dev    — base + protocol-dev + smart-contract-dev
+#   smart-contract-audit  — base + protocol-dev + smart-contract-dev + smart-contract-audit
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+MPS_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+FLAVOR="${1:?Usage: build.sh <flavor> (base|protocol-dev|smart-contract-dev|smart-contract-audit)}"
+
+# ---------- Map flavor to layer files ----------
+case "$FLAVOR" in
+    base)
+        LAYERS=("layers/base.yaml")
+        ;;
+    protocol-dev)
+        LAYERS=("layers/base.yaml" "layers/protocol-dev.yaml")
+        ;;
+    smart-contract-dev)
+        LAYERS=("layers/base.yaml" "layers/protocol-dev.yaml" "layers/smart-contract-dev.yaml")
+        ;;
+    smart-contract-audit)
+        LAYERS=("layers/base.yaml" "layers/protocol-dev.yaml" "layers/smart-contract-dev.yaml" "layers/smart-contract-audit.yaml")
+        ;;
+    *)
+        echo "ERROR: Unknown flavor: $FLAVOR"
+        echo "Valid flavors: base, protocol-dev, smart-contract-dev, smart-contract-audit"
+        exit 1
+        ;;
+esac
+
+echo "=== Building MPS Image: ${FLAVOR} ==="
+echo "Layers: ${LAYERS[*]}"
+
+# ---------- Check dependencies ----------
+if ! command -v packer &>/dev/null; then
+    echo "ERROR: 'packer' is required but not installed."
+    exit 1
+fi
+
+if ! command -v yq &>/dev/null; then
+    echo "ERROR: 'yq' is required but not installed."
+    exit 1
+fi
+
+# Verify git submodule (private Claude Code marketplace)
+if [[ ! -f "$MPS_ROOT/vendor/hl-claude-marketplace/.claude-plugin/marketplace.json" ]]; then
+    echo "ERROR: Git submodule 'vendor/hl-claude-marketplace' is not initialized."
+    echo "Run: git submodule update --init"
+    exit 1
+fi
+
+cd "$SCRIPT_DIR"
+
+# ---------- Merge layers with yq ----------
+echo "Merging cloud-init layers..."
+yq eval-all '. as $item ireduce ({}; . *+ $item)' "${LAYERS[@]}" > cloud-init.yaml
+echo "Merged cloud-init.yaml generated ($(wc -l < cloud-init.yaml) lines)"
+
+# ---------- Determine architectures ----------
+if [[ -n "${TARGET_ARCH:-}" ]]; then
+    ARCHITECTURES=("$TARGET_ARCH")
+else
+    ARCHITECTURES=("amd64" "arm64")
+fi
+
+# Initialize packer plugins (once, shared across arch builds)
+packer init packer.pkr.hcl
+
+# Ensure artifacts directory exists
+mkdir -p artifacts
+
+for arch in "${ARCHITECTURES[@]}"; do
+    echo ""
+    echo "=== Building ${FLAVOR} for ${arch} ==="
+
+    # Set TARGET_ARCH for arch-config.sh
+    export TARGET_ARCH="$arch"
+
+    # Source arch configuration (sets PACKER_ARCH_VARS)
+    # shellcheck source=arch-config.sh
+    source "$MPS_ROOT/images/arch-config.sh"
+
+    PACKER_OUTPUT_DIR="/tmp/packer-output-${FLAVOR}-${arch}"
+    rm -rf "${PACKER_OUTPUT_DIR:?err_unset}"
+
+    VM_NAME="mps-${FLAVOR}-${arch}.qcow2.img"
+
+    packer build \
+        -var "mps_root=${MPS_ROOT}" \
+        -var "image_name=${FLAVOR}" \
+        -var "output_dir=${PACKER_OUTPUT_DIR}" \
+        -var "vm_name=${VM_NAME}" \
+        "${PACKER_ARCH_VARS[@]}" \
+        packer.pkr.hcl
+
+    # Compact QCOW2 for optimal on-disk size
+    if command -v qemu-img &>/dev/null; then
+        echo "Compacting image..."
+        qemu-img convert -O qcow2 \
+            "${PACKER_OUTPUT_DIR}/${VM_NAME}" \
+            "${PACKER_OUTPUT_DIR}/${VM_NAME%.img}.compact.img"
+        mv "${PACKER_OUTPUT_DIR}/${VM_NAME%.img}.compact.img" \
+            "${PACKER_OUTPUT_DIR}/${VM_NAME}"
+    fi
+
+    # Generate SHA256 checksum (must be after compaction)
+    echo "Generating SHA256 checksum..."
+    (cd "${PACKER_OUTPUT_DIR}" && sha256sum "${VM_NAME}" > "${VM_NAME}.sha256")
+
+    # Copy arch-specific artifacts to output
+    cp -a "${PACKER_OUTPUT_DIR}/${VM_NAME}" "artifacts/"
+    cp -a "${PACKER_OUTPUT_DIR}/${VM_NAME}.sha256" "artifacts/"
+    rm -rf "${PACKER_OUTPUT_DIR:?err_unset}"
+
+    echo "=== ${FLAVOR} ${arch} build complete ==="
+done
+
+# Clean up generated cloud-init.yaml
+rm -f cloud-init.yaml
+
+echo ""
+echo "=== All ${FLAVOR} builds complete ==="
+echo "Artifacts in: ${SCRIPT_DIR}/artifacts/"
+ls -lh artifacts/mps-"${FLAVOR}"-*.qcow2.img* 2>/dev/null || true

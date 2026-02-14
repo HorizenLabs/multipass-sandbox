@@ -25,7 +25,7 @@ ${_color_bold}Examples:${_color_reset}
     mps image list --remote
     mps image pull base
     mps image pull base:1.0.0
-    mps image import images/base/output-base/mps-base-amd64.qcow2
+    mps image import images/artifacts/mps-base-amd64.qcow2.img
     mps image import myimage.qcow2 --name base --tag 1.0.0
 EOF
 }

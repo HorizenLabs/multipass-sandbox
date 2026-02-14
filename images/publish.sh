@@ -5,7 +5,7 @@ set -euo pipefail
 #
 # Usage:
 #   ./images/publish.sh <image-name> <version> <image-file>
-#   ./images/publish.sh base 1.0.0 images/base/output-base/mps-base.qcow2
+#   ./images/publish.sh base 1.0.0 images/artifacts/mps-base-amd64.qcow2.img
 #
 # Requires: b2 CLI (authenticated), jq
 #

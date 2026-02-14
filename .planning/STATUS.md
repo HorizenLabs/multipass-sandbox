@@ -5,14 +5,19 @@
 - **Phase 1 — MVP Core**: bin/mps, lib/common.sh, lib/multipass.sh, all commands (create/up/down/destroy/shell/exec/list/status/ssh-config), config cascade, profiles, cloud-init
 - **Phase 2 — Image System**: Packer pipeline, manifest.json, publish.sh, dual-arch builds (amd64+arm64), Ubuntu 24.04, QEMU TCG optimization, image import/resolution
 - **Phase 3 — Port Forwarding**: SSH tunnels via `mps port forward/list`, auto-forward from MPS_PORTS, cleanup on down/destroy
-- **Phase 4 — Polish & Build System**: Dockerized builds (builder+linter images), stamp-based caching, secure dependency installation (GPG/SHA256), SSH key refactor, repo restructure, image build improvements (10G disk, .qcow2.img, HWE kernel), cloud-init hardening, installers, shellcheck clean
+- **Phase 4 — Polish & Build System**: Dockerized builds (builder+linter images), stamp-based caching, secure dependency installation (GPG/SHA256), SSH key refactor, repo restructure, image build improvements (15G disk, .qcow2.img, HWE kernel), cloud-init hardening, installers, shellcheck clean
 - **Cross-Architecture Image Building**: QEMU cross-compilation, KVM/TCG detection, EFI firmware for arm64
 - **File Transfer**: `mps transfer` with colon-prefix convention, `--transfer` flag on create/up
 
-## Phase 5 — Core Changes: NOT STARTED
+## Phase 5 — Core Changes: IN PROGRESS
 
+- [x] Split monolithic cloud-init.yaml into composable layers (`images/layers/`)
+- [x] Restructure `images/` directory (layers/, artifacts/, shared packer/build files)
+- [x] Rewrite build.sh to accept flavor argument + yq merge
+- [x] Add yq to Dockerfile.builder
+- [x] Update Makefile with per-flavor build/import/publish/clean targets
+- [x] Update manifest.json with 4 image flavors
 - [ ] Build system logic refinements
-- [ ] Image package updates (base cloud-init toolchain)
 - [ ] mps command changes as needed
 
 ## Phase 6 — Linting CI: NOT STARTED

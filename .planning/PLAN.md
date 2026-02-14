@@ -25,14 +25,15 @@ A blockchain software development company needs an internal tool to spin up isol
 
 **Phase 3 — Port Forwarding**: `mps port forward/list`, SSH local port forwarding with PID tracking, auto-forward from `MPS_PORTS` config, cleanup on stop/destroy.
 
-**Phase 4 — Polish & Build System**: Dockerized build system (builder + linter images), Makefile with stamp-based caching, secure dependency installation (GPG/SHA256 verification), SSH key refactor (user-provided keys, no sudo), repo restructure, image build improvements (10G disk, HWE kernel, qemu-img compaction), cloud-init hardening, installers, shellcheck clean.
+**Phase 4 — Polish & Build System**: Dockerized build system (builder + linter images), Makefile with stamp-based caching, secure dependency installation (GPG/SHA256 verification), SSH key refactor (user-provided keys, no sudo), repo restructure, image build improvements (15G disk, HWE kernel, qemu-img compaction), cloud-init hardening, installers, shellcheck clean.
 
 ---
 
 ## Phase 5 — Core Changes
 
+- **Image flavors**: Split monolithic `cloud-init.yaml` into composable layers (`images/layers/`): base, protocol-dev, smart-contract-dev, smart-contract-audit. Build-time yq merge produces the final cloud-init per flavor.
+- **Directory restructure**: Shared build files (`packer.pkr.hcl`, `build.sh`, `packer-user-data.pkrtpl.hcl`) moved from `images/base/` to `images/`. Artifacts go to `images/artifacts/`.
 - Build system logic refinements
-- Image package updates (base cloud-init toolchain)
 - mps command changes as needed
 
 ## Phase 6 — Linting CI

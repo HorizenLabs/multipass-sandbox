@@ -2,7 +2,22 @@
   "schema_version": 1,
   "images": {
     "base": {
-      "description": "Ubuntu 24.04 + Docker + core dev tools (Node.js, Python, Go, Rust) + blockchain (Solana, Anchor, Foundry, Hardhat)",
+      "description": "Ubuntu 24.04 + Docker + Node.js + Python + dev tools + AI assistants",
+      "versions": {},
+      "latest": null
+    },
+    "protocol-dev": {
+      "description": "base + C/C++ toolchain + Go + Rust",
+      "versions": {},
+      "latest": null
+    },
+    "smart-contract-dev": {
+      "description": "protocol-dev + Solana + Anchor + Foundry + Hardhat",
+      "versions": {},
+      "latest": null
+    },
+    "smart-contract-audit": {
+      "description": "smart-contract-dev + Slither + Mythril + Echidna + Medusa + Halmos",
       "versions": {},
       "latest": null
     }

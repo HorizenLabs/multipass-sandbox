@@ -1,0 +1,46 @@
+#cloud-config
+# MPS Layer: smart-contract-dev
+# Solana CLI + Anchor, Foundry, Hardhat, Solhint (on top of protocol-dev)
+
+runcmd:
+  # ---------- Solana CLI + Anchor ----------
+  - |
+    sudo -u ubuntu bash -c '
+      export HOME=/home/ubuntu
+      source "$HOME/.cargo/env"
+      # Solana CLI
+      sh -c "$(curl -fsSL https://release.anza.xyz/stable/install)"
+      echo "export PATH=\"\$HOME/.local/share/solana/install/active_release/bin:\$PATH\"" >> "$HOME/.bashrc"
+      # Anchor
+      cargo install --git https://github.com/coral-xyz/anchor avm --force
+      source "$HOME/.cargo/env"
+      avm install latest
+      avm use latest
+    '
+
+  # ---------- Foundry (forge, cast, anvil, chisel) ----------
+  - |
+    sudo -u ubuntu bash -c '
+      export HOME=/home/ubuntu
+      curl -fsSL https://foundry.paradigm.xyz | bash
+      source "$HOME/.bashrc"
+      "$HOME/.foundry/bin/foundryup"
+    '
+
+  # ---------- Hardhat (via bun) ----------
+  - |
+    sudo -u ubuntu bash -c '
+      export HOME=/home/ubuntu
+      export PATH="$HOME/.bun/bin:$PATH"
+      bun install -g hardhat
+    '
+
+  # ---------- Solhint linter (via bun) ----------
+  - |
+    sudo -u ubuntu bash -c '
+      export HOME=/home/ubuntu
+      export PATH="$HOME/.bun/bin:$PATH"
+      bun install -g solhint
+    '
+
+final_message: "MPS smart-contract-dev image provisioning complete."

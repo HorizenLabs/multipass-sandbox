@@ -7,13 +7,11 @@
 build/
 dist/
 .stamp-*
-*.img
-*.qcow2
-*.qcow2.img
 
-# Packer
-images/*/output-*/
-images/*/*.img
+# Packer / image builds
+images/artifacts/*
+!images/artifacts/.gitkeep
+images/cloud-init.yaml
 packer_cache/
 
 # OS

@@ -1,5 +1,5 @@
-# Multi Pass Sandbox — Base Image Packer Template
-# Builds a QCOW2 image with Docker and core dev tools pre-installed.
+# Multi Pass Sandbox — Image Packer Template
+# Builds a QCOW2 image from merged cloud-init layers.
 
 packer {
   required_plugins {
@@ -12,7 +12,12 @@ packer {
 
 variable "mps_root" {
   type    = string
-  default = "../.."
+  default = ".."
+}
+
+variable "image_name" {
+  type    = string
+  default = "base"
 }
 
 variable "ubuntu_version" {
@@ -22,7 +27,7 @@ variable "ubuntu_version" {
 
 variable "output_dir" {
   type    = string
-  default = "output-base"
+  default = "output"
 }
 
 variable "target_arch" {
@@ -67,7 +72,7 @@ variable "efi_firmware_vars" {
 
 variable "vm_name" {
   type    = string
-  default = "mps-base.qcow2.img"
+  default = "mps-base-amd64.qcow2.img"
 }
 
 locals {
@@ -93,7 +98,7 @@ source "qemu" "base" {
   efi_firmware_code = var.efi_firmware_code
   efi_firmware_vars = var.efi_firmware_vars
   memory            = 8192
-  cpus              = 4
+  cpus              = 6  # Benchmarked: optimal for amd64 KVM; arm64 TCG is emulation-bound
   ssh_username      = "ubuntu"
   ssh_password      = "ubuntu"
   ssh_timeout       = "30m"
@@ -138,7 +143,7 @@ build {
 
   provisioner "shell" {
     scripts = [
-      "scripts/post-provision-base.sh",
+      "scripts/post-provision.sh",
     ]
     execute_command = "chmod +x {{ .Path }}; sudo {{ .Path }}"
   }

@@ -2,7 +2,7 @@
 # MPS — Cloud-init customization template
 # Uncomment and modify sections below to customize your sandbox.
 # This template is used when launching VMs from pre-built mps images.
-# For the full provisioning template, see images/base/cloud-init.yaml.
+# For the full provisioning layers, see images/layers/.
 
 # --- Install additional packages ---
 # packages:

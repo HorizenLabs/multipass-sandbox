@@ -60,6 +60,21 @@ RUN set -eux; \
     rm /tmp/"${B2_BIN}" /tmp/"${B2_BIN}_hashes.txt"; \
     b2 version
 
+# ---------- yq (YAML merge tool, SHA256-verified) ----------
+RUN set -eux; \
+    ARCH="$(dpkg --print-architecture)"; \
+    YQ_VERSION="v4.45.1"; \
+    YQ_FILE="yq_linux_${ARCH}"; \
+    curl -fsSL "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/${YQ_FILE}" \
+        -o /tmp/"${YQ_FILE}"; \
+    curl -fsSL "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/checksums" \
+        -o /tmp/yq_checksums; \
+    EXPECTED=$(awk "/^${YQ_FILE} /{print \$19}" /tmp/yq_checksums); \
+    echo "${EXPECTED}  /tmp/${YQ_FILE}" | sha256sum -c -; \
+    install -m 755 /tmp/"${YQ_FILE}" /usr/local/bin/yq; \
+    rm /tmp/"${YQ_FILE}" /tmp/yq_checksums; \
+    yq --version
+
 # ---------- Entrypoint ----------
 COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh

@@ -2,23 +2,35 @@
 
 Decisions made during planning sessions, preserved to avoid re-asking.
 
-## Base Image Dependencies
+## Image Layer Contents
 
-**Decision**: The base cloud-init template (`images/base/cloud-init.yaml`) installs a comprehensive dev toolchain, not a minimal image. A separate minimal `templates/cloud-init/base.yaml` provides commented-out examples for VM launch customization.
+**Decision**: Cloud-init layers in `images/layers/` are merged at build time to produce the toolchain for each flavor. A separate minimal `templates/cloud-init/base.yaml` provides commented-out examples for VM launch customization.
 
-**Docker**: Official apt repo (`docker-ce`, `docker-ce-cli`, `containerd.io`, `docker-buildx-plugin`, `docker-compose-plugin`). V2 plugin only — no legacy `docker-compose` v1.
+**base layer** (all flavors):
+- Docker: Official apt repo (`docker-ce`, `docker-ce-cli`, `containerd.io`, `docker-buildx-plugin`, `docker-compose-plugin`). V2 plugin only.
+- Node.js: Latest LTS via `nvm`, plus `pnpm`, `yarn`, `bun`
+- Python: System Python 3 + `pip`, `venv`, `uv`
+- CLI dev tools: `git`, `curl`, `wget`, `jq`, `yq`, `tmux`, `htop`, `tree`, `ripgrep`, `fd-find`, `vim`, `neovim`, `nano`, `shellcheck`, `hadolint`, `pv`, `p7zip-full`, `screen`
+- AI coding assistants: Claude Code, Crush, OpenCode, Gemini CLI, Codex CLI
+- Shell: Bash default, zsh installed but not default. `just` via apt.
 
-**Language Runtimes**:
-- Node.js — Latest LTS via `nvm`, plus `pnpm`, `yarn`, `bun`
-- Python — System Python 3 + `pip`, `venv`, `uv` (version manager)
-- Go — Latest stable from golang.org/dl (direct install to `/usr/local/go`, no version manager)
-- Rust — Via `rustup`, per-user (`~ubuntu/.cargo`), plus `just` via apt
+**protocol-dev layer** (protocol-dev and above):
+- Build toolchain: `build-essential`, `pkg-config`, `autoconf`, `automake`, `libtool`, `clang`, `llvm`, `libclang-dev`, `lld`, `cmake`
+- SSL/crypto/dev libs: `libssl-dev`, `libffi-dev`, `zlib1g-dev`, `libbz2-dev`, `libreadline-dev`, `libsqlite3-dev`, `libncurses-dev`, `libxml2-dev`, `libxmlsec1-dev`, `liblzma-dev`, `libzstd-dev`, `libsquashfs-dev`, `libudev-dev`, `protobuf-compiler`, `libprotobuf-dev`
+- Go: Latest stable from golang.org/dl (direct install to `/usr/local/go`)
+- Rust: Via `rustup`, per-user (`~ubuntu/.cargo`), plus `cargo-audit`
 
-**Build Toolchain**: `build-essential`, `pkg-config`, `autoconf`, `automake`, `libtool`, `clang`, `llvm`, `cmake`
+**smart-contract-dev layer** (smart-contract-dev and above):
+- Solana CLI + Anchor (via cargo/avm)
+- Foundry (forge, cast, anvil, chisel)
+- Hardhat + Solhint (via bun)
 
-**CLI Dev Tools**: `git`, `curl`, `wget`, `jq`, `yq`, `tmux`, `htop`, `tree`, `ripgrep`, `fd-find`, `vim`, `neovim`, `nano`, `shellcheck`, `hadolint`
-
-**Shell**: Bash as default. zsh installed but not set as default shell.
+**smart-contract-audit layer** (smart-contract-audit only):
+- cosign (sigstore verification)
+- Slither, solc-select, Mythril, Halmos (via uv)
+- Aderyn (Cyfrin installer)
+- Echidna (sigstore-verified binary)
+- Medusa (via go install)
 
 ## Mount Behavior
 
@@ -69,6 +81,7 @@ Additional:
 | BATS v1.13.0 | linter | None (no hashes published) |
 | PowerShell | linter | GPG-signed Microsoft apt repo |
 | yamllint, py-psscriptanalyzer | linter | None (pip) |
+| yq v4.45.1 | builder | SHA256 from rhash `checksums` file (field $19) |
 
 **b2 standalone binary**: Replaces pip-based `b2[full]`. Eliminates python3/pip/venv from builder image.
 
@@ -100,7 +113,22 @@ Additional:
 
 ## Image Flavors
 
-**Decision**: Single `base` image. Blockchain tools (Solana, Anchor, Foundry, Hardhat) included in base — no separate `blockchain` flavor.
+**Decision**: Composable cloud-init layers merged at build time with `yq eval-all '. as $item ireduce ({}; . *+ $item)'`. Each layer is a standalone `#cloud-config` file.
+
+**Layers** (cumulative — each flavor includes all preceding layers):
+
+| Flavor | Layers | Use case |
+|---|---|---|
+| `base` | base | General dev (Docker, Node.js, Python, AI tools) |
+| `protocol-dev` | base + protocol-dev | Systems/protocol dev (+ C/C++, Go, Rust) |
+| `smart-contract-dev` | base + protocol-dev + smart-contract-dev | Smart contract dev (+ Solana, Foundry, Hardhat) |
+| `smart-contract-audit` | all four layers | Full auditing toolkit (+ Slither, Echidna, Medusa) |
+
+**yq merge strategy**: `*+` (deep merge with array append). `packages` lists merge additively, `runcmd` lists append in layer order, scalar keys (like `final_message`) are overwritten by later layers.
+
+**Build artifacts**: All flavors output to `images/artifacts/mps-<flavor>-<arch>.qcow2.img`. Generated `cloud-init.yaml` is cleaned up after build.
+
+**chown moved to post-provision**: `chown -R ubuntu:ubuntu /home/ubuntu` runs in `post-provision.sh` instead of as the last runcmd entry. This ensures it always runs after all layers' runcmd blocks regardless of merge order.
 
 ## Linting Coverage
 
@@ -110,7 +138,7 @@ Additional:
 | PowerShell | py-psscriptanalyzer | `*.ps1` |
 | Dockerfile | hadolint | `Dockerfile.builder`, `Dockerfile.linter` |
 | Makefile | checkmake | `Makefile` |
-| YAML | yamllint | `templates/**/*.yaml`, `images/**/*.yaml` |
+| YAML | yamllint | `templates/**/*.yaml`, `images/layers/*.yaml` |
 | HCL | packer fmt -check | `images/**/*.pkr.hcl` |
 
 **Shellcheck**: Command files use `# shellcheck disable=SC2154` at file-level — they're sourced by `bin/mps` which provides color variables from `lib/common.sh`. ShellCheck can't trace cross-file sourcing.
@@ -121,7 +149,7 @@ Additional:
 
 - `.stamp-builder` depends on `Dockerfile.builder` + `docker/entrypoint.sh`
 - `.stamp-linter` depends on `Dockerfile.linter` + `docker/entrypoint.sh`
-- `.stamp-image-base-{amd64,arm64}` — per-arch, depend on builder stamp + Packer/cloud-init sources
+- `.stamp-image-<flavor>-{amd64,arm64}` — per-flavor per-arch, depend on builder stamp + shared image deps (packer.pkr.hcl, build.sh, all layers)
 - `make clean` removes `.stamp-*`; `.stamp-*` is in `.gitignore`
 
 ## File Transfer
@@ -170,7 +198,7 @@ Additional:
 
 ## Solidity Security Tools
 
-**Decision**: Comprehensive Solidity auditing toolkit in the base image.
+**Decision**: Comprehensive Solidity auditing toolkit in the `smart-contract-audit` layer.
 
 | Tool | Category | Install Method |
 |---|---|---|
@@ -187,7 +215,7 @@ Additional:
 
 ## AI Coding Assistants
 
-**Decision**: Pre-install agentic CLI/TUI coding assistants in the base image. Users bring their own API keys.
+**Decision**: Pre-install agentic CLI/TUI coding assistants in the base layer (included in all flavors). Users bring their own API keys.
 
 | Tool | Install Method | Runtime Deps |
 |---|---|---|

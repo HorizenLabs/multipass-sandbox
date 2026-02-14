@@ -20,10 +20,17 @@ Internal CLI tool for spinning up isolated VM-based development environments usi
 - `lib/multipass.sh` — Thin wrappers around `multipass` CLI with `--format json` + `jq`
 - `commands/*.sh` — One file per subcommand, each exports `cmd_<name>()` function
 - `templates/cloud-init/` — Minimal cloud-init templates for VM launch customization
-- `images/base/cloud-init.yaml` — Full provisioning template baked into images via Packer
+- `images/layers/` — Composable cloud-init layer files (base, protocol-dev, smart-contract-dev, smart-contract-audit)
+- `images/build.sh` — Image build script (takes flavor arg, merges layers with yq)
+- `images/packer.pkr.hcl` — Packer template (shared across all flavors)
+- `images/packer-user-data.pkrtpl.hcl` — Packer user-data template (cloud-init wrapper for builds)
+- `images/arch-config.sh` — Per-arch Packer variable resolution (KVM vs TCG, EFI firmware)
+- `images/artifacts/` — Built QCOW2 images (gitignored)
+- `images/scripts/post-provision.sh` — Post-build cleanup (runs after cloud-init)
+- `images/manifest.json` — Image registry manifest (SemVer versions + `latest` pointer per flavor)
+- `images/publish.sh` — Publish images to Backblaze B2 + update manifest
 - `templates/profiles/` — Resource profiles (lite, standard, heavy)
 - `config/defaults.env` — Shipped defaults
-- `images/` — Packer build scripts + `publish.sh` for B2 upload + `manifest.json`
 - `Dockerfile.builder` + `docker/entrypoint.sh` — Builder image (Packer, QEMU, b2)
 - `Dockerfile.linter` — Linter/test image (shellcheck, hadolint, BATS, PSScriptAnalyzer, yamllint, etc.)
 - `Makefile` — All targets run inside Docker containers via `docker run`
@@ -67,6 +74,9 @@ make test             # Run BATS tests
 make image-base       # Build base VM image (both archs in parallel via sub-make -j2)
 make image-base-amd64 # Build base VM image (amd64 only)
 make image-base-arm64 # Build base VM image (arm64 only)
+make image-protocol-dev           # Build protocol-dev image (base + C/C++/Go/Rust)
+make image-smart-contract-dev     # Build smart-contract-dev image (+ Solana/Foundry/Hardhat)
+make image-smart-contract-audit   # Build smart-contract-audit image (+ Slither/Echidna/Medusa)
 make publish-base VERSION=1.0.0   # Publish to Backblaze B2
 ```
 
