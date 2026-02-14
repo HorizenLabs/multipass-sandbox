@@ -31,6 +31,16 @@ Internal CLI tool for spinning up isolated VM-based development environments usi
 - `checkmake.ini`, `.yamllint` — Linter configuration files
 - `.planning/` — Implementation plan, architecture decisions, status tracking
 
+## Commands
+
+- `mps create` / `mps up` / `mps down` / `mps destroy` — VM lifecycle
+- `mps shell` / `mps exec` — Interactive shell / run command (auto-workdir)
+- `mps list` / `mps status` — List all / detailed info
+- `mps ssh-config` — Generate SSH config for VS Code (also injects SSH keys)
+- `mps image [list|pull|import]` — Manage pre-built QCOW2 images
+- `mps port [forward|list]` — SSH port forwarding
+- `mps transfer` — File copy between host and guest (`:` prefix = guest path)
+
 ## Key Conventions
 
 - **Auto-naming**: `mps-<folder-basename>-<template>-<profile>` (e.g., `mps-myproject-base-standard`)
