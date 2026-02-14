@@ -124,11 +124,12 @@ build {
     destination = "/tmp/hl-claude-marketplace"
   }
 
-  # Register Claude Code plugin marketplaces (must run before post-provision cleanup)
+  # Wait for cloud-init to finish, then register Claude Code plugin marketplaces
   provisioner "shell" {
     inline = [
+      "cloud-init status --wait",
       "export HOME=/home/ubuntu",
-      "export PATH=\"$HOME/.claude/bin:$HOME/.local/bin:$PATH\"",
+      ". \"$HOME/.profile\" 2>/dev/null || true",
       "claude plugin marketplace add /tmp/hl-claude-marketplace",
       "claude plugin marketplace add trailofbits/skills",
     ]
