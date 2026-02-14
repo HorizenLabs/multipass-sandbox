@@ -98,6 +98,11 @@ RUN set -eux; \
     rm -rf /var/lib/apt/lists/*; \
     pwsh --version
 
+# ---------- PSScriptAnalyzer PowerShell module ----------
+RUN pwsh -NoProfile -NonInteractive -Command \
+        'Install-Module -Name PSScriptAnalyzer -Scope AllUsers -Force; \
+         Get-Module -ListAvailable PSScriptAnalyzer'
+
 # ---------- Python tools: yamllint, py-psscriptanalyzer ----------
 # hadolint ignore=DL3013
 RUN pip3 install --no-cache-dir --break-system-packages \

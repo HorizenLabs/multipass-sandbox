@@ -25,8 +25,11 @@ Internal CLI tool for spinning up isolated VM-based development environments usi
 - `config/defaults.env` — Shipped defaults
 - `images/` — Packer build scripts + `publish.sh` for B2 upload + `manifest.json`
 - `Dockerfile.builder` + `docker/entrypoint.sh` — Builder image (Packer, QEMU, b2)
-- `Dockerfile.linter` — Linter/test image (shellcheck, hadolint, BATS, yamllint, etc.)
-- `Makefile` — All targets run inside builder container via `docker run`
+- `Dockerfile.linter` — Linter/test image (shellcheck, hadolint, BATS, PSScriptAnalyzer, yamllint, etc.)
+- `Makefile` — All targets run inside Docker containers via `docker run`
+- `install.sh` / `install.ps1` — Installer scripts
+- `checkmake.ini`, `.yamllint` — Linter configuration files
+- `.planning/` — Implementation plan, architecture decisions, status tracking
 
 ## Key Conventions
 
@@ -50,7 +53,9 @@ make linter           # Build the linter image (shellcheck, hadolint, BATS, etc.
 make builder          # Build the builder image (Packer, QEMU, b2)
 make lint             # Run all linters (shellcheck, hadolint, yamllint, checkmake, packer fmt, py-psscriptanalyzer)
 make test             # Run BATS tests
-make image-base       # Build base VM image with Packer
+make image-base       # Build base VM image (both archs in parallel via sub-make -j2)
+make image-base-amd64 # Build base VM image (amd64 only)
+make image-base-arm64 # Build base VM image (arm64 only)
 make publish-base VERSION=1.0.0   # Publish to Backblaze B2
 ```
 

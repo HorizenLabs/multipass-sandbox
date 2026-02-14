@@ -14,10 +14,6 @@ HOST_UID       := $(shell id -u)
 HOST_GID       := $(shell id -g)
 WORKDIR        := /workdir
 
-# Architecture (default: host)
-ARCH ?=
-HOST_ARCH := $(shell uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
-
 # Docker run for lint/test (uses linter image — no QEMU needed)
 DOCKER_RUN := docker run --rm \
 	-v "$(CURDIR):$(WORKDIR)" \
@@ -29,13 +25,16 @@ DOCKER_RUN := docker run --rm \
 # Always pass /dev/kvm if available — arch-config.sh decides KVM vs TCG per-arch
 KVM_FLAG := $(shell [ -e /dev/kvm ] && echo "--device /dev/kvm")
 
-DOCKER_RUN_IMAGE := docker run --rm \
+# Callable macro: $(call docker_run_image,<arch>)
+define docker_run_image
+docker run --rm \
 	-v "$(CURDIR):$(WORKDIR)" \
 	-e HOST_UID=$(HOST_UID) \
 	-e HOST_GID=$(HOST_GID) \
-	-e TARGET_ARCH=$(ARCH) \
+	-e TARGET_ARCH=$(1) \
 	$(KVM_FLAG) \
 	$(BUILDER_IMAGE):$(BUILDER_TAG)
+endef
 
 # ---------- File sets ----------
 BASH_SCRIPTS := $(shell find bin/ lib/ commands/ images/ -name '*.sh' -o -name 'mps' 2>/dev/null | grep -v '.ps1') install.sh
@@ -50,14 +49,18 @@ BUILDER_DEPS  := Dockerfile.builder docker/entrypoint.sh
 LINTER_STAMP := .stamp-linter
 LINTER_DEPS  := Dockerfile.linter docker/entrypoint.sh
 
-.PHONY: all help builder linter install test lint lint-bash lint-powershell lint-dockerfile lint-makefile lint-yaml lint-hcl image-base import-base publish-base clean
+IMAGE_BASE_AMD64_STAMP := .stamp-image-base-amd64
+IMAGE_BASE_ARM64_STAMP := .stamp-image-base-arm64
+IMAGE_BASE_DEPS        := images/base/packer.pkr.hcl images/base/packer-user-data.pkrtpl.hcl images/base/cloud-init.yaml images/base/build.sh
+
+.PHONY: all help builder linter install test lint lint-bash lint-powershell lint-dockerfile lint-makefile lint-yaml lint-hcl image-base image-base-amd64 image-base-arm64 import-base publish-base clean clean-builder clean-linter clean-image-amd64 clean-image-arm64 clean-images
 
 # ---------- All ----------
 all: lint ## Run all linters (alias)
 
 # ---------- Help ----------
 help: ## Show this help
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
+	@grep -E '^[a-zA-Z0-9_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
 		awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-24s\033[0m %s\n", $$1, $$2}'
 
 # ---------- Builder image ----------
@@ -126,7 +129,7 @@ lint-dockerfile: $(LINTER_STAMP) ## Lint Dockerfiles with hadolint
 lint-makefile: $(LINTER_STAMP) ## Lint Makefile with checkmake
 	$(DOCKER_RUN) bash -c '\
 		echo "checkmake: Makefile"; \
-		checkmake Makefile || true'
+		checkmake --config checkmake.ini Makefile'
 
 lint-yaml: $(LINTER_STAMP) ## Lint YAML files with yamllint
 	@if [ -n "$(YAML_FILES)" ]; then \
@@ -134,7 +137,7 @@ lint-yaml: $(LINTER_STAMP) ## Lint YAML files with yamllint
 			exit_code=0; \
 			for f in $(YAML_FILES); do \
 				echo "yamllint: $$f"; \
-				if ! yamllint -d relaxed "$$f"; then \
+				if ! yamllint "$$f"; then \
 					exit_code=1; \
 				fi; \
 			done; \
@@ -160,8 +163,20 @@ lint-hcl: $(LINTER_STAMP) ## Lint HCL/Packer files with packer fmt
 	fi
 
 # ---------- Image builds ----------
-image-base: $(BUILDER_STAMP) ## Build base VM image (both archs, or ARCH=amd64|arm64)
-	$(DOCKER_RUN_IMAGE) bash -c 'cd images/base && bash build.sh'
+image-base: ## Build base VM image (both archs in parallel)
+	+$(MAKE) image-base-amd64 image-base-arm64 -j2
+
+image-base-amd64: $(IMAGE_BASE_AMD64_STAMP) ## Build base VM image (amd64)
+
+$(IMAGE_BASE_AMD64_STAMP): $(BUILDER_STAMP) $(IMAGE_BASE_DEPS)
+	$(call docker_run_image,amd64) bash -c 'cd images/base && bash build.sh'
+	@touch $@
+
+image-base-arm64: $(IMAGE_BASE_ARM64_STAMP) ## Build base VM image (arm64)
+
+$(IMAGE_BASE_ARM64_STAMP): $(BUILDER_STAMP) $(IMAGE_BASE_DEPS)
+	$(call docker_run_image,arm64) bash -c 'cd images/base && bash build.sh'
+	@touch $@
 
 # ---------- Image import (local) ----------
 import-base: image-base ## Import host-arch base image into mps cache
@@ -179,7 +194,28 @@ publish-base: ## Publish base image to Backblaze B2 (requires VERSION=x.y.z)
 		done'
 
 # ---------- Clean ----------
-clean: ## Remove build artifacts and caches
-	@echo "Cleaning..."
-	@rm -rf build/ dist/ .stamp-*
-	@echo "Done."
+clean-builder: ## Remove mps-builder Docker image
+	@echo "Removing $(BUILDER_IMAGE):$(BUILDER_TAG) image..."
+	@docker rmi $(BUILDER_IMAGE):$(BUILDER_TAG) 2>/dev/null || true
+	@rm -f $(BUILDER_STAMP)
+
+clean-linter: ## Remove mps-linter Docker image
+	@echo "Removing $(LINTER_IMAGE):$(LINTER_TAG) image..."
+	@docker rmi $(LINTER_IMAGE):$(LINTER_TAG) 2>/dev/null || true
+	@rm -f $(LINTER_STAMP)
+
+clean-image-amd64: ## Remove amd64 VM image artifacts
+	@echo "Removing amd64 image artifacts..."
+	@rm -rf images/base/output-base/mps-base-amd64.*
+	@rm -f $(IMAGE_BASE_AMD64_STAMP)
+
+clean-image-arm64: ## Remove arm64 VM image artifacts
+	@echo "Removing arm64 image artifacts..."
+	@rm -rf images/base/output-base/mps-base-arm64.*
+	@rm -f $(IMAGE_BASE_ARM64_STAMP)
+
+clean-images: clean-image-amd64 clean-image-arm64 ## Remove all built VM images
+	@rm -rf images/*/output-*/
+
+clean: clean-builder clean-linter clean-images ## Remove all build artifacts, images, and Docker containers
+	@rm -rf build/ dist/
