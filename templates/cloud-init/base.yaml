@@ -10,6 +10,32 @@
 #   - redis-tools
 
 # --- Run commands on first boot ---
+runcmd:
+  # --- Claude Code: enable plugin marketplace skills ---
+  # Marketplaces are pre-registered in the image. Enable plugins here.
+  # To list available plugins: claude plugin marketplace list
+  # To install:  claude plugin install <plugin>@<marketplace>
+  # To disable:  claude plugin disable <plugin>@<marketplace>
+  # To remove:   claude plugin uninstall <plugin>@<marketplace>
+  - |
+    sudo -u ubuntu bash -c '
+      export HOME=/home/ubuntu
+      export PATH="$HOME/.claude/bin:$HOME/.local/bin:$PATH"
+      # HorizenLabs marketplace (hl-agent-skills)
+      claude plugin install zkverify-product-ideation@hl-agent-skills --scope user
+      claude plugin install zkverify-product-development@hl-agent-skills --scope user
+      claude plugin install context-utils@hl-agent-skills --scope user
+    '
+  # --- Trail of Bits security skills (uncomment to enable) ---
+  # - |
+  #   sudo -u ubuntu bash -c '
+  #     export HOME=/home/ubuntu
+  #     export PATH="$HOME/.claude/bin:$HOME/.local/bin:$PATH"
+  #     claude plugin install modern-python@trailofbits --scope user
+  #     claude plugin install semgrep-rule-creator@trailofbits --scope user
+  #     claude plugin install yara-authoring@trailofbits --scope user
+  #   '
+
 # runcmd:
 #   - echo "Hello from cloud-init" > /tmp/hello.txt
 #   - apt-get install -y <package>
