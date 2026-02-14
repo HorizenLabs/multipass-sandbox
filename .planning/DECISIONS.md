@@ -83,6 +83,8 @@ Additional:
 | yq | SHA-256 from rhash `checksums` file (field $19) |
 | hadolint | SHA-256 from `.sha256` sidecar |
 | shellcheck | None (no checksums published) |
+| cosign | SHA-256 from `cosign_checksums.txt` |
+| Echidna | Sigstore bundle verified via cosign |
 
 ## Python Version Management
 
@@ -152,10 +154,10 @@ Additional:
 
 ## Image Disk Sizing
 
-**Decision**: 10G virtual disk for QCOW2 images. Multipass + cloud-init `growpart` auto-expands at launch.
+**Decision**: 15G virtual disk for QCOW2 images. Multipass + cloud-init `growpart` auto-expands at launch.
 
-- 10G < lite profile's 20G, so all profiles work
-- Actual usage: ~6.7G (67%), ~3G headroom
+- 15G < lite profile's 20G, so all profiles work
+- Increased from 10G after adding AI coding assistants (ENOSPC during build)
 - `qemu-img convert` compaction in `build.sh` for optimal on-disk size
 
 ## Cloud-init Template Restructure
@@ -165,6 +167,23 @@ Additional:
 ## QCOW2 File Extension
 
 **Decision**: `.qcow2.img` — preserves format info while being Multipass-compatible (requires `.img`).
+
+## Solidity Security Tools
+
+**Decision**: Comprehensive Solidity auditing toolkit in the base image.
+
+| Tool | Category | Install Method |
+|---|---|---|
+| Slither | Static analysis | `uv tool install slither-analyzer` |
+| solc-select | Compiler management | `uv tool install solc-select` |
+| Mythril | Symbolic execution | `uv tool install mythril` |
+| Halmos | Symbolic testing (Foundry) | `uv tool install halmos` |
+| Solhint | Linter | `bun install -g solhint` |
+| Aderyn | Static analysis | Cyfrin installer script |
+| Echidna | Fuzzer | Binary from GitHub releases |
+| Medusa | Fuzzer | `go install` |
+
+**Excluded**: Manticore (archived), Certora (commercial), Vyper tools (not needed).
 
 ## AI Coding Assistants
 

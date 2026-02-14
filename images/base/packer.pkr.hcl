@@ -83,7 +83,7 @@ source "qemu" "base" {
   disk_image        = true
   output_directory  = var.output_dir
   vm_name           = var.vm_name
-  disk_size         = "10G"
+  disk_size         = "15G"
   format            = "qcow2"
   qemu_binary       = var.qemu_binary
   machine_type      = var.machine_type
