@@ -29,17 +29,29 @@ A blockchain software development company needs an internal tool to spin up isol
 
 ---
 
-## Phase 5 — Testing
+## Phase 5 — Core Changes
+
+- Build system logic refinements
+- Image package updates (base cloud-init toolchain)
+- mps command changes as needed
+
+## Phase 6 — Linting CI
+
+- GitHub Actions workflow: run `make lint` on push/PR
+- Quick win — linter image and targets already exist
+
+## Phase 7 — Image Distribution
+
+- Backblaze B2 bucket + Cloudflare proxy setup (handled externally)
+- End-to-end `mps image pull` flow
+- Automated image builds
+
+## Phase 8 — Testing
 
 - BATS test suite for `lib/common.sh`, `lib/multipass.sh`, and command scripts
+- Wire tests into GitHub Actions CI (lint + test on push/PR)
 
-## Phase 6 — CI/CD
-
-- GitHub Actions CI pipeline (lint + test on push/PR)
-- Automated image builds
-- Backblaze B2 bucket + Cloudflare proxy setup (handled externally)
-
-## Phase 7 — PowerShell Parity (Windows)
+## Phase 9 — PowerShell Parity (Windows)
 
 - `bin/mps.ps1` + `commands/*.ps1` + `lib/*.ps1`
 - `ConvertFrom-Json` instead of `jq`

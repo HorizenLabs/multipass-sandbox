@@ -9,17 +9,28 @@
 - **Cross-Architecture Image Building**: QEMU cross-compilation, KVM/TCG detection, EFI firmware for arm64
 - **File Transfer**: `mps transfer` with colon-prefix convention, `--transfer` flag on create/up
 
-## Phase 5 — Testing: NOT STARTED
+## Phase 5 — Core Changes: NOT STARTED
+
+- [ ] Build system logic refinements
+- [ ] Image package updates (base cloud-init toolchain)
+- [ ] mps command changes as needed
+
+## Phase 6 — Linting CI: NOT STARTED
+
+- [ ] GitHub Actions workflow: `make lint` on push/PR
+
+## Phase 7 — Image Distribution: NOT STARTED
+
+- [ ] Backblaze B2 bucket + Cloudflare proxy setup (handled externally)
+- [ ] End-to-end `mps image pull` flow
+- [ ] Automated image builds
+
+## Phase 8 — Testing: NOT STARTED
 
 - [ ] BATS test suite for lib/common.sh, lib/multipass.sh, and command scripts
+- [ ] Wire tests into GitHub Actions CI (lint + test on push/PR)
 
-## Phase 6 — CI/CD: NOT STARTED
-
-- [ ] GitHub Actions CI pipeline (lint + test on push/PR)
-- [ ] CI pipeline for automated image builds
-- [ ] Backblaze B2 bucket + Cloudflare proxy setup (handled externally)
-
-## Phase 7 — PowerShell Parity (Windows): NOT STARTED
+## Phase 9 — PowerShell Parity (Windows): NOT STARTED
 
 - [ ] `bin/mps.ps1`
 - [ ] `lib/common.ps1`
