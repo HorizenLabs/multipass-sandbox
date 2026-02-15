@@ -149,7 +149,7 @@ build {
 
   # Ensure destination directory exists for file provisioner
   provisioner "shell" {
-    inline = ["mkdir -p /home/ubuntu/.local/share"]
+    inline          = ["mkdir -p /home/ubuntu/.local/share"]
     execute_command = "chmod +x {{ .Path }}; sudo -u ubuntu bash {{ .Path }}"
   }
 

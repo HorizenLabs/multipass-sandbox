@@ -5,8 +5,6 @@ set -euo pipefail
 # Multi Pass Sandbox (mps) — Main entry point
 # https://github.com/your-org/mps
 
-MPS_VERSION="0.1.0"
-
 # Resolve install directory
 # Portable canonical path resolution (BSD readlink lacks -f)
 _mps_source="${BASH_SOURCE[0]}"
@@ -18,6 +16,10 @@ done
 MPS_ROOT="$(cd -P "$(dirname "$_mps_source")/.." && pwd)"
 unset _mps_source _mps_dir
 export MPS_ROOT
+
+# Read version from VERSION file (single source of truth)
+MPS_VERSION="$(cat "${MPS_ROOT}/VERSION" 2>/dev/null || echo "unknown")"
+MPS_VERSION="${MPS_VERSION%$'\n'}"
 
 # Store the directory where mps was invoked
 MPS_PROJECT_DIR="$(pwd)"

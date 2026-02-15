@@ -9,7 +9,7 @@ Internal CLI tool for spinning up isolated VM-based development environments usi
 - **Config**: KEY=VALUE .env files (no YAML parsing in Bash)
 - **Dependencies**: `multipass`, `jq`
 - **Image builds**: Packer (QCOW2, `.qcow2.img` extension), published to Backblaze B2 (served via Cloudflare)
-- **Image versioning**: SemVer (x.y.z) with `latest` pointer
+- **Image versioning**: SemVer (x.y.z) with `latest` pointer, weekly rebuilds for OS patches
 - **Build/Test**: All run inside Docker containers (`mps-builder` for image builds, `mps-linter` for lint/test)
 - **Tests**: BATS (planned)
 
@@ -27,9 +27,10 @@ Internal CLI tool for spinning up isolated VM-based development environments usi
 - `images/arch-config.sh` — Per-arch Packer variable resolution (KVM vs TCG, EFI firmware)
 - `images/artifacts/` — Built QCOW2 images (gitignored)
 - `images/scripts/post-provision.sh` — Post-build cleanup (runs after cloud-init)
-- `images/manifest.json` — Image registry manifest (SemVer versions + `latest` pointer per flavor)
-- `images/publish.sh` — Publish images to Backblaze B2 + update manifest
+- `images/manifest.json` — Local skeleton manifest (image descriptions + metadata); live manifest lives in B2
+- `images/publish.sh` — Publish images to Backblaze B2 (remote-first manifest, old version cleanup)
 - `templates/profiles/` — Resource profiles (micro, lite, standard, heavy) with auto-scaling CPU/memory
+- `VERSION` — Tool version (SemVer), read by `bin/mps` at startup
 - `config/defaults.env` — Shipped defaults
 - `Dockerfile.builder` + `docker/entrypoint.sh` — Builder image (Packer, QEMU, b2)
 - `Dockerfile.linter` — Linter/test image (shellcheck, hadolint, BATS, PSScriptAnalyzer, yamllint, etc.)
@@ -92,6 +93,17 @@ make uninstall        # Uninstall mps (remove symlink, cleanup artifacts, runs o
 Non-base flavors chain from their parent's QCOW2 image, applying only the delta cloud-init layer (`--base-image` flag in `build.sh`). The Makefile wires this automatically via stamp dependencies — `make image-smart-contract-audit` builds the full chain (base → protocol-dev → smart-contract-dev → smart-contract-audit). From-scratch builds (all layers merged) are still supported by running `build.sh` without `--base-image`.
 
 The Makefile detects host uid:gid and the entrypoint uses setpriv to step down from root, so build artifacts match host ownership.
+
+## Image Versioning
+
+- **SemVer `x.y.z`** tracks tooling changes (what's installed in the image), not OS patches
+- **Weekly cron rebuilds** re-bake the current version to pick up OS security patches — same version, same B2 path, updated SHA256 + `build_date` in manifest
+- The `latest` pointer in manifest tracks the highest published SemVer
+- **When to bump**:
+  - **Patch** (`1.0.0` → `1.0.1`): Tool version updates, minor config tweaks in layers
+  - **Minor** (`1.0.0` → `1.1.0`): New tool added to a layer
+  - **Major** (`1.0.0` → `2.0.0`): Breaking changes (Ubuntu version bump, tool removed, major restructure)
+- **Publishing**: `publish.sh` downloads the remote manifest from B2 (source of truth), merges in the new entry, and re-uploads. Old image file versions in B2 are cleaned up; manifest versions are kept for audit trail.
 
 ## Workflow
 

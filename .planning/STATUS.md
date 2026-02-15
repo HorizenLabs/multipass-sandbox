@@ -10,11 +10,13 @@
 - **File Transfer**: `mps transfer` with colon-prefix convention, `--transfer` flag on create/up
 - **Phase 5 — Core Changes**: Image flavors (composable layers, chained builds, dynamic disk sizes), auto-scaling profiles (micro/lite/standard/heavy), image metadata + runtime validation, build system refinements, installer/uninstaller
 
-## Phase 6 — Image Distribution: NOT STARTED
+## Phase 6 — Image Distribution: IN PROGRESS
 
 - [ ] Backblaze B2 bucket + Cloudflare proxy setup (handled externally)
-- [ ] Publishing scripts, metadata handling and versioning
+- [x] Publishing scripts: remote-first manifest, build_date tracking, B2 old version cleanup, unfinished large file cancellation
+- [x] Image versioning conventions: SemVer for tooling, weekly rebuilds for OS patches
 - [ ] First publish to B2
+- [ ] Client-side staleness detection (compare cached SHA256 vs remote manifest)
 - [x] `mps image pull` + auto-pull on `mps create`/`mps up` (code complete, needs E2E testing against live infra)
 
 ## Phase 7 — GH Actions CI/CD Pipeline: NOT STARTED
