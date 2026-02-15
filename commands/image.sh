@@ -117,18 +117,18 @@ _image_list() {
             return 1
         }
 
-        printf "  ${_color_bold}%-20s %-12s %-10s %s${_color_reset}\n" "NAME" "VERSION" "LATEST" "DESCRIPTION"
+        printf "  ${_color_bold}%-20s %-12s %-10s %-12s %s${_color_reset}\n" "NAME" "VERSION" "LATEST" "MIN PROFILE" "DESCRIPTION"
         echo "$manifest" | jq -r '
             .images | to_entries[] | .key as $name |
-            .value | .latest as $latest | .description as $desc |
+            .value | .latest as $latest | .description as $desc | .min_profile as $mp |
             .versions | to_entries[] |
-            "\($name)\t\(.key)\t\($latest // "—")\t\($desc // "—")"
-        ' | while IFS=$'\t' read -r name ver latest desc; do
+            "\($name)\t\(.key)\t\($latest // "—")\t\($mp // "—")\t\($desc // "—")"
+        ' | while IFS=$'\t' read -r name ver latest min_prof desc; do
             local latest_marker=""
             if [[ "$ver" == "$latest" ]]; then
                 latest_marker="*"
             fi
-            printf "  %-20s %-12s %-10s %s\n" "$name" "$ver" "$latest_marker" "$desc"
+            printf "  %-20s %-12s %-10s %-12s %s\n" "$name" "$ver" "$latest_marker" "$min_prof" "$desc"
         done
     fi
 }
@@ -230,6 +230,26 @@ ORIGINAL_PATH=${file}
 SHA256=${actual_sha256}
 EOF
 
+    # Append image metadata from local manifest if name matches a known flavor
+    local local_manifest="${MPS_ROOT}/images/manifest.json"
+    if [[ -f "$local_manifest" ]]; then
+        local meta_disk_size meta_min_profile meta_min_disk meta_min_memory meta_min_cpus
+        meta_disk_size="$(jq -r ".images[\"${name}\"].disk_size // empty" "$local_manifest")"
+        if [[ -n "$meta_disk_size" ]]; then
+            meta_min_profile="$(jq -r ".images[\"${name}\"].min_profile // empty" "$local_manifest")"
+            meta_min_disk="$(jq -r ".images[\"${name}\"].min_disk // empty" "$local_manifest")"
+            meta_min_memory="$(jq -r ".images[\"${name}\"].min_memory // empty" "$local_manifest")"
+            meta_min_cpus="$(jq -r ".images[\"${name}\"].min_cpus // empty" "$local_manifest")"
+            cat >> "$meta_file" <<EOF
+IMAGE_DISK_SIZE=${meta_disk_size}
+MIN_PROFILE=${meta_min_profile}
+MIN_DISK=${meta_min_disk}
+MIN_MEMORY=${meta_min_memory}
+MIN_CPUS=${meta_min_cpus}
+EOF
+        fi
+    fi
+
     local size
     size="$(du -sh "$dest_file" 2>/dev/null | cut -f1)"
 
@@ -330,6 +350,26 @@ _image_pull() {
         fi
         mps_log_info "Checksum verified."
     fi
+
+    # Write .meta sidecar with image metadata from manifest
+    local meta_file="${cache_dir}/${arch}.meta"
+    local meta_disk_size meta_min_profile meta_min_disk meta_min_memory meta_min_cpus
+    meta_disk_size="$(echo "$manifest" | jq -r ".images[\"${image_name}\"].disk_size // empty")"
+    meta_min_profile="$(echo "$manifest" | jq -r ".images[\"${image_name}\"].min_profile // empty")"
+    meta_min_disk="$(echo "$manifest" | jq -r ".images[\"${image_name}\"].min_disk // empty")"
+    meta_min_memory="$(echo "$manifest" | jq -r ".images[\"${image_name}\"].min_memory // empty")"
+    meta_min_cpus="$(echo "$manifest" | jq -r ".images[\"${image_name}\"].min_cpus // empty")"
+
+    cat > "$meta_file" <<EOF
+SOURCE=pulled
+PULLED=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+SHA256=${expected_sha256}
+IMAGE_DISK_SIZE=${meta_disk_size}
+MIN_PROFILE=${meta_min_profile}
+MIN_DISK=${meta_min_disk}
+MIN_MEMORY=${meta_min_memory}
+MIN_CPUS=${meta_min_cpus}
+EOF
 
     mps_log_info "Image cached to ${dest_file}"
 }

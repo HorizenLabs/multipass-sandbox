@@ -2,6 +2,13 @@
 # MPS Layer: smart-contract-audit
 # Solidity security tools (on top of smart-contract-dev)
 
+x-mps:
+  disk_size: 13G
+  min_profile: standard
+  min_disk: 25G
+  min_memory: 4G
+  min_cpus: 4
+
 runcmd:
   # ---------- cosign (SHA256-verified, sigstore verification tool) ----------
   - |

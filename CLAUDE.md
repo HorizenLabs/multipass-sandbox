@@ -16,7 +16,7 @@ Internal CLI tool for spinning up isolated VM-based development environments usi
 ## Project Structure
 
 - `bin/mps` — Main entry point, subcommand dispatch
-- `lib/common.sh` — Logging, config cascade, path conversion, mount resolution, auto-naming
+- `lib/common.sh` — Logging, config cascade, path conversion, mount resolution, auto-naming, auto-scaling resources
 - `lib/multipass.sh` — Thin wrappers around `multipass` CLI with `--format json` + `jq`
 - `commands/*.sh` — One file per subcommand, each exports `cmd_<name>()` function
 - `templates/cloud-init/` — Minimal cloud-init templates for VM launch customization
@@ -29,7 +29,7 @@ Internal CLI tool for spinning up isolated VM-based development environments usi
 - `images/scripts/post-provision.sh` — Post-build cleanup (runs after cloud-init)
 - `images/manifest.json` — Image registry manifest (SemVer versions + `latest` pointer per flavor)
 - `images/publish.sh` — Publish images to Backblaze B2 + update manifest
-- `templates/profiles/` — Resource profiles (lite, standard, heavy)
+- `templates/profiles/` — Resource profiles (micro, lite, standard, heavy) with auto-scaling CPU/memory
 - `config/defaults.env` — Shipped defaults
 - `Dockerfile.builder` + `docker/entrypoint.sh` — Builder image (Packer, QEMU, b2)
 - `Dockerfile.linter` — Linter/test image (shellcheck, hadolint, BATS, PSScriptAnalyzer, yamllint, etc.)
@@ -51,11 +51,15 @@ Internal CLI tool for spinning up isolated VM-based development environments usi
 
 ## Key Conventions
 
-- **Auto-naming**: `mps-<folder-basename>-<template>-<profile>` (e.g., `mps-myproject-base-standard`)
+- **Auto-naming**: `mps-<folder-basename>-<template>-<profile>` (e.g., `mps-myproject-base-lite`)
   - Override with `--name` flag or `MPS_NAME` in `.mps.env`
   - Long names truncated with short hash suffix (max 40 chars for Multipass)
   - `--no-mount` without `--name` errors (can't derive folder name)
-- Config cascade: `config/defaults.env` → `~/.mps/config` → `.mps.env` → CLI flags
+- Config cascade: `config/defaults.env` → `~/.mps/config` → `.mps.env` → CLI flags → auto-scaling
+- **Default profile**: `lite` (auto-scales CPU/memory from host hardware fractions with min/cap)
+- **Profiles**: micro (1/8 CPU, 1/16 mem), lite (1/4, 1/6), standard (1/3, 1/4), heavy (1/2, 1/3)
+- **Image metadata**: `x-mps:` blocks in layer YAMLs define disk_size, min_profile, min_disk/memory/cpus
+- `mps create` warns when resolved resources are below image minimums (never blocks)
 - Default mount: host CWD → guest at same absolute path (read-write)
 - Windows path conversion: `C:\foo\bar` → `/c/foo/bar`
 - `MPS_MOUNTS` is additive (on top of auto-mount), `MPS_NO_AUTOMOUNT=true` to opt out

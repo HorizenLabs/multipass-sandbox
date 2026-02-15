@@ -2,6 +2,13 @@
 # MPS Layer: protocol-dev
 # C/C++ build toolchain + Go + Rust (on top of base)
 
+x-mps:
+  disk_size: 10G
+  min_profile: lite
+  min_disk: 15G
+  min_memory: 2G
+  min_cpus: 2
+
 package_update: true
 
 packages:

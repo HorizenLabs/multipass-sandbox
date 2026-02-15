@@ -15,7 +15,7 @@
 #   --memory <size>         Memory with unit (default: from config/profile)
 #   --disk <size>           Disk with unit (default: from config/profile)
 #   --cloud-init <name>     Cloud-init template name or path
-#   --profile <name>        Resource profile (lite, standard, heavy)
+#   --profile <name>        Resource profile (micro, lite, standard, heavy)
 #   --mount <src:dst>       Extra mount (repeatable)
 #   --port <host:guest>     Port forward rule (stored in metadata, repeatable)
 #   --no-mount              Skip automatic CWD mount
@@ -101,7 +101,7 @@ cmd_create() {
     done
 
     # ---- Apply profile if specified on CLI (before resolving defaults) ----
-    local effective_profile="${arg_profile:-${MPS_PROFILE:-${MPS_DEFAULT_PROFILE:-standard}}}"
+    local effective_profile="${arg_profile:-${MPS_PROFILE:-${MPS_DEFAULT_PROFILE:-lite}}}"
     if [[ -n "$arg_profile" ]]; then
         export MPS_PROFILE="$arg_profile"
         local profile_file="${MPS_ROOT}/templates/profiles/${arg_profile}.env"
@@ -146,11 +146,12 @@ cmd_create() {
     local image_spec="${arg_image:-${MPS_IMAGE:-${MPS_DEFAULT_IMAGE:-24.04}}}"
     local image
     image="$(mps_resolve_image "$image_spec")"
-    local cpus="${arg_cpus:-${MPS_CPUS:-${MPS_DEFAULT_CPUS:-4}}}"
-    local memory="${arg_memory:-${MPS_MEMORY:-${MPS_DEFAULT_MEMORY:-4G}}}"
-    local disk="${arg_disk:-${MPS_DISK:-${MPS_DEFAULT_DISK:-50G}}}"
+    local cpus="${arg_cpus:-${MPS_CPUS:-${MPS_DEFAULT_CPUS:-2}}}"
+    local memory="${arg_memory:-${MPS_MEMORY:-${MPS_DEFAULT_MEMORY:-2G}}}"
+    local disk="${arg_disk:-${MPS_DISK:-${MPS_DEFAULT_DISK:-20G}}}"
 
     mps_validate_resources "$cpus" "$memory" "$disk"
+    mps_check_image_requirements "$image" "$cpus" "$memory" "$disk"
 
     # Export so mps_save_instance_meta picks them up
     export MPS_CPUS="$cpus"
@@ -260,6 +261,7 @@ cmd_create() {
     echo ""
     printf "  %-14s %s\n" "Instance:" "$instance_name"
     printf "  %-14s %s\n" "Image:" "$image_spec"
+    printf "  %-14s %s\n" "Profile:" "$effective_profile"
     printf "  %-14s %s\n" "CPUs:" "$cpus"
     printf "  %-14s %s\n" "Memory:" "$memory"
     printf "  %-14s %s\n" "Disk:" "$disk"
@@ -302,11 +304,11 @@ ${_color_bold}Naming:${_color_reset}
 ${_color_bold}Flags:${_color_reset}
     --name <name>           Override auto-generated instance name
     --image <image>         Image: mps name (base, base:1.0.0) or Ubuntu version (24.04)
-    --cpus <n>              CPU cores (default: ${MPS_DEFAULT_CPUS:-4})
-    --memory <size>         Memory, e.g. 4G, 8G (default: ${MPS_DEFAULT_MEMORY:-4G})
-    --disk <size>           Disk, e.g. 50G, 100G (default: ${MPS_DEFAULT_DISK:-50G})
+    --cpus <n>              CPU cores (default: auto-scaled from profile)
+    --memory <size>         Memory, e.g. 4G, 8G (default: auto-scaled from profile)
+    --disk <size>           Disk, e.g. 20G, 50G (default: ${MPS_DEFAULT_DISK:-20G})
     --cloud-init <name>     Cloud-init template (default: ${MPS_DEFAULT_CLOUD_INIT:-base})
-    --profile <name>        Resource profile: lite, standard, heavy
+    --profile <name>        Resource profile: micro, lite, standard, heavy
     --mount <src:dst>       Additional mount point (can be repeated)
     --port <host:guest>     Port forwarding rule (can be repeated)
     --transfer <src:dst>    Transfer file from host to guest after creation (can be repeated)

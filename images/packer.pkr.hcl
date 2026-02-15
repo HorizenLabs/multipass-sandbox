@@ -75,6 +75,11 @@ variable "cpus" {
   default = 6
 }
 
+variable "disk_size" {
+  type    = string
+  default = "15G"
+}
+
 variable "vm_name" {
   type    = string
   default = "mps-base-amd64.qcow2.img"
@@ -107,7 +112,7 @@ source "qemu" "base" {
   disk_image        = true
   output_directory  = var.output_dir
   vm_name           = var.vm_name
-  disk_size         = "15G"
+  disk_size         = var.disk_size
   format            = "qcow2"
   qemu_binary       = var.qemu_binary
   machine_type      = var.machine_type

@@ -3,21 +3,41 @@
   "images": {
     "base": {
       "description": "Ubuntu 24.04 + Docker + Node.js + Python + dev tools + AI assistants",
+      "disk_size": "7G",
+      "min_profile": "micro",
+      "min_disk": "10G",
+      "min_memory": "1G",
+      "min_cpus": 1,
       "versions": {},
       "latest": null
     },
     "protocol-dev": {
       "description": "base + C/C++ toolchain + Go + Rust",
+      "disk_size": "10G",
+      "min_profile": "lite",
+      "min_disk": "15G",
+      "min_memory": "2G",
+      "min_cpus": 2,
       "versions": {},
       "latest": null
     },
     "smart-contract-dev": {
       "description": "protocol-dev + Solana + Anchor + Foundry + Hardhat",
+      "disk_size": "11G",
+      "min_profile": "lite",
+      "min_disk": "20G",
+      "min_memory": "4G",
+      "min_cpus": 2,
       "versions": {},
       "latest": null
     },
     "smart-contract-audit": {
       "description": "smart-contract-dev + Slither + Mythril + Echidna + Medusa + Halmos",
+      "disk_size": "13G",
+      "min_profile": "standard",
+      "min_disk": "25G",
+      "min_memory": "4G",
+      "min_cpus": 4,
       "versions": {},
       "latest": null
     }

@@ -54,7 +54,7 @@ cmd_exec() {
     if [[ -n "$arg_name" ]]; then
         instance_name="$(mps_instance_name "$arg_name")"
     else
-        instance_name="$(mps_resolve_name "" "$(pwd)" "${MPS_CLOUD_INIT:-${MPS_DEFAULT_CLOUD_INIT:-base}}" "${MPS_PROFILE:-${MPS_DEFAULT_PROFILE:-standard}}")"
+        instance_name="$(mps_resolve_name "" "$(pwd)" "${MPS_CLOUD_INIT:-${MPS_DEFAULT_CLOUD_INIT:-base}}" "${MPS_PROFILE:-${MPS_DEFAULT_PROFILE:-lite}}")"
     fi
     mps_log_debug "Resolved instance name: ${instance_name}"
 

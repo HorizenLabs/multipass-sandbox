@@ -2,6 +2,13 @@
 # MPS Layer: smart-contract-dev
 # Solana CLI + Anchor, Foundry, Hardhat, Solhint (on top of protocol-dev)
 
+x-mps:
+  disk_size: 11G
+  min_profile: lite
+  min_disk: 20G
+  min_memory: 4G
+  min_cpus: 2
+
 runcmd:
   # ---------- Solana CLI + Anchor ----------
   - |

@@ -18,6 +18,12 @@
 - [x] Update Makefile with per-flavor build/import/publish/clean targets
 - [x] Update manifest.json with 4 image flavors
 - [x] Chained image builds (non-base flavors chain from parent QCOW2 via `--base-image`)
+- [x] Dynamic Packer disk_size per flavor (x-mps metadata in layer YAMLs → build.sh → packer.pkr.hcl)
+- [x] Auto-scaling resource profiles (micro/lite/standard/heavy with fraction/min/cap)
+- [x] Default profile changed from standard to lite
+- [x] Image flavor metadata in manifest.json (disk_size, min_profile, min_disk, min_memory, min_cpus)
+- [x] .meta sidecar metadata on pull/import (from manifest/layer YAMLs)
+- [x] Runtime validation warnings in mps create (check image requirements vs resolved resources)
 - [ ] Build system logic refinements
 - [ ] mps command changes as needed
 

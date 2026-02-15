@@ -2,6 +2,13 @@
 # MPS Layer: base
 # Ubuntu 24.04 + Docker + Node.js + Python + dev tools + AI coding assistants
 
+x-mps:
+  disk_size: 7G
+  min_profile: micro
+  min_disk: 10G
+  min_memory: 1G
+  min_cpus: 1
+
 package_update: true
 package_upgrade: true
 

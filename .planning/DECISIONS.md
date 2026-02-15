@@ -180,13 +180,62 @@ Additional:
 - Injection is idempotent (checks `MPS_SSH_INJECTED=true` metadata)
 - `mps port forward` requires SSH pre-configured — errors with helpful message
 
-## Image Disk Sizing
+## Dynamic Image Disk Sizing
 
-**Decision**: 15G virtual disk for QCOW2 images. Multipass + cloud-init `growpart` auto-expands at launch.
+**Decision**: Per-flavor Packer disk sizes derived from `x-mps.disk_size` metadata in layer YAML files. Replaces the previous hardcoded 15G for all flavors.
 
-- 15G < lite profile's 20G, so all profiles work
-- Increased from 10G after adding AI coding assistants (ENOSPC during build)
-- `qemu-img convert` compaction in `build.sh` for optimal on-disk size
+| Flavor | Disk Size | Actual Usage |
+|---|---|---|
+| base | 7G | 4.6 GiB |
+| protocol-dev | 10G | 7.2 GiB |
+| smart-contract-dev | 11G | 8.3 GiB |
+| smart-contract-audit | 13G | 9.8 GiB |
+
+- `build.sh` extracts `disk_size` from merged cloud-init YAML via yq, passes to Packer as `-var disk_size=`
+- `PACKER_DISK_SIZE` env var overrides auto-detection (same pattern as `PACKER_CPUS`)
+- Chain constraint: sizes are monotonically increasing (7G→10G→11G→13G), so Packer resizes correctly
+- Multipass + cloud-init `growpart` auto-expands at VM launch to profile disk size
+
+## Auto-Scaling Resource Profiles
+
+**Decision**: Profiles define CPU/memory as fractions of host hardware with min/cap bounds, replacing fixed values. Default profile changed from `standard` to `lite`.
+
+**Profile format** (`templates/profiles/*.env`): Fraction numerator/denominator, minimum, and cap (memory only).
+
+| Profile | CPU Fraction | CPU Min | Mem Fraction | Mem Min | Mem Cap | Disk |
+|---|---|---|---|---|---|---|
+| micro | 1/8 | 1 | 1/16 | 1G | 2G | 10G |
+| lite | 1/4 | 2 | 1/6 | 2G | 8G | 20G |
+| standard | 1/3 | 4 | 1/4 | 4G | 16G | 40G |
+| heavy | 1/2 | 6 | 1/3 | 6G | 64G | 75G |
+
+**Computed values on different hardware**:
+
+| Profile | 16GB/8-core | 64GB/16-core | 128GB/32-core |
+|---|---|---|---|
+| micro | 1 CPU, 1G | 2 CPU, 2G | 4 CPU, 2G |
+| lite | 2 CPU, 3G | 4 CPU, 8G | 8 CPU, 8G |
+| standard | 4 CPU, 4G | 5 CPU, 16G | 10 CPU, 16G |
+| heavy | 6 CPU, 8G | 8 CPU, 21G | 16 CPU, 43G |
+
+- `_mps_compute_resources()` runs as step 5 in `mps_load_config()`, after profile application
+- Explicit `MPS_CPUS`/`MPS_MEMORY` (from config or CLI) always override auto-scaling
+- Host detection: `nproc`/`/proc/meminfo` (Linux), `sysctl` (macOS), fallback 4 CPU / 4G
+
+## Image Flavor Metadata
+
+**Decision**: Each layer YAML contains an `x-mps:` top-level block with image requirements metadata. cloud-init silently ignores unknown top-level keys.
+
+**Metadata fields**: `disk_size`, `min_profile`, `min_disk`, `min_memory`, `min_cpus`
+
+**Data flow**:
+1. **Source of truth**: `images/layers/<flavor>.yaml` `x-mps:` blocks
+2. **Build time**: `build.sh` reads `disk_size` from merged cloud-init for Packer
+3. **Publish time**: `publish.sh` reads metadata from layer YAML, injects into `manifest.json`
+4. **Pull/import time**: `image.sh` writes metadata to `.meta` sidecar in cache
+5. **Create time**: `create.sh` calls `mps_check_image_requirements()` to compare resolved resources against `.meta` minimums, emits warnings (never blocks)
+
+For yq merge (`*+`): scalar keys in `x-mps` are overwritten by later layers, so from-scratch builds take the heaviest flavor's values (correct). Chained builds use only the delta layer, which has its own correct cumulative values.
 
 ## Cloud-init Template Restructure
 

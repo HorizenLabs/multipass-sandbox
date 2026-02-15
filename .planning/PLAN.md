@@ -34,6 +34,9 @@ A blockchain software development company needs an internal tool to spin up isol
 - **Image flavors**: Split monolithic `cloud-init.yaml` into composable layers (`images/layers/`): base, protocol-dev, smart-contract-dev, smart-contract-audit. Build-time yq merge produces the final cloud-init per flavor.
 - **Directory restructure**: Shared build files (`packer.pkr.hcl`, `build.sh`, `packer-user-data.pkrtpl.hcl`) moved from `images/base/` to `images/`. Artifacts go to `images/artifacts/`.
 - **Chained image builds**: Non-base flavors chain from their parent's QCOW2, applying only the delta cloud-init layer. Packer `iso_url`/`iso_checksum` made configurable; `build.sh` accepts `--base-image`; Makefile wires inter-flavor stamp dependencies.
+- **Dynamic disk sizes**: Per-flavor Packer disk sizes from `x-mps.disk_size` metadata in layer YAMLs (7G–13G), replacing hardcoded 15G.
+- **Auto-scaling profiles**: Profiles (micro/lite/standard/heavy) define CPU/memory as host-hardware fractions with min/cap bounds. Default profile changed from `standard` to `lite`.
+- **Image metadata**: `x-mps:` blocks in layer YAMLs → `manifest.json` → `.meta` sidecar on pull/import → runtime validation warnings in `mps create`.
 - Build system logic refinements
 - mps command changes as needed
 

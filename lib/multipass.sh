@@ -9,9 +9,9 @@
 mp_launch() {
     local instance_name="$1"
     local image="${2:-${MPS_DEFAULT_IMAGE:-24.04}}"
-    local cpus="${3:-${MPS_CPUS:-${MPS_DEFAULT_CPUS:-4}}}"
-    local memory="${4:-${MPS_MEMORY:-${MPS_DEFAULT_MEMORY:-4G}}}"
-    local disk="${5:-${MPS_DISK:-${MPS_DEFAULT_DISK:-50G}}}"
+    local cpus="${3:-${MPS_CPUS:-${MPS_DEFAULT_CPUS:-2}}}"
+    local memory="${4:-${MPS_MEMORY:-${MPS_DEFAULT_MEMORY:-2G}}}"
+    local disk="${5:-${MPS_DISK:-${MPS_DEFAULT_DISK:-20G}}}"
     local cloud_init="${6:-}"
     shift 6 || true
     # Remaining args are extra flags (--mount, etc.)

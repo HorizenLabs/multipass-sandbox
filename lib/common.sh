@@ -82,11 +82,14 @@ mps_load_config() {
     fi
 
     # 4. Apply profile if set (profile values are defaults, explicit CLI/env wins)
-    local profile="${MPS_PROFILE:-${MPS_DEFAULT_PROFILE:-standard}}"
+    local profile="${MPS_PROFILE:-${MPS_DEFAULT_PROFILE:-lite}}"
     if [[ -f "${MPS_ROOT}/templates/profiles/${profile}.env" ]]; then
         mps_log_debug "Loading profile: ${profile}"
         _mps_apply_profile "${MPS_ROOT}/templates/profiles/${profile}.env"
     fi
+
+    # 5. Compute auto-scaled CPU/memory from profile fractions (if not already set)
+    _mps_compute_resources
 }
 
 _mps_apply_profile() {
@@ -106,6 +109,111 @@ _mps_apply_profile() {
     done < "$profile_file"
 }
 
+# ---------- Auto-Scaling Resources ----------
+
+# Parse a size string like "4G", "512M", "1g" into megabytes (integer).
+_mps_parse_size_mb() {
+    local size="$1"
+    local num unit
+    num="${size%%[GgMm]*}"
+    unit="${size##*[0-9]}"
+    case "$unit" in
+        G|g) echo $(( num * 1024 )) ;;
+        M|m) echo "$num" ;;
+        *)   echo "$num" ;;
+    esac
+}
+
+# Detect host hardware and compute MPS_CPUS/MPS_MEMORY from profile fractions.
+# Only sets values that are not already set (explicit overrides always win).
+_mps_compute_resources() {
+    # Skip if both are already explicitly set
+    if [[ -n "${MPS_CPUS:-}" && -n "${MPS_MEMORY:-}" ]]; then
+        return 0
+    fi
+
+    # Detect host CPUs
+    local host_cpus
+    if command -v nproc &>/dev/null; then
+        host_cpus="$(nproc)"
+    elif command -v sysctl &>/dev/null && sysctl -n hw.ncpu &>/dev/null 2>&1; then
+        host_cpus="$(sysctl -n hw.ncpu)"
+    else
+        host_cpus=4
+    fi
+
+    # Detect host memory (in MB)
+    local host_memory_mb
+    if [[ -f /proc/meminfo ]]; then
+        local mem_kb
+        mem_kb="$(awk '/^MemTotal:/ {print $2}' /proc/meminfo)"
+        host_memory_mb=$(( mem_kb / 1024 ))
+    elif command -v sysctl &>/dev/null && sysctl -n hw.memsize &>/dev/null 2>&1; then
+        local mem_bytes
+        mem_bytes="$(sysctl -n hw.memsize)"
+        host_memory_mb=$(( mem_bytes / 1024 / 1024 ))
+    else
+        host_memory_mb=4096
+    fi
+
+    # Compute CPUs from fraction/min if not already set
+    if [[ -z "${MPS_CPUS:-}" ]]; then
+        local frac_num="${MPS_CPUS_FRACTION_NUM:-}"
+        local frac_den="${MPS_CPUS_FRACTION_DEN:-}"
+        local cpu_min="${MPS_CPUS_MIN:-}"
+
+        if [[ -n "$frac_num" && -n "$frac_den" && "$frac_den" -gt 0 ]]; then
+            local computed_cpus=$(( host_cpus * frac_num / frac_den ))
+            if [[ -n "$cpu_min" && "$computed_cpus" -lt "$cpu_min" ]]; then
+                computed_cpus="$cpu_min"
+            fi
+            if [[ "$computed_cpus" -lt 1 ]]; then
+                computed_cpus=1
+            fi
+            export MPS_CPUS="$computed_cpus"
+            mps_log_debug "Auto-scaled CPUs: ${computed_cpus} (host=${host_cpus}, fraction=${frac_num}/${frac_den}, min=${cpu_min:-none})"
+        fi
+    fi
+
+    # Compute memory from fraction/min/cap if not already set
+    if [[ -z "${MPS_MEMORY:-}" ]]; then
+        local mem_frac_num="${MPS_MEMORY_FRACTION_NUM:-}"
+        local mem_frac_den="${MPS_MEMORY_FRACTION_DEN:-}"
+        local mem_min="${MPS_MEMORY_MIN:-}"
+        local mem_cap="${MPS_MEMORY_CAP:-}"
+
+        if [[ -n "$mem_frac_num" && -n "$mem_frac_den" && "$mem_frac_den" -gt 0 ]]; then
+            local computed_mem_mb=$(( host_memory_mb * mem_frac_num / mem_frac_den ))
+
+            # Apply minimum
+            if [[ -n "$mem_min" ]]; then
+                local min_mb
+                min_mb="$(_mps_parse_size_mb "$mem_min")"
+                if [[ "$computed_mem_mb" -lt "$min_mb" ]]; then
+                    computed_mem_mb="$min_mb"
+                fi
+            fi
+
+            # Apply cap
+            if [[ -n "$mem_cap" ]]; then
+                local cap_mb
+                cap_mb="$(_mps_parse_size_mb "$mem_cap")"
+                if [[ "$computed_mem_mb" -gt "$cap_mb" ]]; then
+                    computed_mem_mb="$cap_mb"
+                fi
+            fi
+
+            # Format as G or M
+            if [[ $(( computed_mem_mb % 1024 )) -eq 0 && "$computed_mem_mb" -ge 1024 ]]; then
+                export MPS_MEMORY="$(( computed_mem_mb / 1024 ))G"
+            else
+                export MPS_MEMORY="${computed_mem_mb}M"
+            fi
+            mps_log_debug "Auto-scaled memory: ${MPS_MEMORY} (host=${host_memory_mb}MB, fraction=${mem_frac_num}/${mem_frac_den}, min=${mem_min:-none}, cap=${mem_cap:-none})"
+        fi
+    fi
+}
+
 # ---------- Name Resolution ----------
 
 # Maximum length for Multipass instance names
@@ -116,7 +224,7 @@ MPS_MAX_INSTANCE_NAME_LEN=40
 mps_auto_name() {
     local mount_source="${1:-}"
     local template="${2:-${MPS_CLOUD_INIT:-${MPS_DEFAULT_CLOUD_INIT:-base}}}"
-    local profile="${3:-${MPS_PROFILE:-${MPS_DEFAULT_PROFILE:-standard}}}"
+    local profile="${3:-${MPS_PROFILE:-${MPS_DEFAULT_PROFILE:-lite}}}"
     local prefix="${MPS_INSTANCE_PREFIX:-mps}"
 
     if [[ -z "$mount_source" ]]; then
@@ -370,6 +478,18 @@ mps_instance_meta() {
     echo "$(mps_state_dir)/${name}.env"
 }
 
+# Read a key from an image's .meta sidecar file.
+# Usage: mps_image_meta <name> <tag> <arch> <key>
+# Returns empty string if not found.
+mps_image_meta() {
+    local name="$1" tag="$2" arch="$3" key="$4"
+    local meta_file
+    meta_file="$(mps_cache_dir)/images/${name}/${tag}/${arch}.meta"
+    if [[ -f "$meta_file" ]]; then
+        grep "^${key}=" "$meta_file" 2>/dev/null | cut -d= -f2 || true
+    fi
+}
+
 mps_save_instance_meta() {
     local name="$1"
     local meta_file
@@ -378,9 +498,9 @@ mps_save_instance_meta() {
 MPS_INSTANCE_NAME=${name}
 MPS_INSTANCE_FULL=$(mps_instance_name "$name")
 MPS_CREATED=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-MPS_CPUS=${MPS_CPUS:-${MPS_DEFAULT_CPUS:-4}}
-MPS_MEMORY=${MPS_MEMORY:-${MPS_DEFAULT_MEMORY:-4G}}
-MPS_DISK=${MPS_DISK:-${MPS_DEFAULT_DISK:-50G}}
+MPS_CPUS=${MPS_CPUS:-${MPS_DEFAULT_CPUS:-2}}
+MPS_MEMORY=${MPS_MEMORY:-${MPS_DEFAULT_MEMORY:-2G}}
+MPS_DISK=${MPS_DISK:-${MPS_DEFAULT_DISK:-20G}}
 MPS_CLOUD_INIT=${MPS_CLOUD_INIT:-${MPS_DEFAULT_CLOUD_INIT:-base}}
 MPS_MOUNT_SOURCE=${MPS_MOUNT_SOURCE:-}
 MPS_MOUNT_TARGET=${MPS_MOUNT_TARGET:-}
@@ -513,6 +633,72 @@ mps_validate_name() {
     if [[ ! "$name" =~ ^[a-zA-Z0-9][a-zA-Z0-9._-]*$ ]]; then
         mps_die "Invalid instance name: '$name'. Names must start with alphanumeric and contain only [a-zA-Z0-9._-]"
     fi
+}
+
+# Check resolved resources against image .meta minimum requirements.
+# Emits warnings but never blocks (always returns 0).
+mps_check_image_requirements() {
+    local image_url="$1"
+    local cpus="$2"
+    local memory="$3"
+    local disk="$4"
+
+    # Only check for mps cached images (file:// URLs)
+    [[ "$image_url" == file://* ]] || return 0
+
+    # Derive meta file path from image file path
+    local img_path="${image_url#file://}"
+    local meta_file="${img_path%.img}.meta"
+    [[ -f "$meta_file" ]] || return 0
+
+    local warned=false
+
+    # Check CPUs
+    local min_cpus=""
+    min_cpus="$(grep '^MIN_CPUS=' "$meta_file" 2>/dev/null | cut -d= -f2)" || true
+    if [[ -n "$min_cpus" && "$cpus" =~ ^[0-9]+$ && "$min_cpus" =~ ^[0-9]+$ ]]; then
+        if [[ "$cpus" -lt "$min_cpus" ]]; then
+            mps_log_warn "CPUs ($cpus) below image minimum ($min_cpus)"
+            warned=true
+        fi
+    fi
+
+    # Check memory
+    local min_memory=""
+    min_memory="$(grep '^MIN_MEMORY=' "$meta_file" 2>/dev/null | cut -d= -f2)" || true
+    if [[ -n "$min_memory" && -n "$memory" ]]; then
+        local mem_mb min_mem_mb
+        mem_mb="$(_mps_parse_size_mb "$memory")"
+        min_mem_mb="$(_mps_parse_size_mb "$min_memory")"
+        if [[ "$mem_mb" -lt "$min_mem_mb" ]]; then
+            mps_log_warn "Memory ($memory) below image minimum ($min_memory)"
+            warned=true
+        fi
+    fi
+
+    # Check disk
+    local min_disk=""
+    min_disk="$(grep '^MIN_DISK=' "$meta_file" 2>/dev/null | cut -d= -f2)" || true
+    if [[ -n "$min_disk" && -n "$disk" ]]; then
+        local disk_mb min_disk_mb
+        disk_mb="$(_mps_parse_size_mb "$disk")"
+        min_disk_mb="$(_mps_parse_size_mb "$min_disk")"
+        if [[ "$disk_mb" -lt "$min_disk_mb" ]]; then
+            mps_log_warn "Disk ($disk) below image minimum ($min_disk)"
+            warned=true
+        fi
+    fi
+
+    # Suggest recommended profile if any warnings
+    if [[ "$warned" == "true" ]]; then
+        local min_profile=""
+        min_profile="$(grep '^MIN_PROFILE=' "$meta_file" 2>/dev/null | cut -d= -f2)" || true
+        if [[ -n "$min_profile" ]]; then
+            mps_log_warn "Recommended minimum profile: $min_profile"
+        fi
+    fi
+
+    return 0
 }
 
 mps_validate_resources() {

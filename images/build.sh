@@ -142,6 +142,12 @@ echo "Merging cloud-init layers..."
 yq eval-all '. as $item ireduce ({}; . *+ $item)' "${LAYERS[@]}" > cloud-init.yaml
 echo "Merged cloud-init.yaml generated ($(wc -l < cloud-init.yaml) lines)"
 
+# ---------- Extract disk size from merged cloud-init (x-mps metadata) ----------
+if [[ -z "${PACKER_DISK_SIZE:-}" ]]; then
+    PACKER_DISK_SIZE="$(yq '.x-mps.disk_size // "15G"' cloud-init.yaml)"
+fi
+echo "Disk size: ${PACKER_DISK_SIZE}"
+
 # ---------- Build extra Packer variables for chained builds ----------
 PACKER_EXTRA_VARS=()
 if [[ -n "$BASE_IMAGE" ]]; then
@@ -185,6 +191,7 @@ for arch in "${ARCHITECTURES[@]}"; do
         -var "image_name=${FLAVOR}" \
         -var "output_dir=${PACKER_OUTPUT_DIR}" \
         -var "vm_name=${VM_NAME}" \
+        -var "disk_size=${PACKER_DISK_SIZE}" \
         "${PACKER_ARCH_VARS[@]}" \
         "${PACKER_EXTRA_VARS[@]}" \
         packer.pkr.hcl

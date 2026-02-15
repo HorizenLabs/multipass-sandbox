@@ -72,7 +72,32 @@ if [[ ! -f "$MANIFEST_FILE" ]]; then
     exit 1
 fi
 
-# Add version entry and update latest pointer
+# Extract x-mps metadata from the top-most layer YAML for this flavor
+LAYER_MAP="base:base protocol-dev:protocol-dev smart-contract-dev:smart-contract-dev smart-contract-audit:smart-contract-audit"
+LAYER_FILE=""
+for entry in $LAYER_MAP; do
+    lname="${entry%%:*}"
+    lfile="${entry#*:}"
+    if [[ "$lname" == "$IMAGE_NAME" ]]; then
+        LAYER_FILE="${SCRIPT_DIR}/layers/${lfile}.yaml"
+        break
+    fi
+done
+
+META_DISK_SIZE=""
+META_MIN_PROFILE=""
+META_MIN_DISK=""
+META_MIN_MEMORY=""
+META_MIN_CPUS=""
+if [[ -n "$LAYER_FILE" && -f "$LAYER_FILE" ]] && command -v yq &>/dev/null; then
+    META_DISK_SIZE="$(yq '.x-mps.disk_size // ""' "$LAYER_FILE")"
+    META_MIN_PROFILE="$(yq '.x-mps.min_profile // ""' "$LAYER_FILE")"
+    META_MIN_DISK="$(yq '.x-mps.min_disk // ""' "$LAYER_FILE")"
+    META_MIN_MEMORY="$(yq '.x-mps.min_memory // ""' "$LAYER_FILE")"
+    META_MIN_CPUS="$(yq '.x-mps.min_cpus // ""' "$LAYER_FILE")"
+fi
+
+# Add version entry, update latest pointer, and inject x-mps metadata
 RELATIVE_URL="${IMAGE_NAME}/${VERSION}/${ARCH}.img"
 TMP_MANIFEST="$(mktemp)"
 
@@ -82,9 +107,20 @@ jq \
     --arg arch "$ARCH" \
     --arg url "$RELATIVE_URL" \
     --arg sha "$SHA256" \
+    --arg disk_size "$META_DISK_SIZE" \
+    --arg min_profile "$META_MIN_PROFILE" \
+    --arg min_disk "$META_MIN_DISK" \
+    --arg min_memory "$META_MIN_MEMORY" \
+    --arg min_cpus "$META_MIN_CPUS" \
     '
     # Ensure image entry exists
     .images[$name] //= {"description": "", "versions": {}, "latest": null} |
+    # Inject x-mps metadata (overwrite if present)
+    (if $disk_size != "" then .images[$name].disk_size = $disk_size else . end) |
+    (if $min_profile != "" then .images[$name].min_profile = $min_profile else . end) |
+    (if $min_disk != "" then .images[$name].min_disk = $min_disk else . end) |
+    (if $min_memory != "" then .images[$name].min_memory = $min_memory else . end) |
+    (if $min_cpus != "" then .images[$name].min_cpus = ($min_cpus | tonumber) else . end) |
     # Ensure version entry exists
     .images[$name].versions[$ver] //= {} |
     # Set arch-specific data
