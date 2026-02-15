@@ -66,6 +66,7 @@ Internal CLI tool for spinning up isolated VM-based development environments usi
 - `mps shell`/`mps exec` auto-set workdir to the mounted project path
 - Commands use `while/case/shift` arg parsing, private `_<cmd>_usage()` helpers
 - Color output uses `$'\033[...]'` ANSI-C quoting (not double-quoted `\033`)
+- **Cross-platform**: Scripts in `bin/`, `commands/`, `lib/`, `config/`, and `install.sh` must work on both GNU/Linux and BSD/macOS, targeting Bash 3.2+ (macOS default). Avoid: `${var,,}` (use `tr`), `readlink -f` (use loop), `md5sum`/`sha256sum` (use `_mps_md5`/`_mps_sha256` from `lib/common.sh`). Scripts in `images/` run inside Docker and may use GNU-only tools.
 
 ## Build System
 

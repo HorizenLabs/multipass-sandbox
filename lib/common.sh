@@ -1,6 +1,26 @@
 #!/usr/bin/env bash
 # lib/common.sh — Shared functions for Multi Pass Sandbox (mps)
 
+# ---------- Portable Hashing Helpers ----------
+# macOS has shasum/md5, Linux has sha256sum/md5sum
+
+_mps_sha256() {
+    if command -v sha256sum &>/dev/null; then
+        sha256sum "$@"
+    else
+        shasum -a 256 "$@"
+    fi
+}
+
+# shellcheck disable=SC2120  # called with args from image.sh, without from common.sh (stdin)
+_mps_md5() {
+    if command -v md5sum &>/dev/null; then
+        md5sum "$@"
+    else
+        md5 -r "$@"
+    fi
+}
+
 # ---------- Colors & Logging ----------
 
 _color_reset=$'\033[0m'
@@ -245,7 +265,7 @@ mps_auto_name() {
     if [[ ${#full_name} -gt $MPS_MAX_INSTANCE_NAME_LEN ]]; then
         # Compute a short hash of the original folder name for uniqueness
         local hash
-        hash="$(echo -n "$folder" | md5sum | cut -c1-4)"
+        hash="$(echo -n "$folder" | _mps_md5 | cut -c1-4)"
         # Calculate how much space we have for the folder portion
         # Format: <prefix>-<folder>-<hash>-<suffix>
         local overhead=$(( ${#prefix} + 1 + ${#hash} + 1 + ${#suffix} + 1 ))
@@ -533,7 +553,8 @@ mps_host_to_guest_path() {
             local converted="${host_path//\\//}"
             # Convert drive letter: C:/foo → /c/foo
             if [[ "$converted" =~ ^([A-Za-z]):/(.*) ]]; then
-                local drive="${BASH_REMATCH[1],,}"  # lowercase
+                local drive
+                drive="$(printf '%s' "${BASH_REMATCH[1]}" | tr '[:upper:]' '[:lower:]')"
                 local rest="${BASH_REMATCH[2]}"
                 echo "/${drive}/${rest}"
             else

@@ -206,7 +206,7 @@ _image_import() {
     # Verify against .sha256 sidecar if present alongside source
     local sha256_file="${file}.sha256"
     local actual_sha256
-    actual_sha256="$(sha256sum "$file" | cut -d' ' -f1)"
+    actual_sha256="$(_mps_sha256 "$file" | cut -d' ' -f1)"
 
     if [[ -f "$sha256_file" ]]; then
         local expected_sha256
@@ -343,7 +343,7 @@ _image_pull() {
     if [[ -n "$expected_sha256" ]]; then
         mps_log_info "Verifying checksum..."
         local actual_sha256
-        actual_sha256="$(sha256sum "$dest_file" | cut -d' ' -f1)"
+        actual_sha256="$(_mps_sha256 "$dest_file" | cut -d' ' -f1)"
         if [[ "$actual_sha256" != "$expected_sha256" ]]; then
             rm -f "$dest_file"
             mps_die "Checksum mismatch! Expected: ${expected_sha256}, Got: ${actual_sha256}"

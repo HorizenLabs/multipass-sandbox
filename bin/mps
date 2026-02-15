@@ -8,7 +8,15 @@ set -euo pipefail
 MPS_VERSION="0.1.0"
 
 # Resolve install directory
-MPS_ROOT="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}" 2>/dev/null || echo "${BASH_SOURCE[0]}")")/.." && pwd)"
+# Portable canonical path resolution (BSD readlink lacks -f)
+_mps_source="${BASH_SOURCE[0]}"
+while [[ -L "$_mps_source" ]]; do
+    _mps_dir="$(cd -P "$(dirname "$_mps_source")" && pwd)"
+    _mps_source="$(readlink "$_mps_source")"
+    [[ "$_mps_source" != /* ]] && _mps_source="${_mps_dir}/${_mps_source}"
+done
+MPS_ROOT="$(cd -P "$(dirname "$_mps_source")/.." && pwd)"
+unset _mps_source _mps_dir
 export MPS_ROOT
 
 # Store the directory where mps was invoked
