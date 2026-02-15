@@ -17,7 +17,7 @@ A blockchain software development company needs an internal tool to spin up isol
 
 ---
 
-## Completed Phases (1–4)
+## Completed Phases (1–5)
 
 **Phase 1 — MVP Core**: Entry point (`bin/mps`), shared libraries (`lib/common.sh`, `lib/multipass.sh`), all core commands (create, up, down, destroy, shell, exec, list, status, ssh-config), config cascade system, resource profiles, cloud-init templates, mount behavior with path-preserving semantics, VM auto-naming.
 
@@ -27,30 +27,20 @@ A blockchain software development company needs an internal tool to spin up isol
 
 **Phase 4 — Polish & Build System**: Dockerized build system (builder + linter images), Makefile with stamp-based caching, secure dependency installation (GPG/SHA256 verification), SSH key refactor (user-provided keys, no sudo), repo restructure, image build improvements (15G disk, HWE kernel, qemu-img compaction), cloud-init hardening, installers, shellcheck clean.
 
+**Phase 5 — Core Changes**: Image flavors (composable layers in `images/layers/`, chained builds via `--base-image`, dynamic disk sizes from `x-mps` metadata). Auto-scaling resource profiles (micro/lite/standard/heavy with fraction/min/cap). Image metadata pipeline (layer YAMLs → manifest.json → .meta sidecar → runtime validation). Installer refinement (auto-install deps, `~/.local/bin`). Uninstaller (`uninstall.sh`).
+
 ---
 
-## Phase 5 — Core Changes
-
-- **Image flavors**: Split monolithic `cloud-init.yaml` into composable layers (`images/layers/`): base, protocol-dev, smart-contract-dev, smart-contract-audit. Build-time yq merge produces the final cloud-init per flavor.
-- **Directory restructure**: Shared build files (`packer.pkr.hcl`, `build.sh`, `packer-user-data.pkrtpl.hcl`) moved from `images/base/` to `images/`. Artifacts go to `images/artifacts/`.
-- **Chained image builds**: Non-base flavors chain from their parent's QCOW2, applying only the delta cloud-init layer. Packer `iso_url`/`iso_checksum` made configurable; `build.sh` accepts `--base-image`; Makefile wires inter-flavor stamp dependencies.
-- **Dynamic disk sizes**: Per-flavor Packer disk sizes from `x-mps.disk_size` metadata in layer YAMLs (7G–13G), replacing hardcoded 15G.
-- **Auto-scaling profiles**: Profiles (micro/lite/standard/heavy) define CPU/memory as host-hardware fractions with min/cap bounds. Default profile changed from `standard` to `lite`.
-- **Image metadata**: `x-mps:` blocks in layer YAMLs → `manifest.json` → `.meta` sidecar on pull/import → runtime validation warnings in `mps create`.
-- Build system logic refinements
-- mps command changes as needed
-- **Installer refinement**: Auto-install dependencies (multipass, jq) with OS detection and user prompts. Default install dir changed to `~/.local/bin` with PATH detection.
-- **Uninstaller**: `uninstall.sh` reverses install.sh and cleans up VMs, SSH configs, instance metadata, cached images, and user config.
-
-## Phase 6 — Linting CI
-
-- GitHub Actions workflow: run `make lint` on push/PR
-- Quick win — linter image and targets already exist
-
-## Phase 7 — Image Distribution
+## Phase 6 — Image Distribution
 
 - Backblaze B2 bucket + Cloudflare proxy setup (handled externally)
-- End-to-end `mps image pull` flow
+- Publishing scripts, metadata handling and versioning
+- First publish to B2
+- End-to-end `mps image pull` flow (code complete, needs E2E testing against live infra)
+
+## Phase 7 — GH Actions CI/CD Pipeline
+
+- GitHub Actions workflow: run `make lint` on push/PR
 - Automated image builds
 
 ## Phase 8 — Testing

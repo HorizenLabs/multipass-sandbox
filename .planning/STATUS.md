@@ -8,35 +8,18 @@
 - **Phase 4 — Polish & Build System**: Dockerized builds (builder+linter images), stamp-based caching, secure dependency installation (GPG/SHA256), SSH key refactor, repo restructure, image build improvements (15G disk, .qcow2.img, HWE kernel), cloud-init hardening, installers, shellcheck clean
 - **Cross-Architecture Image Building**: QEMU cross-compilation, KVM/TCG detection, EFI firmware for arm64
 - **File Transfer**: `mps transfer` with colon-prefix convention, `--transfer` flag on create/up
+- **Phase 5 — Core Changes**: Image flavors (composable layers, chained builds, dynamic disk sizes), auto-scaling profiles (micro/lite/standard/heavy), image metadata + runtime validation, build system refinements, installer/uninstaller
 
-## Phase 5 — Core Changes: IN PROGRESS
-
-- [x] Split monolithic cloud-init.yaml into composable layers (`images/layers/`)
-- [x] Restructure `images/` directory (layers/, artifacts/, shared packer/build files)
-- [x] Rewrite build.sh to accept flavor argument + yq merge
-- [x] Add yq to Dockerfile.builder
-- [x] Update Makefile with per-flavor build/import/publish/clean targets
-- [x] Update manifest.json with 4 image flavors
-- [x] Chained image builds (non-base flavors chain from parent QCOW2 via `--base-image`)
-- [x] Dynamic Packer disk_size per flavor (x-mps metadata in layer YAMLs → build.sh → packer.pkr.hcl)
-- [x] Auto-scaling resource profiles (micro/lite/standard/heavy with fraction/min/cap)
-- [x] Default profile changed from standard to lite
-- [x] Image flavor metadata in manifest.json (disk_size, min_profile, min_disk, min_memory, min_cpus)
-- [x] .meta sidecar metadata on pull/import (from manifest/layer YAMLs)
-- [x] Runtime validation warnings in mps create (check image requirements vs resolved resources)
-- [x] Build system logic refinements
-- [ ] mps command changes as needed
-- [x] Installer refinement (auto-install deps, `~/.local/bin` default, PATH detection)
-- [x] Uninstaller (`uninstall.sh` — symlink, VMs, SSH configs, cache, config cleanup)
-
-## Phase 6 — Linting CI: NOT STARTED
-
-- [ ] GitHub Actions workflow: `make lint` on push/PR
-
-## Phase 7 — Image Distribution: NOT STARTED
+## Phase 6 — Image Distribution: NOT STARTED
 
 - [ ] Backblaze B2 bucket + Cloudflare proxy setup (handled externally)
+- [ ] Publishing scripts, metadata handling and versioning
+- [ ] First publish to B2
 - [x] `mps image pull` + auto-pull on `mps create`/`mps up` (code complete, needs E2E testing against live infra)
+
+## Phase 7 — GH Actions CI/CD Pipeline: NOT STARTED
+
+- [ ] GitHub Actions workflow: `make lint` on push/PR
 - [ ] Automated image builds
 
 ## Phase 8 — Testing: NOT STARTED
