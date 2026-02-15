@@ -43,17 +43,10 @@ cmd_down() {
 
     # ---- Resolve instance name ----
     local instance_name
-    if [[ -n "$arg_name" ]]; then
-        instance_name="$(mps_instance_name "$arg_name")"
-    else
-        instance_name="$(mps_resolve_name "" "$(pwd)" "${MPS_CLOUD_INIT:-${MPS_DEFAULT_CLOUD_INIT:-default}}" "${MPS_PROFILE:-${MPS_DEFAULT_PROFILE:-lite}}")"
-    fi
-    mps_log_debug "Resolved instance name: ${instance_name}"
+    instance_name="$(mps_resolve_instance_name "$arg_name")"
 
     # ---- Check instance exists ----
-    if ! mp_instance_exists "$instance_name"; then
-        mps_die "Instance '${instance_name}' does not exist. Nothing to stop."
-    fi
+    mps_require_exists "$instance_name" "Nothing to stop."
 
     # ---- Check current state ----
     local state
@@ -72,10 +65,7 @@ cmd_down() {
     # ---- Kill port forwards ----
     local short_name
     short_name="$(mps_short_name "$instance_name")"
-    mps_kill_port_forwards "$short_name"
-    local ports_file
-    ports_file="$(mps_ports_file "$short_name")"
-    [[ -f "$ports_file" ]] && true > "$ports_file"
+    mps_reset_port_forwards "$instance_name" "$short_name"
 
     # ---- Stop ----
     mp_stop "$instance_name" "$arg_force"

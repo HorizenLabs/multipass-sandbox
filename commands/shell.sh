@@ -44,42 +44,14 @@ cmd_shell() {
 
     # ---- Resolve instance name ----
     local instance_name
-    if [[ -n "$arg_name" ]]; then
-        instance_name="$(mps_instance_name "$arg_name")"
-    else
-        instance_name="$(mps_resolve_name "" "$(pwd)" "${MPS_CLOUD_INIT:-${MPS_DEFAULT_CLOUD_INIT:-default}}" "${MPS_PROFILE:-${MPS_DEFAULT_PROFILE:-lite}}")"
-    fi
-    mps_log_debug "Resolved instance name: ${instance_name}"
+    instance_name="$(mps_resolve_instance_name "$arg_name")"
 
     # ---- Check instance is running ----
-    local state
-    state="$(mp_instance_state "$instance_name")"
-
-    if [[ "$state" == "nonexistent" ]]; then
-        mps_die "Instance '${instance_name}' does not exist. Create it with: mps up --name $(mps_short_name "$instance_name")"
-    fi
-
-    if [[ "$state" != "Running" ]]; then
-        mps_die "Instance '${instance_name}' is not running (state: ${state}). Start it with: mps up --name $(mps_short_name "$instance_name")"
-    fi
+    mps_require_running "$instance_name"
 
     # ---- Determine working directory ----
-    local workdir="$arg_workdir"
-
-    if [[ -z "$workdir" ]]; then
-        # Try to load mount target from instance metadata
-        local meta_file
-        meta_file="$(mps_instance_meta "$(mps_short_name "$instance_name")")"
-        if [[ -f "$meta_file" ]]; then
-            local mount_target=""
-            # shellcheck disable=SC1090
-            mount_target="$(source "$meta_file" && echo "${MPS_MOUNT_TARGET:-}")"
-            if [[ -n "$mount_target" ]]; then
-                workdir="$mount_target"
-                mps_log_debug "Using mount target as workdir: ${workdir}"
-            fi
-        fi
-    fi
+    local workdir
+    workdir="$(mps_resolve_workdir "$instance_name" "$arg_workdir")"
 
     # ---- Open shell ----
     mps_log_debug "Opening shell in '${instance_name}' (workdir: ${workdir:-<default>})"

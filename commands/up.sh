@@ -102,11 +102,7 @@ cmd_up() {
             # Re-establish port forwards (kill stale, then auto-forward)
             local short_name
             short_name="$(mps_short_name "$instance_name")"
-            mps_kill_port_forwards "$short_name"
-            local ports_file
-            ports_file="$(mps_ports_file "$short_name")"
-            [[ -f "$ports_file" ]] && true > "$ports_file"
-            mps_auto_forward_ports "$instance_name" "$short_name"
+            mps_reset_port_forwards "$instance_name" "$short_name" --auto-forward
 
             _up_show_info "$instance_name"
             ;;
@@ -125,11 +121,7 @@ cmd_up() {
             # Re-establish port forwards (kill stale, then auto-forward)
             local short_name
             short_name="$(mps_short_name "$instance_name")"
-            mps_kill_port_forwards "$short_name"
-            local ports_file
-            ports_file="$(mps_ports_file "$short_name")"
-            [[ -f "$ports_file" ]] && true > "$ports_file"
-            mps_auto_forward_ports "$instance_name" "$short_name"
+            mps_reset_port_forwards "$instance_name" "$short_name" --auto-forward
 
             _up_show_info "$instance_name"
             ;;

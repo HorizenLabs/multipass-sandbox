@@ -44,7 +44,7 @@ Additional: CLI path argument overrides CWD (`mps up /path/to/project`).
 
 Additional:
 - Folder name sanitized: lowercased, non-alphanumeric replaced with dashes, 4-char md5 hash for truncated names
-- Commands on existing instances (down, destroy, shell, exec, status, ssh-config) auto-resolve from CWD + default template + default profile
+- Commands on existing instances (down, destroy, shell, exec, status, ssh-config, transfer) auto-resolve from CWD + default template + default profile
 
 ## Config System
 

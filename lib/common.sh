@@ -335,6 +335,22 @@ mps_short_name() {
     echo "${full_name#${prefix}-}"
 }
 
+# Convenience wrapper: resolve instance name from an optional --name arg.
+# If arg is given, apply prefix; otherwise auto-derive from CWD + defaults.
+mps_resolve_instance_name() {
+    local arg_name="${1:-}"
+    local instance_name
+    if [[ -n "$arg_name" ]]; then
+        instance_name="$(mps_instance_name "$arg_name")"
+    else
+        instance_name="$(mps_resolve_name "" "$(pwd)" \
+            "${MPS_CLOUD_INIT:-${MPS_DEFAULT_CLOUD_INIT:-default}}" \
+            "${MPS_PROFILE:-${MPS_DEFAULT_PROFILE:-lite}}")"
+    fi
+    mps_log_debug "Resolved instance name: ${instance_name}"
+    echo "$instance_name"
+}
+
 # ---------- State Directory ----------
 
 mps_state_dir() {
@@ -347,6 +363,52 @@ mps_cache_dir() {
     local dir="${HOME}/.mps/cache"
     mkdir -p "$dir"
     echo "$dir"
+}
+
+# ---------- Instance State Guards ----------
+
+mps_require_exists() {
+    local instance_name="$1"
+    local suffix="${2:-Create it with: mps up --name $(mps_short_name "$instance_name")}"
+    if ! mp_instance_exists "$instance_name"; then
+        mps_die "Instance '${instance_name}' does not exist. ${suffix}"
+    fi
+}
+
+mps_require_running() {
+    local instance_name="$1"
+    local state
+    state="$(mp_instance_state "$instance_name")"
+    if [[ "$state" == "nonexistent" ]]; then
+        mps_die "Instance '${instance_name}' does not exist. Create it with: mps up --name $(mps_short_name "$instance_name")"
+    fi
+    if [[ "$state" != "Running" ]]; then
+        mps_die "Instance '${instance_name}' is not running (state: ${state}). Start it with: mps up --name $(mps_short_name "$instance_name")"
+    fi
+}
+
+# ---------- Workdir Resolution ----------
+
+mps_resolve_workdir() {
+    local instance_name="$1"
+    local explicit_workdir="${2:-}"
+    if [[ -n "$explicit_workdir" ]]; then
+        echo "$explicit_workdir"
+        return
+    fi
+    local meta_file
+    meta_file="$(mps_instance_meta "$(mps_short_name "$instance_name")")"
+    if [[ -f "$meta_file" ]]; then
+        local mount_target=""
+        # shellcheck disable=SC1090
+        mount_target="$(source "$meta_file" && echo "${MPS_MOUNT_TARGET:-}")"
+        if [[ -n "$mount_target" ]]; then
+            mps_log_debug "Using mount target as workdir: ${mount_target}"
+            echo "$mount_target"
+            return
+        fi
+    fi
+    echo ""
 }
 
 # ---------- Architecture Detection ----------
@@ -609,6 +671,15 @@ _mps_semver_gt() {
     return 1
 }
 
+# ---------- Metadata Helpers ----------
+
+_mps_read_meta_key() {
+    local file="$1" key="$2"
+    if [[ -f "$file" ]]; then
+        grep "^${key}=" "$file" 2>/dev/null | cut -d= -f2 || true
+    fi
+}
+
 mps_instance_meta() {
     local name="$1"
     echo "$(mps_state_dir)/${name}.env"
@@ -621,9 +692,7 @@ mps_image_meta() {
     local name="$1" tag="$2" arch="$3" key="$4"
     local meta_file
     meta_file="$(mps_cache_dir)/images/${name}/${tag}/${arch}.meta"
-    if [[ -f "$meta_file" ]]; then
-        grep "^${key}=" "$meta_file" 2>/dev/null | cut -d= -f2 || true
-    fi
+    _mps_read_meta_key "$meta_file" "$key"
 }
 
 mps_save_instance_meta() {
@@ -792,7 +861,7 @@ mps_check_image_requirements() {
 
     # Check CPUs
     local min_cpus=""
-    min_cpus="$(grep '^MIN_CPUS=' "$meta_file" 2>/dev/null | cut -d= -f2)" || true
+    min_cpus="$(_mps_read_meta_key "$meta_file" "MIN_CPUS")"
     if [[ -n "$min_cpus" && "$cpus" =~ ^[0-9]+$ && "$min_cpus" =~ ^[0-9]+$ ]]; then
         if [[ "$cpus" -lt "$min_cpus" ]]; then
             mps_log_warn "CPUs ($cpus) below image minimum ($min_cpus)"
@@ -802,7 +871,7 @@ mps_check_image_requirements() {
 
     # Check memory
     local min_memory=""
-    min_memory="$(grep '^MIN_MEMORY=' "$meta_file" 2>/dev/null | cut -d= -f2)" || true
+    min_memory="$(_mps_read_meta_key "$meta_file" "MIN_MEMORY")"
     if [[ -n "$min_memory" && -n "$memory" ]]; then
         local mem_mb min_mem_mb
         mem_mb="$(_mps_parse_size_mb "$memory")"
@@ -815,7 +884,7 @@ mps_check_image_requirements() {
 
     # Check disk
     local min_disk=""
-    min_disk="$(grep '^MIN_DISK=' "$meta_file" 2>/dev/null | cut -d= -f2)" || true
+    min_disk="$(_mps_read_meta_key "$meta_file" "MIN_DISK")"
     if [[ -n "$min_disk" && -n "$disk" ]]; then
         local disk_mb min_disk_mb
         disk_mb="$(_mps_parse_size_mb "$disk")"
@@ -829,7 +898,7 @@ mps_check_image_requirements() {
     # Suggest recommended profile if any warnings
     if [[ "$warned" == "true" ]]; then
         local min_profile=""
-        min_profile="$(grep '^MIN_PROFILE=' "$meta_file" 2>/dev/null | cut -d= -f2)" || true
+        min_profile="$(_mps_read_meta_key "$meta_file" "MIN_PROFILE")"
         if [[ -n "$min_profile" ]]; then
             mps_log_warn "Recommended minimum profile: $min_profile"
         fi
@@ -926,7 +995,7 @@ mps_inject_ssh_key() {
     meta_file="$(mps_instance_meta "$short_name")"
     if [[ -f "$meta_file" ]]; then
         local injected=""
-        injected="$(grep '^MPS_SSH_INJECTED=' "$meta_file" 2>/dev/null | cut -d= -f2)" || true
+        injected="$(_mps_read_meta_key "$meta_file" "MPS_SSH_INJECTED")"
         if [[ "$injected" == "true" ]]; then
             mps_log_debug "SSH key already injected for '${short_name}'"
             return 0
@@ -987,10 +1056,10 @@ mps_require_ssh_key() {
 
     if [[ -f "$meta_file" ]]; then
         local injected=""
-        injected="$(grep '^MPS_SSH_INJECTED=' "$meta_file" 2>/dev/null | cut -d= -f2)" || true
+        injected="$(_mps_read_meta_key "$meta_file" "MPS_SSH_INJECTED")"
         if [[ "$injected" == "true" ]]; then
             local ssh_key=""
-            ssh_key="$(grep '^MPS_SSH_KEY=' "$meta_file" 2>/dev/null | cut -d= -f2)" || true
+            ssh_key="$(_mps_read_meta_key "$meta_file" "MPS_SSH_KEY")"
             if [[ -n "$ssh_key" && -f "$ssh_key" ]]; then
                 echo "$ssh_key"
                 return 0
@@ -1084,9 +1153,9 @@ mps_forward_port() {
     meta_file="$(mps_instance_meta "$short_name")"
     if [[ -f "$meta_file" ]]; then
         local injected=""
-        injected="$(grep '^MPS_SSH_INJECTED=' "$meta_file" 2>/dev/null | cut -d= -f2)" || true
+        injected="$(_mps_read_meta_key "$meta_file" "MPS_SSH_INJECTED")"
         if [[ "$injected" == "true" ]]; then
-            ssh_key="$(grep '^MPS_SSH_KEY=' "$meta_file" 2>/dev/null | cut -d= -f2)" || true
+            ssh_key="$(_mps_read_meta_key "$meta_file" "MPS_SSH_KEY")"
         fi
     fi
     if [[ -z "$ssh_key" || ! -f "$ssh_key" ]]; then
@@ -1181,5 +1250,19 @@ mps_kill_port_forwards() {
 
     if [[ $killed -gt 0 ]]; then
         mps_log_debug "Killed ${killed} port forward(s) for '${short_name}'"
+    fi
+}
+
+# Reset port forwards: kill existing tunnels, clear tracking file, optionally auto-forward.
+mps_reset_port_forwards() {
+    local instance_name="$1"
+    local short_name="$2"
+    local auto_forward="${3:-}"
+    mps_kill_port_forwards "$short_name"
+    local ports_file
+    ports_file="$(mps_ports_file "$short_name")"
+    [[ -f "$ports_file" ]] && true > "$ports_file"
+    if [[ "$auto_forward" == "--auto-forward" ]]; then
+        mps_auto_forward_ports "$instance_name" "$short_name"
     fi
 }

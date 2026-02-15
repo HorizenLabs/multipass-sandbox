@@ -44,17 +44,10 @@ cmd_status() {
 
     # ---- Resolve instance name ----
     local instance_name
-    if [[ -n "$arg_name" ]]; then
-        instance_name="$(mps_instance_name "$arg_name")"
-    else
-        instance_name="$(mps_resolve_name "" "$(pwd)" "${MPS_CLOUD_INIT:-${MPS_DEFAULT_CLOUD_INIT:-default}}" "${MPS_PROFILE:-${MPS_DEFAULT_PROFILE:-lite}}")"
-    fi
-    mps_log_debug "Resolved instance name: ${instance_name}"
+    instance_name="$(mps_resolve_instance_name "$arg_name")"
 
     # ---- Check instance exists ----
-    if ! mp_instance_exists "$instance_name"; then
-        mps_die "Instance '${instance_name}' does not exist. Create it with: mps up --name $(mps_short_name "$instance_name")"
-    fi
+    mps_require_exists "$instance_name"
 
     # ---- Fetch info ----
     local raw

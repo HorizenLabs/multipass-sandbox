@@ -92,7 +92,8 @@ _image_list() {
                     local source="pulled"
                     local meta_file="${img_file%.img}.meta"
                     if [[ -f "$meta_file" ]]; then
-                        source="$(grep '^SOURCE=' "$meta_file" | cut -d= -f2)" || source="pulled"
+                        source="$(_mps_read_meta_key "$meta_file" "SOURCE")"
+                        source="${source:-pulled}"
                     fi
                     printf "  %-20s %-10s %-10s %-10s %s\n" "$image_name" "$tag" "$arch" "$source" "$size"
                 done

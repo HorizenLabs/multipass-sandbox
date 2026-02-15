@@ -221,7 +221,7 @@ mp_ssh_info() {
     local meta_file
     meta_file="$(mps_instance_meta "$short_name")"
     if [[ -f "$meta_file" ]]; then
-        ssh_key="$(grep '^MPS_SSH_KEY=' "$meta_file" 2>/dev/null | cut -d= -f2)" || true
+        ssh_key="$(_mps_read_meta_key "$meta_file" "MPS_SSH_KEY")"
     fi
 
     echo "IP=$ip"

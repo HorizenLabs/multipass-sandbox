@@ -34,7 +34,7 @@
 ## Phase 7 — Image Distribution: NOT STARTED
 
 - [ ] Backblaze B2 bucket + Cloudflare proxy setup (handled externally)
-- [ ] End-to-end `mps image pull` flow
+- [x] `mps image pull` + auto-pull on `mps create`/`mps up` (code complete, needs E2E testing against live infra)
 - [ ] Automated image builds
 
 ## Phase 8 — Testing: NOT STARTED
