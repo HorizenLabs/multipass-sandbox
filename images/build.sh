@@ -180,7 +180,7 @@ for arch in "${ARCHITECTURES[@]}"; do
 
     VM_NAME="mps-${FLAVOR}-${arch}.qcow2.img"
 
-    packer build \
+    PACKER_LOG=1 packer build \
         -var "mps_root=${MPS_ROOT}" \
         -var "image_name=${FLAVOR}" \
         -var "output_dir=${PACKER_OUTPUT_DIR}" \
@@ -188,20 +188,6 @@ for arch in "${ARCHITECTURES[@]}"; do
         "${PACKER_ARCH_VARS[@]}" \
         "${PACKER_EXTRA_VARS[@]}" \
         packer.pkr.hcl
-
-    # Compact QCOW2 for optimal on-disk size
-    if command -v qemu-img &>/dev/null; then
-        echo "Compacting image..."
-        qemu-img convert -O qcow2 \
-            "${PACKER_OUTPUT_DIR}/${VM_NAME}" \
-            "${PACKER_OUTPUT_DIR}/${VM_NAME%.img}.compact.img"
-        mv "${PACKER_OUTPUT_DIR}/${VM_NAME%.img}.compact.img" \
-            "${PACKER_OUTPUT_DIR}/${VM_NAME}"
-    fi
-
-    # Generate SHA256 checksum (must be after compaction)
-    echo "Generating SHA256 checksum..."
-    (cd "${PACKER_OUTPUT_DIR}" && sha256sum "${VM_NAME}" > "${VM_NAME}.sha256")
 
     # Copy arch-specific artifacts to output
     cp -a "${PACKER_OUTPUT_DIR}/${VM_NAME}" "artifacts/"

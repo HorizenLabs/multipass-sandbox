@@ -154,8 +154,8 @@ build {
       "cloud-init status --wait",
       "export HOME=/home/ubuntu",
       ". \"$HOME/.profile\" 2>/dev/null || true",
-      "claude plugin marketplace add /tmp/hl-claude-marketplace",
-      "claude plugin marketplace add trailofbits/skills",
+      "claude plugin marketplace list --json | jq -e '.[] | select(.name==\"hl-agent-skills\")' >/dev/null 2>&1 || claude plugin marketplace add /tmp/hl-claude-marketplace",
+      "claude plugin marketplace list --json | jq -e '.[] | select(.name==\"trailofbits\")' >/dev/null 2>&1 || claude plugin marketplace add trailofbits/skills",
     ]
     execute_command = "chmod +x {{ .Path }}; sudo -u ubuntu bash {{ .Path }}"
   }
