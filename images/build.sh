@@ -5,11 +5,16 @@ set -euo pipefail
 # Merges cloud-init layers with yq, then runs Packer.
 #
 # Usage:
-#   bash build.sh <flavor>
+#   bash build.sh [--base-image <path>] <flavor>
 #   bash build.sh base
+#   bash build.sh --base-image artifacts/mps-base-amd64.qcow2.img protocol-dev
 #   bash build.sh smart-contract-audit
 #
-# Flavors (each includes all preceding layers):
+# When --base-image is provided (chained build), only the delta layer for
+# the flavor is applied on top of the parent QCOW2 image. Without it,
+# all cumulative layers are merged from scratch (original behavior).
+#
+# Flavors (from-scratch — each includes all preceding layers):
 #   base                  — base
 #   protocol-dev          — base + protocol-dev
 #   smart-contract-dev    — base + protocol-dev + smart-contract-dev
@@ -18,28 +23,96 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MPS_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-FLAVOR="${1:?Usage: build.sh <flavor> (base|protocol-dev|smart-contract-dev|smart-contract-audit)}"
+# ---------- Argument parsing ----------
+BASE_IMAGE=""
+FLAVOR=""
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --base-image)
+            BASE_IMAGE="${2:?ERROR: --base-image requires a path argument}"
+            shift 2
+            ;;
+        -*)
+            echo "ERROR: Unknown option: $1"
+            echo "Usage: build.sh [--base-image <path>] <flavor>"
+            exit 1
+            ;;
+        *)
+            if [[ -n "$FLAVOR" ]]; then
+                echo "ERROR: Multiple flavors specified: '$FLAVOR' and '$1'"
+                exit 1
+            fi
+            FLAVOR="$1"
+            shift
+            ;;
+    esac
+done
+
+if [[ -z "$FLAVOR" ]]; then
+    echo "ERROR: No flavor specified."
+    echo "Usage: build.sh [--base-image <path>] <flavor>"
+    echo "Valid flavors: base, protocol-dev, smart-contract-dev, smart-contract-audit"
+    exit 1
+fi
+
+# Validate --base-image not used with base flavor
+if [[ -n "$BASE_IMAGE" && "$FLAVOR" == "base" ]]; then
+    echo "ERROR: --base-image cannot be used with 'base' flavor (it has no parent)."
+    exit 1
+fi
+
+# Validate base image file exists and convert to absolute path
+if [[ -n "$BASE_IMAGE" ]]; then
+    if [[ ! -f "$BASE_IMAGE" ]]; then
+        echo "ERROR: Base image not found: $BASE_IMAGE"
+        exit 1
+    fi
+    BASE_IMAGE="$(cd "$(dirname "$BASE_IMAGE")" && pwd)/$(basename "$BASE_IMAGE")"
+fi
 
 # ---------- Map flavor to layer files ----------
-case "$FLAVOR" in
-    base)
-        LAYERS=("layers/base.yaml")
-        ;;
-    protocol-dev)
-        LAYERS=("layers/base.yaml" "layers/protocol-dev.yaml")
-        ;;
-    smart-contract-dev)
-        LAYERS=("layers/base.yaml" "layers/protocol-dev.yaml" "layers/smart-contract-dev.yaml")
-        ;;
-    smart-contract-audit)
-        LAYERS=("layers/base.yaml" "layers/protocol-dev.yaml" "layers/smart-contract-dev.yaml" "layers/smart-contract-audit.yaml")
-        ;;
-    *)
-        echo "ERROR: Unknown flavor: $FLAVOR"
-        echo "Valid flavors: base, protocol-dev, smart-contract-dev, smart-contract-audit"
-        exit 1
-        ;;
-esac
+if [[ -n "$BASE_IMAGE" ]]; then
+    # Chained build: only the delta layer for this flavor
+    echo "Chained build: using parent image $(basename "$BASE_IMAGE")"
+    case "$FLAVOR" in
+        protocol-dev)
+            LAYERS=("layers/protocol-dev.yaml")
+            ;;
+        smart-contract-dev)
+            LAYERS=("layers/smart-contract-dev.yaml")
+            ;;
+        smart-contract-audit)
+            LAYERS=("layers/smart-contract-audit.yaml")
+            ;;
+        *)
+            echo "ERROR: Unknown flavor: $FLAVOR"
+            echo "Valid flavors: base, protocol-dev, smart-contract-dev, smart-contract-audit"
+            exit 1
+            ;;
+    esac
+else
+    # From-scratch build: all cumulative layers
+    case "$FLAVOR" in
+        base)
+            LAYERS=("layers/base.yaml")
+            ;;
+        protocol-dev)
+            LAYERS=("layers/base.yaml" "layers/protocol-dev.yaml")
+            ;;
+        smart-contract-dev)
+            LAYERS=("layers/base.yaml" "layers/protocol-dev.yaml" "layers/smart-contract-dev.yaml")
+            ;;
+        smart-contract-audit)
+            LAYERS=("layers/base.yaml" "layers/protocol-dev.yaml" "layers/smart-contract-dev.yaml" "layers/smart-contract-audit.yaml")
+            ;;
+        *)
+            echo "ERROR: Unknown flavor: $FLAVOR"
+            echo "Valid flavors: base, protocol-dev, smart-contract-dev, smart-contract-audit"
+            exit 1
+            ;;
+    esac
+fi
 
 echo "=== Building MPS Image: ${FLAVOR} ==="
 echo "Layers: ${LAYERS[*]}"
@@ -68,6 +141,15 @@ cd "$SCRIPT_DIR"
 echo "Merging cloud-init layers..."
 yq eval-all '. as $item ireduce ({}; . *+ $item)' "${LAYERS[@]}" > cloud-init.yaml
 echo "Merged cloud-init.yaml generated ($(wc -l < cloud-init.yaml) lines)"
+
+# ---------- Build extra Packer variables for chained builds ----------
+PACKER_EXTRA_VARS=()
+if [[ -n "$BASE_IMAGE" ]]; then
+    PACKER_EXTRA_VARS+=(
+        -var "iso_url=${BASE_IMAGE}"
+        -var "iso_checksum=file:${BASE_IMAGE}.sha256"
+    )
+fi
 
 # ---------- Determine architectures ----------
 if [[ -n "${TARGET_ARCH:-}" ]]; then
@@ -104,6 +186,7 @@ for arch in "${ARCHITECTURES[@]}"; do
         -var "output_dir=${PACKER_OUTPUT_DIR}" \
         -var "vm_name=${VM_NAME}" \
         "${PACKER_ARCH_VARS[@]}" \
+        "${PACKER_EXTRA_VARS[@]}" \
         packer.pkr.hcl
 
     # Compact QCOW2 for optimal on-disk size

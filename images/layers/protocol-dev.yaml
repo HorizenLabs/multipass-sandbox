@@ -2,6 +2,8 @@
 # MPS Layer: protocol-dev
 # C/C++ build toolchain + Go + Rust (on top of base)
 
+package_update: true
+
 packages:
   - build-essential
   - pkg-config

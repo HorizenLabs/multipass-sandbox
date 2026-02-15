@@ -17,6 +17,7 @@
 - [x] Add yq to Dockerfile.builder
 - [x] Update Makefile with per-flavor build/import/publish/clean targets
 - [x] Update manifest.json with 4 image flavors
+- [x] Chained image builds (non-base flavors chain from parent QCOW2 via `--base-image`)
 - [ ] Build system logic refinements
 - [ ] mps command changes as needed
 

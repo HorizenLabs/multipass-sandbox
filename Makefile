@@ -49,9 +49,15 @@ BUILDER_DEPS  := Dockerfile.builder docker/entrypoint.sh
 LINTER_STAMP := .stamp-linter
 LINTER_DEPS  := Dockerfile.linter docker/entrypoint.sh
 
-# Image build dependencies — shared across all flavors
-IMAGE_LAYERS      := $(wildcard images/layers/*.yaml)
-IMAGE_SHARED_DEPS := images/packer.pkr.hcl images/packer-user-data.pkrtpl.hcl images/build.sh $(IMAGE_LAYERS)
+# Common deps shared by all image builds
+IMAGE_COMMON_DEPS := images/packer.pkr.hcl images/packer-user-data.pkrtpl.hcl \
+    images/build.sh images/arch-config.sh images/scripts/post-provision.sh
+
+# Per-flavor layer deps (each flavor depends only on its own layer file)
+IMAGE_LAYERS_base                  := images/layers/base.yaml
+IMAGE_LAYERS_protocol-dev          := images/layers/protocol-dev.yaml
+IMAGE_LAYERS_smart-contract-dev    := images/layers/smart-contract-dev.yaml
+IMAGE_LAYERS_smart-contract-audit  := images/layers/smart-contract-audit.yaml
 
 # Image flavors
 FLAVORS := base protocol-dev smart-contract-dev smart-contract-audit
@@ -189,56 +195,59 @@ image-smart-contract-audit: ## Build smart-contract-audit VM image (both archs i
 	+$(MAKE) image-smart-contract-audit-amd64 image-smart-contract-audit-arm64 -j2
 
 # Per-flavor, per-arch stamp targets
+# Non-base flavors chain from their parent's QCOW2 via --base-image.
+# Same-arch builds serialize via stamp deps; cross-arch runs in parallel.
+
 # base
 image-base-amd64: .stamp-image-base-amd64 ## Build base VM image (amd64)
 
-.stamp-image-base-amd64: $(BUILDER_STAMP) $(IMAGE_SHARED_DEPS)
+.stamp-image-base-amd64: $(BUILDER_STAMP) $(IMAGE_COMMON_DEPS) $(IMAGE_LAYERS_base)
 	$(call docker_run_image,amd64) bash -c 'cd images && bash build.sh base'
 	@touch $@
 
 image-base-arm64: .stamp-image-base-arm64 ## Build base VM image (arm64)
 
-.stamp-image-base-arm64: $(BUILDER_STAMP) $(IMAGE_SHARED_DEPS)
+.stamp-image-base-arm64: $(BUILDER_STAMP) $(IMAGE_COMMON_DEPS) $(IMAGE_LAYERS_base)
 	$(call docker_run_image,arm64) bash -c 'cd images && bash build.sh base'
 	@touch $@
 
-# protocol-dev
+# protocol-dev (chains from base)
 image-protocol-dev-amd64: .stamp-image-protocol-dev-amd64 ## Build protocol-dev VM image (amd64)
 
-.stamp-image-protocol-dev-amd64: $(BUILDER_STAMP) $(IMAGE_SHARED_DEPS)
-	$(call docker_run_image,amd64) bash -c 'cd images && bash build.sh protocol-dev'
+.stamp-image-protocol-dev-amd64: $(BUILDER_STAMP) $(IMAGE_COMMON_DEPS) $(IMAGE_LAYERS_protocol-dev) .stamp-image-base-amd64
+	$(call docker_run_image,amd64) bash -c 'cd images && bash build.sh --base-image artifacts/mps-base-amd64.qcow2.img protocol-dev'
 	@touch $@
 
 image-protocol-dev-arm64: .stamp-image-protocol-dev-arm64 ## Build protocol-dev VM image (arm64)
 
-.stamp-image-protocol-dev-arm64: $(BUILDER_STAMP) $(IMAGE_SHARED_DEPS)
-	$(call docker_run_image,arm64) bash -c 'cd images && bash build.sh protocol-dev'
+.stamp-image-protocol-dev-arm64: $(BUILDER_STAMP) $(IMAGE_COMMON_DEPS) $(IMAGE_LAYERS_protocol-dev) .stamp-image-base-arm64
+	$(call docker_run_image,arm64) bash -c 'cd images && bash build.sh --base-image artifacts/mps-base-arm64.qcow2.img protocol-dev'
 	@touch $@
 
-# smart-contract-dev
+# smart-contract-dev (chains from protocol-dev)
 image-smart-contract-dev-amd64: .stamp-image-smart-contract-dev-amd64 ## Build smart-contract-dev VM image (amd64)
 
-.stamp-image-smart-contract-dev-amd64: $(BUILDER_STAMP) $(IMAGE_SHARED_DEPS)
-	$(call docker_run_image,amd64) bash -c 'cd images && bash build.sh smart-contract-dev'
+.stamp-image-smart-contract-dev-amd64: $(BUILDER_STAMP) $(IMAGE_COMMON_DEPS) $(IMAGE_LAYERS_smart-contract-dev) .stamp-image-protocol-dev-amd64
+	$(call docker_run_image,amd64) bash -c 'cd images && bash build.sh --base-image artifacts/mps-protocol-dev-amd64.qcow2.img smart-contract-dev'
 	@touch $@
 
 image-smart-contract-dev-arm64: .stamp-image-smart-contract-dev-arm64 ## Build smart-contract-dev VM image (arm64)
 
-.stamp-image-smart-contract-dev-arm64: $(BUILDER_STAMP) $(IMAGE_SHARED_DEPS)
-	$(call docker_run_image,arm64) bash -c 'cd images && bash build.sh smart-contract-dev'
+.stamp-image-smart-contract-dev-arm64: $(BUILDER_STAMP) $(IMAGE_COMMON_DEPS) $(IMAGE_LAYERS_smart-contract-dev) .stamp-image-protocol-dev-arm64
+	$(call docker_run_image,arm64) bash -c 'cd images && bash build.sh --base-image artifacts/mps-protocol-dev-arm64.qcow2.img smart-contract-dev'
 	@touch $@
 
-# smart-contract-audit
+# smart-contract-audit (chains from smart-contract-dev)
 image-smart-contract-audit-amd64: .stamp-image-smart-contract-audit-amd64 ## Build smart-contract-audit VM image (amd64)
 
-.stamp-image-smart-contract-audit-amd64: $(BUILDER_STAMP) $(IMAGE_SHARED_DEPS)
-	$(call docker_run_image,amd64) bash -c 'cd images && bash build.sh smart-contract-audit'
+.stamp-image-smart-contract-audit-amd64: $(BUILDER_STAMP) $(IMAGE_COMMON_DEPS) $(IMAGE_LAYERS_smart-contract-audit) .stamp-image-smart-contract-dev-amd64
+	$(call docker_run_image,amd64) bash -c 'cd images && bash build.sh --base-image artifacts/mps-smart-contract-dev-amd64.qcow2.img smart-contract-audit'
 	@touch $@
 
 image-smart-contract-audit-arm64: .stamp-image-smart-contract-audit-arm64 ## Build smart-contract-audit VM image (arm64)
 
-.stamp-image-smart-contract-audit-arm64: $(BUILDER_STAMP) $(IMAGE_SHARED_DEPS)
-	$(call docker_run_image,arm64) bash -c 'cd images && bash build.sh smart-contract-audit'
+.stamp-image-smart-contract-audit-arm64: $(BUILDER_STAMP) $(IMAGE_COMMON_DEPS) $(IMAGE_LAYERS_smart-contract-audit) .stamp-image-smart-contract-dev-arm64
+	$(call docker_run_image,arm64) bash -c 'cd images && bash build.sh --base-image artifacts/mps-smart-contract-dev-arm64.qcow2.img smart-contract-audit'
 	@touch $@
 
 # ---------- Image import (local) ----------

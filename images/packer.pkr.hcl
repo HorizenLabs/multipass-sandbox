@@ -80,16 +80,30 @@ variable "vm_name" {
   default = "mps-base-amd64.qcow2.img"
 }
 
+variable "iso_url" {
+  type    = string
+  default = ""
+}
+
+variable "iso_checksum" {
+  type    = string
+  default = ""
+}
+
 locals {
   base_cloud_init = trimprefix(
     file("${path.root}/cloud-init.yaml"),
     "#cloud-config\n"
   )
+  default_iso_url        = "https://cloud-images.ubuntu.com/${var.ubuntu_version}/current/${var.ubuntu_version}-server-cloudimg-${var.target_arch}.img"
+  default_checksum       = "file:https://cloud-images.ubuntu.com/${var.ubuntu_version}/current/SHA256SUMS"
+  effective_iso_url      = var.iso_url != "" ? var.iso_url : local.default_iso_url
+  effective_iso_checksum = var.iso_checksum != "" ? var.iso_checksum : local.default_checksum
 }
 
 source "qemu" "base" {
-  iso_url           = "https://cloud-images.ubuntu.com/${var.ubuntu_version}/current/${var.ubuntu_version}-server-cloudimg-${var.target_arch}.img"
-  iso_checksum      = "file:https://cloud-images.ubuntu.com/${var.ubuntu_version}/current/SHA256SUMS"
+  iso_url           = local.effective_iso_url
+  iso_checksum      = local.effective_iso_checksum
   disk_image        = true
   output_directory  = var.output_dir
   vm_name           = var.vm_name

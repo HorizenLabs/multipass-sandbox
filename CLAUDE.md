@@ -81,6 +81,8 @@ make import-base              # Import host-arch base image into mps cache
 make publish-base VERSION=1.0.0   # Publish to Backblaze B2
 ```
 
+Non-base flavors chain from their parent's QCOW2 image, applying only the delta cloud-init layer (`--base-image` flag in `build.sh`). The Makefile wires this automatically via stamp dependencies — `make image-smart-contract-audit` builds the full chain (base → protocol-dev → smart-contract-dev → smart-contract-audit). From-scratch builds (all layers merged) are still supported by running `build.sh` without `--base-image`.
+
 The Makefile detects host uid:gid and the entrypoint uses setpriv to step down from root, so build artifacts match host ownership.
 
 ## Workflow
