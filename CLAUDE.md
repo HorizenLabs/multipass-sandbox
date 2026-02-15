@@ -10,7 +10,7 @@ Internal CLI tool for spinning up isolated VM-based development environments usi
 - **Dependencies**: `multipass`, `jq`
 - **Image builds**: Packer (QCOW2, `.qcow2.img` extension), published to Backblaze B2 (served via Cloudflare)
 - **Image versioning**: SemVer (x.y.z) with `latest` pointer, weekly rebuilds for OS patches
-- **Build/Test**: All run inside Docker containers (`mps-builder` for image builds, `mps-linter` for lint/test)
+- **Build/Test**: All run inside Docker containers (`mps-builder` for image builds, `mps-linter` for lint/test, `mps-publisher` for B2 uploads)
 - **Tests**: BATS (planned)
 
 ## Project Structure
@@ -28,12 +28,14 @@ Internal CLI tool for spinning up isolated VM-based development environments usi
 - `images/artifacts/` — Built QCOW2 images (gitignored)
 - `images/scripts/post-provision.sh` — Post-build cleanup (runs after cloud-init)
 - `images/manifest.json` — Local skeleton manifest (image descriptions + metadata); live manifest lives in B2
-- `images/publish.sh` — Publish images to Backblaze B2 (remote-first manifest, old version cleanup)
+- `images/publish.sh` — Upload images to B2 (`--upload-only` for CI, default includes manifest update for local dev)
+- `images/update-manifest.sh` — Fan-in manifest update: downloads .sha256 sidecars from B2, single manifest write
 - `templates/profiles/` — Resource profiles (micro, lite, standard, heavy) with auto-scaling CPU/memory
 - `VERSION` — Tool version (SemVer), read by `bin/mps` at startup
 - `config/defaults.env` — Shipped defaults
-- `Dockerfile.builder` + `docker/entrypoint.sh` — Builder image (Packer, QEMU, b2)
+- `Dockerfile.builder` + `docker/entrypoint.sh` — Builder image (Packer, QEMU — no B2 credentials)
 - `Dockerfile.linter` — Linter/test image (shellcheck, hadolint, BATS, PSScriptAnalyzer, yamllint, etc.)
+- `Dockerfile.publisher` — Publisher image (b2, jq, yq — credential-isolated from builder)
 - `Makefile` — All targets run inside Docker containers via `docker run`
 - `install.sh` / `install.ps1` — Installer scripts
 - `uninstall.sh` — Uninstaller (removes symlink, VMs, caches, configs)
@@ -74,8 +76,9 @@ Internal CLI tool for spinning up isolated VM-based development environments usi
 
 Build/test/lint runs inside Docker containers — linter image for lint/test, builder image for Packer builds:
 ```
-make build-docker-linter   # Build the linter image (shellcheck, hadolint, BATS, etc.)
-make build-docker-builder  # Build the builder image (Packer, QEMU, b2)
+make build-docker-linter    # Build the linter image (shellcheck, hadolint, BATS, etc.)
+make build-docker-builder   # Build the builder image (Packer, QEMU — no credentials)
+make build-docker-publisher # Build the publisher image (b2, jq, yq — credential-isolated)
 make lint             # Run all linters (shellcheck, hadolint, yamllint, checkmake, packer fmt, py-psscriptanalyzer)
 make test             # Run BATS tests
 make image-base       # Build base VM image (both archs in parallel via sub-make -j2)
@@ -84,9 +87,12 @@ make image-base-arm64 # Build base VM image (arm64 only)
 make image-protocol-dev           # Build protocol-dev image (base + C/C++/Go/Rust)
 make image-smart-contract-dev     # Build smart-contract-dev image (+ Solana/Foundry/Hardhat)
 make image-smart-contract-audit   # Build smart-contract-audit image (+ Slither/Echidna/Medusa)
-make import-base              # Import host-arch base image into mps cache
-make publish-base VERSION=1.0.0   # Publish to Backblaze B2
-make install          # Install mps (symlink to PATH, runs on host)
+make import-base                       # Import host-arch base image into mps cache
+make upload-base-amd64 VERSION=1.0.0   # CI: upload image+sidecar to B2 (no manifest)
+make update-manifest VERSION=1.0.0     # CI fan-in: single manifest write (downloads sidecars from B2)
+make publish-base-amd64 VERSION=1.0.0  # Local: upload + manifest (single arch)
+make publish-base VERSION=1.0.0        # Local: upload + manifest (both archs)
+make install                           # Install mps (symlink to PATH, runs on host)
 make uninstall        # Uninstall mps (remove symlink, cleanup artifacts, runs on host)
 ```
 
@@ -103,14 +109,16 @@ The Makefile detects host uid:gid and the entrypoint uses setpriv to step down f
   - **Patch** (`1.0.0` → `1.0.1`): Tool version updates, minor config tweaks in layers
   - **Minor** (`1.0.0` → `1.1.0`): New tool added to a layer
   - **Major** (`1.0.0` → `2.0.0`): Breaking changes (Ubuntu version bump, tool removed, major restructure)
-- **Publishing**: `publish.sh` downloads the remote manifest from B2 (source of truth), merges in the new entry, and re-uploads. Old image file versions in B2 are cleaned up; manifest versions are kept for audit trail.
+- **Publishing** uses a fan-in pattern for CI, with a dedicated publisher container (credential-isolated from the builder). B2 credentials (`B2_APPLICATION_KEY_ID`, `B2_APPLICATION_KEY`) are passed as env vars at runtime. Old image file versions in B2 are cleaned up; manifest versions are kept for audit trail.
+  - **CI flow**: Runners call `publish.sh --upload-only` to upload images + `.sha256` sidecars to B2 (no manifest touch). A fan-in job then runs `update-manifest.sh` which downloads sidecars from B2 and performs a single manifest read-modify-write. Zero race window.
+  - **Local flow**: `publish.sh` (no flag) does upload + manifest update in one shot, same as before.
 
 ## Workflow
 
 - After modifying any linted file, run `make lint` before committing. Linted files:
   - **Bash**: `bin/mps`, `lib/*.sh`, `commands/*.sh`, `images/**/*.sh`, `install.sh`, `uninstall.sh`
   - **PowerShell**: `*.ps1`
-  - **Dockerfile**: `Dockerfile.builder`, `Dockerfile.linter`
+  - **Dockerfile**: `Dockerfile.builder`, `Dockerfile.linter`, `Dockerfile.publisher`
   - **Makefile**: `Makefile`
   - **YAML**: `templates/**/*.yaml`, `images/layers/*.yaml`
   - **HCL**: `images/**/*.pkr.hcl`

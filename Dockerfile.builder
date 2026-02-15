@@ -1,5 +1,6 @@
 # Multi Pass Sandbox (mps) — Builder Image
-# Contains tools needed for building VM images and publishing.
+# Contains tools needed for building VM images (Packer, QEMU, yq).
+# Publishing uses the separate mps-publisher image for credential isolation.
 # For lint/test tools, see Dockerfile.linter.
 #
 # Build:  docker build -f Dockerfile.builder -t mps-builder .
@@ -44,21 +45,6 @@ RUN curl -fsSL https://apt.releases.hashicorp.com/gpg \
     && apt-get install -y --no-install-recommends packer \
     && rm -rf /var/lib/apt/lists/* \
     && packer --version
-
-# ---------- b2 CLI (standalone binary from GitHub, SHA256-verified) ----------
-RUN set -eux; \
-    B2_VERSION="4.5.1"; \
-    ARCH="$(dpkg --print-architecture)"; \
-    if [ "$ARCH" = "amd64" ]; then B2_BIN="b2v4-linux"; else B2_BIN="b2v4-linux-aarch64"; fi; \
-    curl -fsSL "https://github.com/Backblaze/B2_Command_Line_Tool/releases/download/v${B2_VERSION}/${B2_BIN}" \
-        -o /tmp/"${B2_BIN}"; \
-    curl -fsSL "https://github.com/Backblaze/B2_Command_Line_Tool/releases/download/v${B2_VERSION}/${B2_BIN}_hashes.txt" \
-        -o /tmp/"${B2_BIN}_hashes.txt"; \
-    EXPECTED=$(grep '^sha256 ' /tmp/"${B2_BIN}_hashes.txt" | awk '{print $2}'); \
-    echo "${EXPECTED}  /tmp/${B2_BIN}" | sha256sum -c -; \
-    install -m 755 /tmp/"${B2_BIN}" /usr/local/bin/b2; \
-    rm /tmp/"${B2_BIN}" /tmp/"${B2_BIN}_hashes.txt"; \
-    b2 version
 
 # ---------- yq (YAML merge tool, SHA256-verified) ----------
 RUN set -eux; \

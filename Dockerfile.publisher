@@ -1,0 +1,66 @@
+# Multi Pass Sandbox (mps) — Publisher Image
+# Minimal image for publishing built VM images to Backblaze B2.
+# Credentials (B2_APPLICATION_KEY_ID, B2_APPLICATION_KEY) are passed at
+# runtime via environment variables — they never touch the builder image
+# that runs Packer/QEMU, enforcing credential isolation.
+#
+# Build:  docker build -f Dockerfile.publisher -t mps-publisher .
+# Usage:  docker run --rm -v "$PWD:/workdir" \
+#           -e HOST_UID=$(id -u) -e HOST_GID=$(id -g) \
+#           -e B2_APPLICATION_KEY_ID -e B2_APPLICATION_KEY \
+#           mps-publisher bash images/publish.sh ...
+
+FROM ubuntu:24.04
+
+ARG TARGETARCH
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
+# ---------- System packages (minimal — no build tools) ----------
+# hadolint ignore=DL3008
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        bash \
+        ca-certificates \
+        curl \
+        jq \
+    && rm -rf /var/lib/apt/lists/*
+
+# ---------- b2 CLI (standalone binary from GitHub, SHA256-verified) ----------
+RUN set -eux; \
+    B2_VERSION="4.5.1"; \
+    ARCH="$(dpkg --print-architecture)"; \
+    if [ "$ARCH" = "amd64" ]; then B2_BIN="b2v4-linux"; else B2_BIN="b2v4-linux-aarch64"; fi; \
+    curl -fsSL "https://github.com/Backblaze/B2_Command_Line_Tool/releases/download/v${B2_VERSION}/${B2_BIN}" \
+        -o /tmp/"${B2_BIN}"; \
+    curl -fsSL "https://github.com/Backblaze/B2_Command_Line_Tool/releases/download/v${B2_VERSION}/${B2_BIN}_hashes.txt" \
+        -o /tmp/"${B2_BIN}_hashes.txt"; \
+    EXPECTED=$(grep '^sha256 ' /tmp/"${B2_BIN}_hashes.txt" | awk '{print $2}'); \
+    echo "${EXPECTED}  /tmp/${B2_BIN}" | sha256sum -c -; \
+    install -m 755 /tmp/"${B2_BIN}" /usr/local/bin/b2; \
+    rm /tmp/"${B2_BIN}" /tmp/"${B2_BIN}_hashes.txt"; \
+    b2 version
+
+# ---------- yq (for reading x-mps layer metadata, SHA256-verified) ----------
+RUN set -eux; \
+    ARCH="$(dpkg --print-architecture)"; \
+    YQ_VERSION="v4.45.1"; \
+    YQ_FILE="yq_linux_${ARCH}"; \
+    curl -fsSL "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/${YQ_FILE}" \
+        -o /tmp/"${YQ_FILE}"; \
+    curl -fsSL "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/checksums" \
+        -o /tmp/yq_checksums; \
+    EXPECTED=$(awk "/^${YQ_FILE} /{print \$19}" /tmp/yq_checksums); \
+    echo "${EXPECTED}  /tmp/${YQ_FILE}" | sha256sum -c -; \
+    install -m 755 /tmp/"${YQ_FILE}" /usr/local/bin/yq; \
+    rm /tmp/"${YQ_FILE}" /tmp/yq_checksums; \
+    yq --version
+
+# ---------- Entrypoint ----------
+COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
+
+WORKDIR /workdir
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+CMD ["bash"]

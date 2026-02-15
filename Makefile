@@ -10,6 +10,8 @@ BUILDER_IMAGE  := mps-builder
 BUILDER_TAG    := latest
 LINTER_IMAGE   := mps-linter
 LINTER_TAG     := latest
+PUBLISHER_IMAGE := mps-publisher
+PUBLISHER_TAG   := latest
 HOST_UID       := $(shell id -u)
 HOST_GID       := $(shell id -g)
 WORKDIR        := /workdir
@@ -41,13 +43,16 @@ BASH_SCRIPTS := $(shell find bin/ lib/ commands/ images/ -name '*.sh' -o -name '
 PS_SCRIPTS   := $(shell find . -name '*.ps1' 2>/dev/null)
 YAML_FILES   := $(shell find templates/ images/layers/ -name '*.yaml' 2>/dev/null)
 HCL_FILES    := $(shell find images/ -name '*.pkr.hcl' 2>/dev/null)
-DOCKERFILES  := Dockerfile.builder Dockerfile.linter
+DOCKERFILES  := Dockerfile.builder Dockerfile.linter Dockerfile.publisher
 
 BUILDER_STAMP := .stamp-builder
 BUILDER_DEPS  := Dockerfile.builder docker/entrypoint.sh
 
 LINTER_STAMP := .stamp-linter
 LINTER_DEPS  := Dockerfile.linter docker/entrypoint.sh
+
+PUBLISHER_STAMP := .stamp-publisher
+PUBLISHER_DEPS  := Dockerfile.publisher docker/entrypoint.sh
 
 # Common deps shared by all image builds
 IMAGE_COMMON_DEPS := images/packer.pkr.hcl images/packer-user-data.pkrtpl.hcl \
@@ -72,13 +77,16 @@ PARENT_smart-contract-audit  := smart-contract-dev
 # Generated .PHONY lists
 IMAGE_PHONY       := $(foreach f,$(FLAVORS),image-$(f) $(foreach a,$(ARCHS),image-$(f)-$(a)))
 IMPORT_PHONY      := $(foreach f,$(FLAVORS),import-$(f))
-PUBLISH_PHONY     := $(foreach f,$(FLAVORS),publish-$(f))
+UPLOAD_PHONY      := $(foreach f,$(FLAVORS),$(foreach a,$(ARCHS),upload-$(f)-$(a)))
+PUBLISH_PHONY     := $(foreach f,$(FLAVORS),publish-$(f) $(foreach a,$(ARCHS),publish-$(f)-$(a)))
 CLEAN_IMAGE_PHONY := $(foreach f,$(FLAVORS),clean-image-$(f) $(foreach a,$(ARCHS),clean-image-$(f)-$(a)))
 
-.PHONY: all help build-docker-builder build-docker-linter install uninstall test clean \
+.PHONY: all help install uninstall test clean \
+	build-docker-builder build-docker-linter build-docker-publisher \
 	lint lint-bash lint-powershell lint-dockerfile lint-makefile lint-yaml lint-hcl \
-	clean-docker-builder clean-docker-linter clean-images \
-	$(IMAGE_PHONY) $(IMPORT_PHONY) $(PUBLISH_PHONY) $(CLEAN_IMAGE_PHONY)
+	clean-docker-builder clean-docker-linter clean-docker-publisher clean-images \
+	update-manifest \
+	$(IMAGE_PHONY) $(IMPORT_PHONY) $(UPLOAD_PHONY) $(PUBLISH_PHONY) $(CLEAN_IMAGE_PHONY)
 
 # ---------- All ----------
 all: $(foreach f,$(FLAVORS),image-$(f)) ## Build all VM image flavors
@@ -90,12 +98,12 @@ help: ## Show this help
 	@echo "  Flavors: $(FLAVORS)"
 	@echo "  Archs:   $(ARCHS)"
 	@echo ""
-	@echo "  make image-FLAVOR              Build both archs in parallel"
-	@echo "  make image-FLAVOR-ARCH         Build one arch"
-	@echo "  make import-FLAVOR             Import host-arch image into mps cache"
-	@echo "  make publish-FLAVOR VERSION=x  Publish to Backblaze B2"
-	@echo "  make clean-image-FLAVOR        Remove flavor artifacts (both archs)"
-	@echo "  make clean-image-FLAVOR-ARCH   Remove single flavor-arch artifacts"
+	@echo "  make image-FLAVOR[-ARCH]                  Build VM image (both archs or one)"
+	@echo "  make import-FLAVOR                        Import host-arch image into mps cache"
+	@echo "  make upload-FLAVOR-ARCH VERSION=x         CI: upload to B2 (no manifest)"
+	@echo "  make update-manifest VERSION=x            CI: fan-in manifest update"
+	@echo "  make publish-FLAVOR[-ARCH] VERSION=x      Local: upload + manifest"
+	@echo "  make clean-image-FLAVOR[-ARCH]            Remove build artifacts"
 	@echo ""
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
 		awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-34s\033[0m %s\n", $$1, $$2}'
@@ -111,6 +119,12 @@ build-docker-linter: $(LINTER_STAMP) ## Build the mps-linter Docker image
 
 $(LINTER_STAMP): $(LINTER_DEPS)
 	docker build --progress plain -f Dockerfile.linter -t $(LINTER_IMAGE):$(LINTER_TAG) .
+	@touch $@
+
+build-docker-publisher: $(PUBLISHER_STAMP) ## Build the mps-publisher Docker image
+
+$(PUBLISHER_STAMP): $(PUBLISHER_DEPS)
+	docker build --progress plain -f Dockerfile.publisher -t $(PUBLISHER_IMAGE):$(PUBLISHER_TAG) .
 	@touch $@
 
 # ---------- Install (runs on host) ----------
@@ -240,18 +254,68 @@ endef
 $(foreach f,$(FLAVORS),$(eval $(call import_rule,$(f))))
 
 # ---------- Image publishing (Backblaze B2) ----------
-# Usage: make publish-<flavor> VERSION=1.0.0
-define publish_rule
-publish-$(1):
-	@test -n "$$(VERSION)" || (echo "ERROR: VERSION is required (e.g., make publish-$(1) VERSION=1.0.0)"; exit 1)
-	$$(DOCKER_RUN) bash -c '\
-		for arch in amd64 arm64; do \
-			echo "Publishing $$$$arch..."; \
-			TARGET_ARCH=$$$$arch bash images/publish.sh $(1) $$(VERSION) \
-			    images/artifacts/mps-$(1)-$$$$arch.qcow2.img; \
-		done'
+# Runs in the publisher image (no Packer/QEMU) for credential isolation.
+# B2 credentials are passed from the host environment (value-less -e).
+#
+# CI flow (fan-in):
+#   1. Runners:  make upload-<flavor>-<arch> VERSION=x  (parallel, image+sidecar only)
+#   2. Fan-in:   make update-manifest VERSION=x          (single manifest write)
+#
+# Local flow (all-in-one):
+#   make publish-<flavor>-<arch> VERSION=x   (single arch: upload + manifest)
+#   make publish-<flavor> VERSION=x           (both archs: upload + manifest)
+
+# Docker run macro for publisher container
+define docker_run_publisher
+docker run --rm \
+	-v "$(CURDIR):$(WORKDIR)" \
+	-e HOST_UID=$(HOST_UID) \
+	-e HOST_GID=$(HOST_GID) \
+	-e B2_APPLICATION_KEY_ID \
+	-e B2_APPLICATION_KEY \
+	$(PUBLISHER_IMAGE):$(PUBLISHER_TAG)
 endef
-$(foreach f,$(FLAVORS),$(eval $(call publish_rule,$(f))))
+
+# Shared credential validation
+define check_publish_env
+@test -n "$$(VERSION)" || (echo "ERROR: VERSION is required (e.g., VERSION=1.0.0)"; exit 1)
+@test -n "$$(B2_APPLICATION_KEY_ID)" || (echo "ERROR: B2_APPLICATION_KEY_ID not set (export it or pass inline)"; exit 1)
+@test -n "$$(B2_APPLICATION_KEY)" || (echo "ERROR: B2_APPLICATION_KEY not set (export it or pass inline)"; exit 1)
+endef
+
+# upload-<flavor>-<arch>  (CI: image + sidecar only, no manifest)
+# $(1) = flavor, $(2) = arch
+define upload_arch_rule
+upload-$(1)-$(2): $$(PUBLISHER_STAMP)
+	$$(check_publish_env)
+	$$(docker_run_publisher) \
+		bash -c 'TARGET_ARCH=$(2) bash images/publish.sh --upload-only $(1) $$(VERSION) \
+		    images/artifacts/mps-$(1)-$(2).qcow2.img'
+endef
+$(foreach f,$(FLAVORS),$(foreach a,$(ARCHS),$(eval $(call upload_arch_rule,$(f),$(a)))))
+
+# update-manifest  (CI fan-in: single manifest read-modify-write)
+update-manifest: $(PUBLISHER_STAMP)
+	$(check_publish_env)
+	$(docker_run_publisher) \
+		bash images/update-manifest.sh $(VERSION)
+
+# publish-<flavor>-<arch>  (local: upload + manifest in one shot)
+# $(1) = flavor, $(2) = arch
+define publish_arch_rule
+publish-$(1)-$(2): $$(PUBLISHER_STAMP)
+	$$(check_publish_env)
+	$$(docker_run_publisher) \
+		bash -c 'TARGET_ARCH=$(2) bash images/publish.sh $(1) $$(VERSION) \
+		    images/artifacts/mps-$(1)-$(2).qcow2.img'
+endef
+$(foreach f,$(FLAVORS),$(foreach a,$(ARCHS),$(eval $(call publish_arch_rule,$(f),$(a)))))
+
+# publish-<flavor>  (local: both archs)
+define publish_both_rule
+publish-$(1): $(foreach a,$(ARCHS),publish-$(1)-$(a))
+endef
+$(foreach f,$(FLAVORS),$(eval $(call publish_both_rule,$(f))))
 
 # ---------- Clean ----------
 clean-docker-builder: ## Remove mps-builder Docker image
@@ -263,6 +327,11 @@ clean-docker-linter: ## Remove mps-linter Docker image
 	@echo "Removing $(LINTER_IMAGE):$(LINTER_TAG) image..."
 	@docker rmi $(LINTER_IMAGE):$(LINTER_TAG) 2>/dev/null || true
 	@rm -f $(LINTER_STAMP)
+
+clean-docker-publisher: ## Remove mps-publisher Docker image
+	@echo "Removing $(PUBLISHER_IMAGE):$(PUBLISHER_TAG) image..."
+	@docker rmi $(PUBLISHER_IMAGE):$(PUBLISHER_TAG) 2>/dev/null || true
+	@rm -f $(PUBLISHER_STAMP)
 
 # clean-image-<flavor> (both archs)
 define clean_flavor_rule
@@ -286,5 +355,5 @@ $(foreach f,$(FLAVORS),$(foreach a,$(ARCHS),$(eval $(call clean_flavor_arch_rule
 clean-images: $(foreach f,$(FLAVORS),clean-image-$(f)) ## Remove all built VM images
 	@rm -f images/cloud-init.yaml
 
-clean: clean-docker-builder clean-docker-linter clean-images ## Remove all build artifacts, images, and Docker containers
+clean: clean-docker-builder clean-docker-linter clean-docker-publisher clean-images ## Remove all build artifacts, images, and Docker containers
 	@rm -rf build/ dist/
