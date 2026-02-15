@@ -82,7 +82,6 @@ else
     cp "$MANIFEST_FILE" "$REMOTE_MANIFEST"
 fi
 
-BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 UPDATED=0
 SKIPPED=0
 
@@ -122,6 +121,18 @@ for flavor in "${FLAVORS[@]}"; do
         SHA256="$(awk '{print $1}' "$TMP_SHA")"
         rm -f "$TMP_SHA"
         echo "  SHA256: ${SHA256}"
+
+        # Get build_date from the image file's B2 upload timestamp
+        B2_IMG_PATH="${PREFIX}/${flavor}/${VERSION}/${arch}.img"
+        UPLOAD_TS="$(b2 file info "b2://${BUCKET}/${B2_IMG_PATH}" | jq -r '.uploadTimestamp')"
+        if [[ -z "$UPLOAD_TS" || "$UPLOAD_TS" == "null" ]]; then
+            echo "  WARN: Could not get upload timestamp, using current time"
+            BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+        else
+            # Convert millis-since-epoch to ISO 8601
+            BUILD_DATE="$(date -u -d "@$((UPLOAD_TS / 1000))" +%Y-%m-%dT%H:%M:%SZ)"
+        fi
+        echo "  Date:   ${BUILD_DATE}"
 
         # Merge into manifest (in-place via temp file swap)
         RELATIVE_URL="${flavor}/${VERSION}/${arch}.img"
