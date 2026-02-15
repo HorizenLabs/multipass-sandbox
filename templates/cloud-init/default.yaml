@@ -31,9 +31,80 @@ runcmd:
   #   sudo -u ubuntu bash -c '
   #     export HOME=/home/ubuntu
   #     export PATH="$HOME/.claude/bin:$HOME/.local/bin:$PATH"
+  #     claude plugin install ask-questions-if-underspecified@trailofbits --scope user
+  #     claude plugin install audit-context-building@trailofbits --scope user
+  #     claude plugin install building-secure-contracts@trailofbits --scope user
+  #     claude plugin install burpsuite-project-parser@trailofbits --scope user
+  #     claude plugin install claude-in-chrome-troubleshooting@trailofbits --scope user
+  #     claude plugin install constant-time-analysis@trailofbits --scope user
+  #     claude plugin install culture-index@trailofbits --scope user
+  #     claude plugin install debug-buttercup@trailofbits --scope user
+  #     claude plugin install devcontainer-setup@trailofbits --scope user
+  #     claude plugin install differential-review@trailofbits --scope user
+  #     claude plugin install dwarf-expert@trailofbits --scope user
+  #     claude plugin install entry-point-analyzer@trailofbits --scope user
+  #     claude plugin install firebase-apk-scanner@trailofbits --scope user
+  #     claude plugin install gh-cli@trailofbits --scope user
+  #     claude plugin install git-cleanup@trailofbits --scope user
+  #     claude plugin install insecure-defaults@trailofbits --scope user
   #     claude plugin install modern-python@trailofbits --scope user
+  #     claude plugin install property-based-testing@trailofbits --scope user
+  #     claude plugin install second-opinion@trailofbits --scope user
   #     claude plugin install semgrep-rule-creator@trailofbits --scope user
+  #     claude plugin install semgrep-rule-variant-creator@trailofbits --scope user
+  #     claude plugin install sharp-edges@trailofbits --scope user
+  #     claude plugin install spec-to-code-compliance@trailofbits --scope user
+  #     claude plugin install static-analysis@trailofbits --scope user
+  #     claude plugin install testing-handbook-skills@trailofbits --scope user
+  #     claude plugin install variant-analysis@trailofbits --scope user
   #     claude plugin install yara-authoring@trailofbits --scope user
+  #   '
+  # --- GSD framework (uncomment to enable) ---
+  # Meta-prompting and spec-driven development system for Claude Code.
+  # https://github.com/gsd-build/get-shit-done
+  # - |
+  #   sudo -u ubuntu bash -c '
+  #     export HOME=/home/ubuntu
+  #     export PATH="$HOME/.bun/bin:$HOME/.local/bin:$PATH"
+  #     bunx get-shit-done-cc@latest --claude --global
+  #   '
+  # --- SuperClaude framework (uncomment to enable) ---
+  # Slash commands and MCP servers for Claude Code.
+  # https://github.com/SuperClaude-Org/SuperClaude_Framework
+  # - |
+  #   sudo -u ubuntu bash -c '
+  #     export HOME=/home/ubuntu
+  #     export PATH="$HOME/.local/bin:$PATH"
+  #     uv tool install superclaude
+  #     superclaude install
+  #   '
+  # --- Superpowers (uncomment to enable) ---
+  # Plugin marketplace skills for Claude Code.
+  # https://github.com/obra/superpowers
+  # - |
+  #   sudo -u ubuntu bash -c '
+  #     export HOME=/home/ubuntu
+  #     export PATH="$HOME/.claude/bin:$HOME/.local/bin:$PATH"
+  #     claude plugin marketplace add obra/superpowers-marketplace
+  #     claude plugin install superpowers@superpowers-marketplace --scope user
+  #   '
+  # --- BMAD Method (uncomment to enable) ---
+  # Spec-driven development methodology and agent framework.
+  # https://github.com/bmad-code-org/BMAD-METHOD
+  # - |
+  #   sudo -u ubuntu bash -c '
+  #     export HOME=/home/ubuntu
+  #     export PATH="$HOME/.local/bin:$PATH"
+  #     npx bmad-method install --directory ~/.claude --modules bmm --tools claude-code --yes
+  #   '
+  # --- GitHub Spec Kit (uncomment to enable) ---
+  # Spec-driven development CLI for AI coding agents.
+  # https://github.com/github/spec-kit
+  # - |
+  #   sudo -u ubuntu bash -c '
+  #     export HOME=/home/ubuntu
+  #     export PATH="$HOME/.local/bin:$PATH"
+  #     uv tool install specify-cli --from git+https://github.com/github/spec-kit.git
   #   '
 
 # runcmd:
