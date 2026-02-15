@@ -94,7 +94,8 @@ runcmd:
   # - |
   #   sudo -u ubuntu bash -c '
   #     export HOME=/home/ubuntu
-  #     export PATH="$HOME/.local/bin:$PATH"
+  #     export NVM_DIR="$HOME/.nvm"
+  #     [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
   #     npx bmad-method install --directory ~/.claude --modules bmm --tools claude-code --yes
   #   '
   # --- GitHub Spec Kit (uncomment to enable) ---
