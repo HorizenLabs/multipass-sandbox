@@ -235,6 +235,18 @@ Additional:
 
 **Private marketplace strategy**: Git submodule with relative URL (`../hl-claude-marketplace.git`). Resolves against parent repo remote, automatically using the same protocol (HTTPS or SSH). No credentials needed inside the Packer VM — files are copied via Packer `file` provisioner, then registered with `claude plugin marketplace add /local/path`. Build script verifies submodule is initialized before starting.
 
+## Packer Build CPU Allocation
+
+**Decision**: Dynamic CPU count based on host hardware and build type, with `PACKER_CPUS` env var override.
+
+| Build type | Formula | Rationale |
+|---|---|---|
+| Native (KVM) | `floor(physical_cores × 3/4)`, min 2 | Benchmarked: leaving ~25% headroom for host I/O and QEMU threads avoids contention. `lscpu -p=CORE` counts unique physical cores (excludes hyperthreads). |
+| Cross-arch (TCG) | Hardcoded 4 | Benchmarked: SMP 4 and 6 show no measurable difference; SMP 8 is slower due to TCG thread synchronization overhead. |
+| CI override | `PACKER_CPUS=N` | Skips auto-detection entirely. Useful for CI runners with constrained resources or fixed allocation. |
+
+**Previous**: Hardcoded `cpus = 6` (commit 6cf724d). Worked well for the specific build machine but was suboptimal on hosts with fewer or more cores.
+
 ## Windows Support
 
 **Decision**: PowerShell parity planned (Phase 7). `ConvertFrom-Json` instead of `jq`. Multipass uses Hyper-V (Pro/Enterprise) or VirtualBox (Home).

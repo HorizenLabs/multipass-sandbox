@@ -50,4 +50,20 @@ else
     echo "Accelerator: TCG (emulation — this will be slow)"
 fi
 
+# CPU count: override with PACKER_CPUS, otherwise auto-detect
+if [ -n "${PACKER_CPUS:-}" ]; then
+    echo "CPUs: $PACKER_CPUS (override)"
+elif [ "$TARGET_ARCH" = "$HOST_ARCH" ] && [ -e /dev/kvm ]; then
+    # Native (KVM): floor(physical_cores * 3/4), minimum 2
+    PHYSICAL_CORES="$(lscpu -p=SOCKET,CORE | grep '^[0-9]' | sort -u | wc -l)"
+    PACKER_CPUS=$(( PHYSICAL_CORES * 3 / 4 ))
+    [ "$PACKER_CPUS" -lt 2 ] && PACKER_CPUS=2
+    echo "CPUs: $PACKER_CPUS (auto — ${PHYSICAL_CORES} physical cores × 3/4)"
+else
+    # TCG (emulation): capped at 4 (no benefit above; 8 is slower)
+    PACKER_CPUS=4
+    echo "CPUs: $PACKER_CPUS (TCG default)"
+fi
+PACKER_ARCH_VARS+=( -var "cpus=$PACKER_CPUS" )
+
 echo "Host: $HOST_ARCH → Target: $TARGET_ARCH"

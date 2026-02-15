@@ -70,6 +70,11 @@ variable "efi_firmware_vars" {
   default = ""
 }
 
+variable "cpus" {
+  type    = number
+  default = 6
+}
+
 variable "vm_name" {
   type    = string
   default = "mps-base-amd64.qcow2.img"
@@ -98,7 +103,7 @@ source "qemu" "base" {
   efi_firmware_code = var.efi_firmware_code
   efi_firmware_vars = var.efi_firmware_vars
   memory            = 8192
-  cpus              = 6  # Benchmarked: optimal for amd64 KVM; arm64 TCG is emulation-bound
+  cpus              = var.cpus
   ssh_username      = "ubuntu"
   ssh_password      = "ubuntu"
   ssh_timeout       = "30m"
