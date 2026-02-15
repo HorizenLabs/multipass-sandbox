@@ -147,10 +147,17 @@ source "qemu" "base" {
 build {
   sources = ["source.qemu.base"]
 
+  # Ensure destination directory exists for file provisioner
+  provisioner "shell" {
+    inline = ["mkdir -p /home/ubuntu/.local/share"]
+    execute_command = "chmod +x {{ .Path }}; sudo -u ubuntu bash {{ .Path }}"
+  }
+
   # Copy private Claude Code marketplace into VM (from git submodule, no credentials needed)
+  # Must land under /home/ubuntu — /tmp is wiped by post-provision cleanup
   provisioner "file" {
     source      = "${var.mps_root}/vendor/hl-claude-marketplace"
-    destination = "/tmp/hl-claude-marketplace"
+    destination = "/home/ubuntu/.local/share/hl-claude-marketplace"
   }
 
   # Wait for cloud-init to finish, then register Claude Code plugin marketplaces
@@ -159,7 +166,7 @@ build {
       "cloud-init status --wait",
       "export HOME=/home/ubuntu",
       ". \"$HOME/.profile\" 2>/dev/null || true",
-      "claude plugin marketplace list --json | jq -e '.[] | select(.name==\"hl-agent-skills\")' >/dev/null 2>&1 || claude plugin marketplace add /tmp/hl-claude-marketplace",
+      "claude plugin marketplace list --json | jq -e '.[] | select(.name==\"hl-agent-skills\")' >/dev/null 2>&1 || claude plugin marketplace add \"$HOME/.local/share/hl-claude-marketplace\"",
       "claude plugin marketplace list --json | jq -e '.[] | select(.name==\"trailofbits\")' >/dev/null 2>&1 || claude plugin marketplace add trailofbits/skills",
     ]
     execute_command = "chmod +x {{ .Path }}; sudo -u ubuntu bash {{ .Path }}"
