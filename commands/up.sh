@@ -71,7 +71,7 @@ cmd_up() {
     mps_resolve_mount "$arg_path"
 
     # ---- Resolve instance name ----
-    local effective_template="${arg_cloud_init:-${MPS_CLOUD_INIT:-${MPS_DEFAULT_CLOUD_INIT:-base}}}"
+    local effective_template="${arg_cloud_init:-${MPS_CLOUD_INIT:-${MPS_DEFAULT_CLOUD_INIT:-default}}}"
     local effective_profile="${arg_profile:-${MPS_PROFILE:-${MPS_DEFAULT_PROFILE:-lite}}}"
 
     local instance_name

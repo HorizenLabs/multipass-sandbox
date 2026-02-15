@@ -243,7 +243,7 @@ MPS_MAX_INSTANCE_NAME_LEN=40
 # Truncates the folder portion and appends a short hash if too long.
 mps_auto_name() {
     local mount_source="${1:-}"
-    local template="${2:-${MPS_CLOUD_INIT:-${MPS_DEFAULT_CLOUD_INIT:-base}}}"
+    local template="${2:-${MPS_CLOUD_INIT:-${MPS_DEFAULT_CLOUD_INIT:-default}}}"
     local profile="${3:-${MPS_PROFILE:-${MPS_DEFAULT_PROFILE:-lite}}}"
     local prefix="${MPS_INSTANCE_PREFIX:-mps}"
 
@@ -363,6 +363,111 @@ mps_detect_arch() {
 
 # ---------- Image Resolution ----------
 
+# Check if an image name looks like an mps image (not a Multipass/Ubuntu version).
+# Ubuntu versions start with a digit (e.g. "24.04", "22.04").
+# mps image names are words (e.g. "base", "protocol-dev").
+_mps_is_mps_image() {
+    local name="$1"
+    [[ ! "$name" =~ ^[0-9] ]]
+}
+
+# Pull an image from the remote registry into the local cache.
+# Usage: _mps_pull_image <name> [<version>]
+# Returns 0 on success, 1 on failure. Logs progress/errors via mps_log_*.
+# Called by both auto-pull (mps_resolve_image) and interactive (mps image pull).
+_mps_pull_image() {
+    local image_name="$1"
+    local image_version="${2:-latest}"
+
+    local base_url="${MPS_IMAGE_BASE_URL:-}"
+    if [[ -z "$base_url" ]]; then
+        mps_log_error "MPS_IMAGE_BASE_URL not configured"
+        return 1
+    fi
+
+    local arch
+    arch="$(mps_detect_arch)"
+
+    mps_log_info "Pulling image '${image_name}:${image_version}'..."
+
+    # Fetch manifest
+    local manifest
+    manifest="$(curl -fsSL "${base_url}/manifest.json" 2>/dev/null)" || {
+        mps_log_error "Failed to fetch manifest from ${base_url}/manifest.json"
+        return 1
+    }
+
+    # Resolve "latest" to actual version number
+    if [[ "$image_version" == "latest" ]]; then
+        image_version="$(echo "$manifest" | jq -r ".images[\"${image_name}\"].latest // empty")"
+        if [[ -z "$image_version" ]]; then
+            mps_log_error "No 'latest' version found for image '${image_name}'"
+            return 1
+        fi
+        mps_log_info "Resolved 'latest' to version ${image_version}"
+    fi
+
+    # Extract image info from manifest
+    local image_url expected_sha256
+    image_url="$(echo "$manifest" | jq -r ".images[\"${image_name}\"].versions[\"${image_version}\"][\"${arch}\"].url // empty")"
+    expected_sha256="$(echo "$manifest" | jq -r ".images[\"${image_name}\"].versions[\"${image_version}\"][\"${arch}\"].sha256 // empty")"
+
+    if [[ -z "$image_url" ]]; then
+        mps_log_error "Image '${image_name}:${image_version}' not found for architecture '${arch}'"
+        return 1
+    fi
+
+    # Download
+    local full_url="${base_url}/${image_url}"
+    local cache_dir
+    cache_dir="$(mps_cache_dir)/images/${image_name}/${image_version}"
+    mkdir -p "$cache_dir"
+    local dest_file="${cache_dir}/${arch}.img"
+
+    mps_log_info "Downloading ${image_name}:${image_version} (${arch})..."
+    if ! curl --progress-bar -fSL "$full_url" -o "$dest_file"; then
+        rm -f "$dest_file"
+        mps_log_error "Failed to download image from ${full_url}"
+        return 1
+    fi
+
+    # Verify checksum
+    if [[ -n "$expected_sha256" ]]; then
+        mps_log_info "Verifying checksum..."
+        local actual_sha256
+        actual_sha256="$(_mps_sha256 "$dest_file" | cut -d' ' -f1)"
+        if [[ "$actual_sha256" != "$expected_sha256" ]]; then
+            rm -f "$dest_file"
+            mps_log_error "Checksum mismatch! Expected: ${expected_sha256}, Got: ${actual_sha256}"
+            return 1
+        fi
+        mps_log_info "Checksum verified."
+    fi
+
+    # Write .meta sidecar with image metadata from manifest
+    local meta_file="${cache_dir}/${arch}.meta"
+    local meta_disk_size meta_min_profile meta_min_disk meta_min_memory meta_min_cpus
+    meta_disk_size="$(echo "$manifest" | jq -r ".images[\"${image_name}\"].disk_size // empty")"
+    meta_min_profile="$(echo "$manifest" | jq -r ".images[\"${image_name}\"].min_profile // empty")"
+    meta_min_disk="$(echo "$manifest" | jq -r ".images[\"${image_name}\"].min_disk // empty")"
+    meta_min_memory="$(echo "$manifest" | jq -r ".images[\"${image_name}\"].min_memory // empty")"
+    meta_min_cpus="$(echo "$manifest" | jq -r ".images[\"${image_name}\"].min_cpus // empty")"
+
+    cat > "$meta_file" <<EOF
+SOURCE=pulled
+PULLED=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+SHA256=${expected_sha256}
+IMAGE_DISK_SIZE=${meta_disk_size}
+MIN_PROFILE=${meta_min_profile}
+MIN_DISK=${meta_min_disk}
+MIN_MEMORY=${meta_min_memory}
+MIN_CPUS=${meta_min_cpus}
+EOF
+
+    mps_log_info "Image '${image_name}:${image_version}' cached successfully."
+    return 0
+}
+
 # Resolve an image spec to a file:// URL (if cached) or pass through unchanged.
 # Input: "base", "base:1.0.0", "base:local", "base:latest", "24.04"
 # Output: "file:///home/.../.mps/cache/images/base/1.0.0/amd64.img" or "24.04"
@@ -378,10 +483,21 @@ mps_resolve_image() {
     cache_dir="$(mps_cache_dir)/images"
     local image_dir="${cache_dir}/${name}"
 
-    # If the image name directory doesn't exist, pass through (e.g. "24.04")
+    # If the image name directory doesn't exist, try auto-pull for mps images
     if [[ ! -d "$image_dir" ]]; then
-        echo "$image_spec"
-        return
+        if _mps_is_mps_image "$name" && [[ -n "${MPS_IMAGE_BASE_URL:-}" ]]; then
+            mps_log_info "Image '${name}' not found locally. Pulling..."
+            if _mps_pull_image "$name" "$tag" && [[ -d "$image_dir" ]]; then
+                : # Pull succeeded — fall through to normal resolution below
+            else
+                mps_die "Could not pull image '${name}'. Pull manually with 'mps image pull ${name}' or use '--image 24.04' for stock Ubuntu."
+            fi
+        elif _mps_is_mps_image "$name"; then
+            mps_die "Image '${name}' not found locally and MPS_IMAGE_BASE_URL not configured. Pull or import the image first, or use '--image 24.04' for stock Ubuntu."
+        else
+            echo "$image_spec"
+            return
+        fi
     fi
 
     local arch
@@ -521,7 +637,7 @@ MPS_CREATED=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 MPS_CPUS=${MPS_CPUS:-${MPS_DEFAULT_CPUS:-2}}
 MPS_MEMORY=${MPS_MEMORY:-${MPS_DEFAULT_MEMORY:-2G}}
 MPS_DISK=${MPS_DISK:-${MPS_DEFAULT_DISK:-20G}}
-MPS_CLOUD_INIT=${MPS_CLOUD_INIT:-${MPS_DEFAULT_CLOUD_INIT:-base}}
+MPS_CLOUD_INIT=${MPS_CLOUD_INIT:-${MPS_DEFAULT_CLOUD_INIT:-default}}
 MPS_MOUNT_SOURCE=${MPS_MOUNT_SOURCE:-}
 MPS_MOUNT_TARGET=${MPS_MOUNT_TARGET:-}
 EOF
@@ -629,7 +745,7 @@ mps_parse_extra_mounts() {
 # ---------- Cloud-init Resolution ----------
 
 mps_resolve_cloud_init() {
-    local template="${1:-${MPS_CLOUD_INIT:-${MPS_DEFAULT_CLOUD_INIT:-base}}}"
+    local template="${1:-${MPS_CLOUD_INIT:-${MPS_DEFAULT_CLOUD_INIT:-default}}}"
 
     # If it's an absolute path or relative path to a file, use it directly
     if [[ -f "$template" ]]; then

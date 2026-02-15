@@ -148,7 +148,7 @@ mps create --profile lite --cpus 1 --memory 1G   # Profile + overrides
 
 | Template | Location | Purpose |
 |----------|----------|---------|
-| `base` | `templates/cloud-init/base.yaml` | Minimal customization template (commented-out examples). Used at VM launch from pre-built images. |
+| `default` | `templates/cloud-init/default.yaml` | Minimal customization template (commented-out examples). Used at VM launch from pre-built images. |
 | (build) | `images/layers/*.yaml` | Composable cloud-init layers merged at build time. Flavors: base, protocol-dev, smart-contract-dev, smart-contract-audit. |
 
 ## Port Forwarding

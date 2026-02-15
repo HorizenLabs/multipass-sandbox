@@ -7,10 +7,10 @@
 #
 # Usage:
 #   mps create [name] [path]
-#   mps create --image 24.04 --cpus 8 --memory 8G myproject ~/code/proj
+#   mps create --image base --cpus 8 --memory 8G myproject ~/code/proj
 #
 # Flags:
-#   --image <image>         Ubuntu image (default: from config, e.g. 22.04)
+#   --image <image>         Image name (default: base; accepts mps names or Ubuntu versions)
 #   --cpus <n>              CPU cores (default: from config/profile)
 #   --memory <size>         Memory with unit (default: from config/profile)
 #   --disk <size>           Disk with unit (default: from config/profile)
@@ -120,7 +120,7 @@ cmd_create() {
     mps_resolve_mount "$arg_path"
 
     # ---- Resolve cloud-init template name (for auto-naming) ----
-    local effective_template="${arg_cloud_init:-${MPS_CLOUD_INIT:-${MPS_DEFAULT_CLOUD_INIT:-base}}}"
+    local effective_template="${arg_cloud_init:-${MPS_CLOUD_INIT:-${MPS_DEFAULT_CLOUD_INIT:-default}}}"
 
     # ---- Resolve instance name ----
     # Auto-name: mps-<folder>-<template>-<profile>
@@ -143,7 +143,7 @@ cmd_create() {
     mps_log_debug "Cloud-init template: ${cloud_init_path}"
 
     # ---- Resolve resource values: CLI flags > config/profile > defaults ----
-    local image_spec="${arg_image:-${MPS_IMAGE:-${MPS_DEFAULT_IMAGE:-24.04}}}"
+    local image_spec="${arg_image:-${MPS_IMAGE:-${MPS_DEFAULT_IMAGE:-base}}}"
     local image
     image="$(mps_resolve_image "$image_spec")"
     local cpus="${arg_cpus:-${MPS_CPUS:-${MPS_DEFAULT_CPUS:-2}}}"
@@ -157,7 +157,7 @@ cmd_create() {
     export MPS_CPUS="$cpus"
     export MPS_MEMORY="$memory"
     export MPS_DISK="$disk"
-    export MPS_CLOUD_INIT="${arg_cloud_init:-${MPS_CLOUD_INIT:-${MPS_DEFAULT_CLOUD_INIT:-base}}}"
+    export MPS_CLOUD_INIT="${arg_cloud_init:-${MPS_CLOUD_INIT:-${MPS_DEFAULT_CLOUD_INIT:-default}}}"
 
     # ---- Build extra arguments for mp_launch ----
     local -a extra_args=()
@@ -307,7 +307,7 @@ ${_color_bold}Flags:${_color_reset}
     --cpus <n>              CPU cores (default: auto-scaled from profile)
     --memory <size>         Memory, e.g. 4G, 8G (default: auto-scaled from profile)
     --disk <size>           Disk, e.g. 20G, 50G (default: ${MPS_DEFAULT_DISK:-20G})
-    --cloud-init <name>     Cloud-init template (default: ${MPS_DEFAULT_CLOUD_INIT:-base})
+    --cloud-init <name>     Cloud-init template (default: ${MPS_DEFAULT_CLOUD_INIT:-default})
     --profile <name>        Resource profile: micro, lite, standard, heavy
     --mount <src:dst>       Additional mount point (can be repeated)
     --port <host:guest>     Port forwarding rule (can be repeated)

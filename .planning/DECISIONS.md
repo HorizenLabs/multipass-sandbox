@@ -4,7 +4,7 @@ Decisions made during planning sessions, preserved to avoid re-asking.
 
 ## Image Layer Contents
 
-**Decision**: Cloud-init layers in `images/layers/` are merged at build time to produce the toolchain for each flavor. A separate minimal `templates/cloud-init/base.yaml` provides commented-out examples for VM launch customization.
+**Decision**: Cloud-init layers in `images/layers/` are merged at build time to produce the toolchain for each flavor. A separate minimal `templates/cloud-init/default.yaml` provides commented-out examples for VM launch customization.
 
 **base layer** (all flavors):
 - Docker: Official apt repo (`docker-ce`, `docker-ce-cli`, `containerd.io`, `docker-buildx-plugin`, `docker-compose-plugin`). V2 plugin only.
