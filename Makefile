@@ -62,33 +62,52 @@ IMAGE_LAYERS_smart-contract-audit  := images/layers/smart-contract-audit.yaml
 # Image flavors
 FLAVORS := base protocol-dev smart-contract-dev smart-contract-audit
 
-.PHONY: all help builder linter install test lint lint-bash lint-powershell lint-dockerfile lint-makefile lint-yaml lint-hcl \
-	image-base image-base-amd64 image-base-arm64 \
-	image-protocol-dev image-protocol-dev-amd64 image-protocol-dev-arm64 \
-	image-smart-contract-dev image-smart-contract-dev-amd64 image-smart-contract-dev-arm64 \
-	image-smart-contract-audit image-smart-contract-audit-amd64 image-smart-contract-audit-arm64 \
-	import-base import-protocol-dev import-smart-contract-dev import-smart-contract-audit \
-	publish-base publish-protocol-dev publish-smart-contract-dev publish-smart-contract-audit \
-	clean clean-builder clean-linter clean-images \
-	clean-image-base clean-image-protocol-dev clean-image-smart-contract-dev clean-image-smart-contract-audit
+ARCHS := amd64 arm64
+
+# Parent flavor for chained builds (base has no parent)
+PARENT_protocol-dev          := base
+PARENT_smart-contract-dev    := protocol-dev
+PARENT_smart-contract-audit  := smart-contract-dev
+
+# Generated .PHONY lists
+IMAGE_PHONY       := $(foreach f,$(FLAVORS),image-$(f) $(foreach a,$(ARCHS),image-$(f)-$(a)))
+IMPORT_PHONY      := $(foreach f,$(FLAVORS),import-$(f))
+PUBLISH_PHONY     := $(foreach f,$(FLAVORS),publish-$(f))
+CLEAN_IMAGE_PHONY := $(foreach f,$(FLAVORS),clean-image-$(f) $(foreach a,$(ARCHS),clean-image-$(f)-$(a)))
+
+.PHONY: all help build-docker-builder build-docker-linter install test clean \
+	lint lint-bash lint-powershell lint-dockerfile lint-makefile lint-yaml lint-hcl \
+	clean-docker-builder clean-docker-linter clean-images \
+	$(IMAGE_PHONY) $(IMPORT_PHONY) $(PUBLISH_PHONY) $(CLEAN_IMAGE_PHONY)
 
 # ---------- All ----------
-all: lint ## Run all linters (alias)
+all: $(foreach f,$(FLAVORS),image-$(f)) ## Build all VM image flavors
 
 # ---------- Help ----------
 help: ## Show this help
+	@echo ""
+	@echo "Image targets:"
+	@echo "  Flavors: $(FLAVORS)"
+	@echo "  Archs:   $(ARCHS)"
+	@echo ""
+	@echo "  make image-FLAVOR              Build both archs in parallel"
+	@echo "  make image-FLAVOR-ARCH         Build one arch"
+	@echo "  make import-FLAVOR             Import host-arch image into mps cache"
+	@echo "  make publish-FLAVOR VERSION=x  Publish to Backblaze B2"
+	@echo "  make clean-image-FLAVOR        Remove flavor artifacts (both archs)"
+	@echo "  make clean-image-FLAVOR-ARCH   Remove single flavor-arch artifacts"
+	@echo ""
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
 		awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-34s\033[0m %s\n", $$1, $$2}'
 
-# ---------- Builder image ----------
-builder: $(BUILDER_STAMP) ## Build the mps-builder Docker image
+# ---------- Docker images ----------
+build-docker-builder: $(BUILDER_STAMP) ## Build the mps-builder Docker image
 
 $(BUILDER_STAMP): $(BUILDER_DEPS)
 	docker build --progress plain -f Dockerfile.builder -t $(BUILDER_IMAGE):$(BUILDER_TAG) .
 	@touch $@
 
-# ---------- Linter image ----------
-linter: $(LINTER_STAMP) ## Build the mps-linter Docker image
+build-docker-linter: $(LINTER_STAMP) ## Build the mps-linter Docker image
 
 $(LINTER_STAMP): $(LINTER_DEPS)
 	docker build --progress plain -f Dockerfile.linter -t $(LINTER_IMAGE):$(LINTER_TAG) .
@@ -180,160 +199,88 @@ lint-hcl: $(LINTER_STAMP) ## Lint HCL/Packer files with packer fmt
 	fi
 
 # ---------- Image builds ----------
-# Each flavor builds both archs in parallel via sub-make
+# Templates generate per-flavor, per-arch stamp rules, phony wrappers,
+# and both-arch parallel targets.  Adding a new flavor only requires
+# entries in FLAVORS, PARENT_*, and IMAGE_LAYERS_*.
 
-image-base: ## Build base VM image (both archs in parallel)
-	+$(MAKE) image-base-amd64 image-base-arm64 -j2
+# .stamp-image-<flavor>-<arch>  (the real build rule)
+# $(1) = flavor, $(2) = arch
+define image_stamp_rule
+.stamp-image-$(1)-$(2): $$(BUILDER_STAMP) $$(IMAGE_COMMON_DEPS) $$(IMAGE_LAYERS_$(1)) \
+        $(if $(PARENT_$(1)),.stamp-image-$(PARENT_$(1))-$(2))
+	$$(call docker_run_image,$(2)) bash -c \
+	    'cd images && bash build.sh $(if $(PARENT_$(1)),--base-image artifacts/mps-$(PARENT_$(1))-$(2).qcow2.img )$(1)'
+	@touch $$@
+endef
+$(foreach f,$(FLAVORS),$(foreach a,$(ARCHS),$(eval $(call image_stamp_rule,$(f),$(a)))))
 
-image-protocol-dev: ## Build protocol-dev VM image (both archs in parallel)
-	+$(MAKE) image-protocol-dev-amd64 image-protocol-dev-arm64 -j2
+# image-<flavor>-<arch> → stamp dependency
+define image_arch_rule
+image-$(1)-$(2): .stamp-image-$(1)-$(2)
+endef
+$(foreach f,$(FLAVORS),$(foreach a,$(ARCHS),$(eval $(call image_arch_rule,$(f),$(a)))))
 
-image-smart-contract-dev: ## Build smart-contract-dev VM image (both archs in parallel)
-	+$(MAKE) image-smart-contract-dev-amd64 image-smart-contract-dev-arm64 -j2
-
-image-smart-contract-audit: ## Build smart-contract-audit VM image (both archs in parallel)
-	+$(MAKE) image-smart-contract-audit-amd64 image-smart-contract-audit-arm64 -j2
-
-# Per-flavor, per-arch stamp targets
-# Non-base flavors chain from their parent's QCOW2 via --base-image.
-# Same-arch builds serialize via stamp deps; cross-arch runs in parallel.
-
-# base
-image-base-amd64: .stamp-image-base-amd64 ## Build base VM image (amd64)
-
-.stamp-image-base-amd64: $(BUILDER_STAMP) $(IMAGE_COMMON_DEPS) $(IMAGE_LAYERS_base)
-	$(call docker_run_image,amd64) bash -c 'cd images && bash build.sh base'
-	@touch $@
-
-image-base-arm64: .stamp-image-base-arm64 ## Build base VM image (arm64)
-
-.stamp-image-base-arm64: $(BUILDER_STAMP) $(IMAGE_COMMON_DEPS) $(IMAGE_LAYERS_base)
-	$(call docker_run_image,arm64) bash -c 'cd images && bash build.sh base'
-	@touch $@
-
-# protocol-dev (chains from base)
-image-protocol-dev-amd64: .stamp-image-protocol-dev-amd64 ## Build protocol-dev VM image (amd64)
-
-.stamp-image-protocol-dev-amd64: $(BUILDER_STAMP) $(IMAGE_COMMON_DEPS) $(IMAGE_LAYERS_protocol-dev) .stamp-image-base-amd64
-	$(call docker_run_image,amd64) bash -c 'cd images && bash build.sh --base-image artifacts/mps-base-amd64.qcow2.img protocol-dev'
-	@touch $@
-
-image-protocol-dev-arm64: .stamp-image-protocol-dev-arm64 ## Build protocol-dev VM image (arm64)
-
-.stamp-image-protocol-dev-arm64: $(BUILDER_STAMP) $(IMAGE_COMMON_DEPS) $(IMAGE_LAYERS_protocol-dev) .stamp-image-base-arm64
-	$(call docker_run_image,arm64) bash -c 'cd images && bash build.sh --base-image artifacts/mps-base-arm64.qcow2.img protocol-dev'
-	@touch $@
-
-# smart-contract-dev (chains from protocol-dev)
-image-smart-contract-dev-amd64: .stamp-image-smart-contract-dev-amd64 ## Build smart-contract-dev VM image (amd64)
-
-.stamp-image-smart-contract-dev-amd64: $(BUILDER_STAMP) $(IMAGE_COMMON_DEPS) $(IMAGE_LAYERS_smart-contract-dev) .stamp-image-protocol-dev-amd64
-	$(call docker_run_image,amd64) bash -c 'cd images && bash build.sh --base-image artifacts/mps-protocol-dev-amd64.qcow2.img smart-contract-dev'
-	@touch $@
-
-image-smart-contract-dev-arm64: .stamp-image-smart-contract-dev-arm64 ## Build smart-contract-dev VM image (arm64)
-
-.stamp-image-smart-contract-dev-arm64: $(BUILDER_STAMP) $(IMAGE_COMMON_DEPS) $(IMAGE_LAYERS_smart-contract-dev) .stamp-image-protocol-dev-arm64
-	$(call docker_run_image,arm64) bash -c 'cd images && bash build.sh --base-image artifacts/mps-protocol-dev-arm64.qcow2.img smart-contract-dev'
-	@touch $@
-
-# smart-contract-audit (chains from smart-contract-dev)
-image-smart-contract-audit-amd64: .stamp-image-smart-contract-audit-amd64 ## Build smart-contract-audit VM image (amd64)
-
-.stamp-image-smart-contract-audit-amd64: $(BUILDER_STAMP) $(IMAGE_COMMON_DEPS) $(IMAGE_LAYERS_smart-contract-audit) .stamp-image-smart-contract-dev-amd64
-	$(call docker_run_image,amd64) bash -c 'cd images && bash build.sh --base-image artifacts/mps-smart-contract-dev-amd64.qcow2.img smart-contract-audit'
-	@touch $@
-
-image-smart-contract-audit-arm64: .stamp-image-smart-contract-audit-arm64 ## Build smart-contract-audit VM image (arm64)
-
-.stamp-image-smart-contract-audit-arm64: $(BUILDER_STAMP) $(IMAGE_COMMON_DEPS) $(IMAGE_LAYERS_smart-contract-audit) .stamp-image-smart-contract-dev-arm64
-	$(call docker_run_image,arm64) bash -c 'cd images && bash build.sh --base-image artifacts/mps-smart-contract-dev-arm64.qcow2.img smart-contract-audit'
-	@touch $@
+# image-<flavor> → both archs in parallel
+define image_both_rule
+image-$(1):
+	+$$(MAKE) $(foreach a,$(ARCHS),image-$(1)-$(a)) -j2
+endef
+$(foreach f,$(FLAVORS),$(eval $(call image_both_rule,$(f))))
 
 # ---------- Image import (local) ----------
-import-base: image-base ## Import host-arch base image into mps cache
-	@arch=$$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/'); \
-	./bin/mps image import images/artifacts/mps-base-$$arch.qcow2.img --name base --tag local
-
-import-protocol-dev: image-protocol-dev ## Import host-arch protocol-dev image into mps cache
-	@arch=$$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/'); \
-	./bin/mps image import images/artifacts/mps-protocol-dev-$$arch.qcow2.img --name protocol-dev --tag local
-
-import-smart-contract-dev: image-smart-contract-dev ## Import host-arch smart-contract-dev image into mps cache
-	@arch=$$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/'); \
-	./bin/mps image import images/artifacts/mps-smart-contract-dev-$$arch.qcow2.img --name smart-contract-dev --tag local
-
-import-smart-contract-audit: image-smart-contract-audit ## Import host-arch smart-contract-audit image into mps cache
-	@arch=$$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/'); \
-	./bin/mps image import images/artifacts/mps-smart-contract-audit-$$arch.qcow2.img --name smart-contract-audit --tag local
+define import_rule
+import-$(1): image-$(1)
+	@arch=$$$$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/'); \
+	./bin/mps image import images/artifacts/mps-$(1)-$$$$arch.qcow2.img --name $(1) --tag local
+endef
+$(foreach f,$(FLAVORS),$(eval $(call import_rule,$(f))))
 
 # ---------- Image publishing (Backblaze B2) ----------
-# Usage: make publish-base VERSION=1.0.0
-publish-base: ## Publish base image to Backblaze B2 (requires VERSION=x.y.z)
-	@test -n "$(VERSION)" || (echo "ERROR: VERSION is required (e.g., make publish-base VERSION=1.0.0)"; exit 1)
-	$(DOCKER_RUN) bash -c '\
+# Usage: make publish-<flavor> VERSION=1.0.0
+define publish_rule
+publish-$(1):
+	@test -n "$$(VERSION)" || (echo "ERROR: VERSION is required (e.g., make publish-$(1) VERSION=1.0.0)"; exit 1)
+	$$(DOCKER_RUN) bash -c '\
 		for arch in amd64 arm64; do \
-			echo "Publishing $$arch..."; \
-			TARGET_ARCH=$$arch bash images/publish.sh base $(VERSION) images/artifacts/mps-base-$$arch.qcow2.img; \
+			echo "Publishing $$$$arch..."; \
+			TARGET_ARCH=$$$$arch bash images/publish.sh $(1) $$(VERSION) \
+			    images/artifacts/mps-$(1)-$$$$arch.qcow2.img; \
 		done'
-
-publish-protocol-dev: ## Publish protocol-dev image to B2 (requires VERSION=x.y.z)
-	@test -n "$(VERSION)" || (echo "ERROR: VERSION is required"; exit 1)
-	$(DOCKER_RUN) bash -c '\
-		for arch in amd64 arm64; do \
-			echo "Publishing $$arch..."; \
-			TARGET_ARCH=$$arch bash images/publish.sh protocol-dev $(VERSION) images/artifacts/mps-protocol-dev-$$arch.qcow2.img; \
-		done'
-
-publish-smart-contract-dev: ## Publish smart-contract-dev image to B2 (requires VERSION=x.y.z)
-	@test -n "$(VERSION)" || (echo "ERROR: VERSION is required"; exit 1)
-	$(DOCKER_RUN) bash -c '\
-		for arch in amd64 arm64; do \
-			echo "Publishing $$arch..."; \
-			TARGET_ARCH=$$arch bash images/publish.sh smart-contract-dev $(VERSION) images/artifacts/mps-smart-contract-dev-$$arch.qcow2.img; \
-		done'
-
-publish-smart-contract-audit: ## Publish smart-contract-audit image to B2 (requires VERSION=x.y.z)
-	@test -n "$(VERSION)" || (echo "ERROR: VERSION is required"; exit 1)
-	$(DOCKER_RUN) bash -c '\
-		for arch in amd64 arm64; do \
-			echo "Publishing $$arch..."; \
-			TARGET_ARCH=$$arch bash images/publish.sh smart-contract-audit $(VERSION) images/artifacts/mps-smart-contract-audit-$$arch.qcow2.img; \
-		done'
+endef
+$(foreach f,$(FLAVORS),$(eval $(call publish_rule,$(f))))
 
 # ---------- Clean ----------
-clean-builder: ## Remove mps-builder Docker image
+clean-docker-builder: ## Remove mps-builder Docker image
 	@echo "Removing $(BUILDER_IMAGE):$(BUILDER_TAG) image..."
 	@docker rmi $(BUILDER_IMAGE):$(BUILDER_TAG) 2>/dev/null || true
 	@rm -f $(BUILDER_STAMP)
 
-clean-linter: ## Remove mps-linter Docker image
+clean-docker-linter: ## Remove mps-linter Docker image
 	@echo "Removing $(LINTER_IMAGE):$(LINTER_TAG) image..."
 	@docker rmi $(LINTER_IMAGE):$(LINTER_TAG) 2>/dev/null || true
 	@rm -f $(LINTER_STAMP)
 
-clean-image-base: ## Remove base image artifacts
-	@echo "Removing base image artifacts..."
-	@rm -f images/artifacts/mps-base-*
-	@rm -f .stamp-image-base-*
+# clean-image-<flavor> (both archs)
+define clean_flavor_rule
+clean-image-$(1):
+	@echo "Removing $(1) image artifacts..."
+	@rm -f images/artifacts/mps-$(1)-*
+	@rm -f .stamp-image-$(1)-*
+endef
+$(foreach f,$(FLAVORS),$(eval $(call clean_flavor_rule,$(f))))
 
-clean-image-protocol-dev: ## Remove protocol-dev image artifacts
-	@echo "Removing protocol-dev image artifacts..."
-	@rm -f images/artifacts/mps-protocol-dev-*
-	@rm -f .stamp-image-protocol-dev-*
+# clean-image-<flavor>-<arch> (single arch)
+define clean_flavor_arch_rule
+clean-image-$(1)-$(2):
+	@echo "Removing $(1) $(2) image artifacts..."
+	@rm -f images/artifacts/mps-$(1)-$(2).qcow2.img
+	@rm -f images/artifacts/mps-$(1)-$(2).qcow2.img.sha256
+	@rm -f .stamp-image-$(1)-$(2)
+endef
+$(foreach f,$(FLAVORS),$(foreach a,$(ARCHS),$(eval $(call clean_flavor_arch_rule,$(f),$(a)))))
 
-clean-image-smart-contract-dev: ## Remove smart-contract-dev image artifacts
-	@echo "Removing smart-contract-dev image artifacts..."
-	@rm -f images/artifacts/mps-smart-contract-dev-*
-	@rm -f .stamp-image-smart-contract-dev-*
-
-clean-image-smart-contract-audit: ## Remove smart-contract-audit image artifacts
-	@echo "Removing smart-contract-audit image artifacts..."
-	@rm -f images/artifacts/mps-smart-contract-audit-*
-	@rm -f .stamp-image-smart-contract-audit-*
-
-clean-images: clean-image-base clean-image-protocol-dev clean-image-smart-contract-dev clean-image-smart-contract-audit ## Remove all built VM images
+clean-images: $(foreach f,$(FLAVORS),clean-image-$(f)) ## Remove all built VM images
 	@rm -f images/cloud-init.yaml
 
-clean: clean-builder clean-linter clean-images ## Remove all build artifacts, images, and Docker containers
+clean: clean-docker-builder clean-docker-linter clean-images ## Remove all build artifacts, images, and Docker containers
 	@rm -rf build/ dist/

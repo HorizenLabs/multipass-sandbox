@@ -71,8 +71,8 @@ Internal CLI tool for spinning up isolated VM-based development environments usi
 
 Build/test/lint runs inside Docker containers — linter image for lint/test, builder image for Packer builds:
 ```
-make linter           # Build the linter image (shellcheck, hadolint, BATS, etc.)
-make builder          # Build the builder image (Packer, QEMU, b2)
+make build-docker-linter   # Build the linter image (shellcheck, hadolint, BATS, etc.)
+make build-docker-builder  # Build the builder image (Packer, QEMU, b2)
 make lint             # Run all linters (shellcheck, hadolint, yamllint, checkmake, packer fmt, py-psscriptanalyzer)
 make test             # Run BATS tests
 make image-base       # Build base VM image (both archs in parallel via sub-make -j2)

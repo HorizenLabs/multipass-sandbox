@@ -24,7 +24,7 @@
 - [x] Image flavor metadata in manifest.json (disk_size, min_profile, min_disk, min_memory, min_cpus)
 - [x] .meta sidecar metadata on pull/import (from manifest/layer YAMLs)
 - [x] Runtime validation warnings in mps create (check image requirements vs resolved resources)
-- [ ] Build system logic refinements
+- [x] Build system logic refinements
 - [ ] mps command changes as needed
 
 ## Phase 6 — Linting CI: NOT STARTED

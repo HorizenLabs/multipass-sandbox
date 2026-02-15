@@ -181,7 +181,8 @@ for arch in "${ARCHITECTURES[@]}"; do
     # shellcheck source=arch-config.sh
     source "$MPS_ROOT/images/arch-config.sh"
 
-    PACKER_OUTPUT_DIR="/tmp/packer-output-${FLAVOR}-${arch}"
+    PACKER_OUTPUT_DIR="${MPS_ROOT}/build/packer-output-${FLAVOR}-${arch}"
+    mkdir -p "${MPS_ROOT}/build"
     rm -rf "${PACKER_OUTPUT_DIR:?err_unset}"
 
     VM_NAME="mps-${FLAVOR}-${arch}.qcow2.img"
