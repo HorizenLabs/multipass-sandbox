@@ -46,13 +46,18 @@ For each commit (newest first), flag if it:
 - **Modifies `images/packer.pkr.hcl`** — check DECISIONS.md Image Disk Sizing, QCOW2 extension, etc.
 - **Adds/removes commands** in `commands/*.sh` — check CLAUDE.md Commands section
 - **Modifies `images/manifest.json`** — check DECISIONS.md Image Flavors table
+- **Modifies `config/defaults.env`** — check DECISIONS.md for referenced config variables (`MPS_*` vars)
+- **Modifies `templates/cloud-init/*.yaml`** — check DECISIONS.md Cloud-init Template Restructure and AI Coding Assistants sections
+- **Modifies `images/build.sh`** — check DECISIONS.md Image Flavors table (flavor-to-layer mapping)
+- **Modifies `images/publish.sh`** — check DECISIONS.md Image Distribution section
 
 ### 3. File Path Verification
 
 Extract every file/directory path referenced in the docs. For each path:
 - Verify it exists in the repo (use `Glob` or `ls`)
 - Flag paths that point to moved, renamed, or deleted files
-- Common stale patterns: `images/base/` (removed), `output-base/` (replaced by `artifacts/`)
+
+Also check `git log --diff-filter=DR --name-status HEAD~10..HEAD` for recently deleted/renamed files and verify no doc still references them.
 
 ### 4. Project Structure Completeness (CLAUDE.md)
 
@@ -65,7 +70,7 @@ ls bin/ lib/ commands/ templates/ images/ config/ docker/ *.sh Makefile Dockerfi
 
 - Flag files that exist but aren't documented
 - Flag documented files that don't exist
-- Ignore: `.git/`, `.gitignore`, `README.md`, `.planning/`, `.claude/`, `vendor/`, `packer_cache/`, stamp files, build artifacts
+- Ignore: `.git/`, `.gitignore`, `.gitmodules`, `README.md`, `.planning/`, `.claude/`, `vendor/`, `packer_cache/`, stamp files, build artifacts
 
 ### 5. Build System Targets (CLAUDE.md)
 
@@ -77,7 +82,7 @@ grep -E '^[a-zA-Z0-9_-]+:' Makefile
 
 - Flag example targets that don't exist in the Makefile
 - Flag significant Makefile targets (image builds, publish, import) missing from docs
-- Ignore internal/stamp targets
+- Ignore internal/stamp targets, per-arch variants that follow obvious patterns, and clean targets
 
 ### 6. Tool & Package Lists (DECISIONS.md)
 
@@ -96,17 +101,47 @@ Check the "Secure Dependency Installation" and "Cloud-init Dependency Verificati
 - Verify each tool listed in the tables is actually installed
 - Flag tools that are installed but missing from the tables
 
-### 8. Phase Status (STATUS.md)
+### 8. Image Flavor Consistency (DECISIONS.md)
+
+Cross-reference three sources of truth for image flavors:
+
+- `images/build.sh` — the `case` statement mapping flavors to layer files
+- `images/manifest.json` — the image registry entries
+- DECISIONS.md "Image Flavors" table — the documented flavor/layer mapping
+
+All three must agree on: flavor names, which layers each flavor includes, and layer ordering.
+
+### 9. Config Variable Cross-Reference (DECISIONS.md)
+
+Check that config variables referenced in DECISIONS.md exist in `config/defaults.env`:
+
+- Extract `MPS_*` variable names from DECISIONS.md sections (Image Distribution, Mount Behavior, SSH Key Management, etc.)
+- Verify each exists in `config/defaults.env`
+- Flag variables documented but missing, or present in defaults.env but not mentioned anywhere in docs
+
+### 10. DECISIONS.md Internal Consistency
+
+Check for contradictions between sections within DECISIONS.md:
+
+- Verify that tool/layer assignments in the "Solidity Security Tools" and "AI Coding Assistants" tables match the "Image Layer Contents" section
+- Verify that disk sizes, file extensions, and other specifics are consistent across sections
+- Check that the "Image Flavors" table agrees with the "Image Layer Contents" section on what each layer provides
+
+### 11. Commands Audit (CLAUDE.md + bin/mps)
+
+Three sources of truth for commands:
+
+- `commands/*.sh` — extract exported `cmd_*` function names
+- `bin/mps` — extract the usage text command list (the `mps_usage()` function)
+- CLAUDE.md "Commands" section
+
+All three must agree. Flag commands that exist in one source but not another.
+
+### 12. Phase Status (STATUS.md)
 
 - Check if STATUS.md phase descriptions match PLAN.md
 - Flag completed items that reference stale file paths
 - Check if "NOT STARTED" phases have actually had work done (check git log for relevant files)
-
-### 9. Commands Section (CLAUDE.md)
-
-- Read `commands/*.sh` and extract exported `cmd_*` function names
-- Compare against CLAUDE.md Commands section
-- Flag commands that exist but aren't documented, or documented but don't exist
 
 ## Output Format
 
@@ -114,18 +149,20 @@ Report findings grouped by document:
 
 ```
 ## CLAUDE.md
-- [Project Structure] Missing: `images/arch-config.sh` (exists in repo but not listed)
-- [Build System] Stale target: `make image-foo` (not in Makefile)
+- [Project Structure] Missing: `path/to/file` (exists in repo but not listed)
+- [Build System] Stale target: `make target-name` (not in Makefile)
+- [Commands] Mismatch: bin/mps usage lists `foo` but CLAUDE.md does not
 
 ## DECISIONS.md
-- [Image Layer Contents] base layer: `screen` package in layers/base.yaml but not listed
-- [Secure Dependency Installation] Missing: yq v4.45.1 in builder image
+- [Image Layer Contents] base layer: `tool-name` in layers/base.yaml but not listed
+- [Image Flavors] build.sh maps `flavor-x` to different layers than DECISIONS.md table
+- [Internal Consistency] Section X says tool is in layer A, but Image Layer Contents says layer B
 
 ## STATUS.md
 - (no issues)
 
 ## PLAN.md
-- [Phase 4] Says "10G disk" but DECISIONS.md says 15G
+- [Phase N] Description conflicts with DECISIONS.md (detail)
 ```
 
 If no issues are found for a document, report "(no issues)".

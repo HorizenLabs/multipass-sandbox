@@ -77,10 +77,23 @@ make image-base-arm64 # Build base VM image (arm64 only)
 make image-protocol-dev           # Build protocol-dev image (base + C/C++/Go/Rust)
 make image-smart-contract-dev     # Build smart-contract-dev image (+ Solana/Foundry/Hardhat)
 make image-smart-contract-audit   # Build smart-contract-audit image (+ Slither/Echidna/Medusa)
+make import-base              # Import host-arch base image into mps cache
 make publish-base VERSION=1.0.0   # Publish to Backblaze B2
 ```
 
 The Makefile detects host uid:gid and the entrypoint uses setpriv to step down from root, so build artifacts match host ownership.
+
+## Workflow
+
+- After modifying any linted file, run `make lint` before committing. Linted files:
+  - **Bash**: `bin/mps`, `lib/*.sh`, `commands/*.sh`, `images/**/*.sh`, `install.sh`
+  - **PowerShell**: `*.ps1`
+  - **Dockerfile**: `Dockerfile.builder`, `Dockerfile.linter`
+  - **Makefile**: `Makefile`
+  - **YAML**: `templates/**/*.yaml`, `images/layers/*.yaml`
+  - **HCL**: `images/**/*.pkr.hcl`
+- Linting requires Docker. The linter image is built automatically if missing (`make lint` depends on the stamp file).
+- Fix all lint errors before committing — do not bypass with `--no-verify` or inline disables unless there is a documented reason.
 
 ## Planning & Status
 

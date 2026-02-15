@@ -89,7 +89,7 @@ Additional:
 
 ## Cloud-init Dependency Verification
 
-**Decision**: GitHub release tools in base image cloud-init are SHA-256 verified where publishers provide checksums.
+**Decision**: GitHub release tools in image cloud-init layers are SHA-256 verified where publishers provide checksums.
 
 | Tool | Verification |
 |---|---|
@@ -198,7 +198,7 @@ Additional:
 
 ## Solidity Security Tools
 
-**Decision**: Comprehensive Solidity auditing toolkit in the `smart-contract-audit` layer.
+**Decision**: Comprehensive Solidity auditing toolkit in the `smart-contract-audit` layer. Solhint (linter) is in the `smart-contract-dev` layer since it's a dev workflow tool.
 
 | Tool | Category | Install Method |
 |---|---|---|
@@ -206,7 +206,6 @@ Additional:
 | solc-select | Compiler management | `uv tool install solc-select` |
 | Mythril | Symbolic execution | `uv tool install mythril` |
 | Halmos | Symbolic testing (Foundry) | `uv tool install halmos` |
-| Solhint | Linter | `bun install -g solhint` |
 | Aderyn | Static analysis | Cyfrin installer script |
 | Echidna | Fuzzer | Binary from GitHub releases |
 | Medusa | Fuzzer | `go install` |
