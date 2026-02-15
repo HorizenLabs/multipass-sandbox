@@ -46,7 +46,7 @@ Internal CLI tool for spinning up isolated VM-based development environments usi
 - `mps shell` / `mps exec` — Interactive shell / run command (auto-workdir)
 - `mps list` / `mps status` — List all / detailed info
 - `mps ssh-config` — Generate SSH config for VS Code (also injects SSH keys)
-- `mps image [list|pull|import]` — Manage pre-built QCOW2 images
+- `mps image [list|pull|import|remove]` — Manage pre-built QCOW2 images
 - `mps port [forward|list]` — SSH port forwarding
 - `mps transfer` — File copy between host and guest (`:` prefix = guest path)
 

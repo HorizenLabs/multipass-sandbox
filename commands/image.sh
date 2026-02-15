@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC2154  # color vars defined in lib/common.sh
-# commands/image.sh — mps image [list|pull|import]
+# commands/image.sh — mps image [list|pull|import|remove]
 
 _image_usage() {
     cat <<EOF
@@ -10,6 +10,7 @@ ${_color_bold}Subcommands:${_color_reset}
     list                     List locally cached images
     pull <name>[:<version>]  Download an image (default: latest version)
     import <file> [options]  Import a local QCOW2 image into cache
+    remove <name>[:<version>] [options]  Remove cached images
 
 ${_color_bold}Options:${_color_reset}
     --remote           (list) Also show remote images from registry
@@ -20,6 +21,11 @@ ${_color_bold}Import Options:${_color_reset}
     --tag <version>    Version tag (default: local)
     --arch <arch>      Architecture (default: auto-detect from filename or host)
 
+${_color_bold}Remove Options:${_color_reset}
+    --arch <arch>      Remove only the specified architecture (amd64 or arm64)
+    --all              Remove all cached images
+    --force, -f        Skip confirmation prompt
+
 ${_color_bold}Examples:${_color_reset}
     mps image list
     mps image list --remote
@@ -27,6 +33,10 @@ ${_color_bold}Examples:${_color_reset}
     mps image pull base:1.0.0
     mps image import images/artifacts/mps-base-amd64.qcow2.img
     mps image import myimage.qcow2 --name base --tag 1.0.0
+    mps image remove base:local
+    mps image remove base
+    mps image remove base:1.0.0 --arch amd64
+    mps image remove --all
 EOF
 }
 
@@ -47,6 +57,7 @@ cmd_image() {
         list)   _image_list "${args[@]}" ;;
         pull)   _image_pull "${args[@]}" ;;
         import) _image_import "${args[@]}" ;;
+        remove) _image_remove "${args[@]}" ;;
         --help|-h) _image_usage ;;
         *)
             mps_log_error "Unknown image subcommand: '$subcmd'"
@@ -211,7 +222,7 @@ _image_import() {
 
     if [[ -f "$sha256_file" ]]; then
         local expected_sha256
-        expected_sha256="$(cut -d' ' -f1 < "$sha256_file")"
+        expected_sha256="$(awk '{print $1}' "$sha256_file")"
         if [[ "$actual_sha256" != "$expected_sha256" ]]; then
             mps_die "Checksum mismatch for '${file}'. Expected: ${expected_sha256}, Got: ${actual_sha256}"
         fi
@@ -292,4 +303,168 @@ _image_pull() {
 
     # Delegate to shared pull function (errors already logged on failure)
     _mps_pull_image "$image_name" "$image_version" || exit 1
+}
+
+# ---------- image remove ----------
+
+_image_remove_usage() {
+    cat <<EOF
+${_color_bold}Usage:${_color_reset} mps image remove <name>[:<version>] [options]
+       mps image remove --all [--force]
+
+${_color_bold}Description:${_color_reset}
+    Remove cached images from ~/.mps/cache/images/.
+
+${_color_bold}Options:${_color_reset}
+    --arch <arch>      Remove only the specified architecture (amd64 or arm64)
+    --all              Remove all cached images
+    --force, -f        Skip confirmation prompt
+    --help, -h         Show this help message
+
+${_color_bold}Examples:${_color_reset}
+    mps image remove base:local          Remove base:local (all architectures)
+    mps image remove base                Remove all versions of 'base'
+    mps image remove base:1.0.0 --arch amd64   Remove only the amd64 image
+    mps image remove --all               Remove entire image cache
+    mps image remove base --force        Skip confirmation
+EOF
+}
+
+_image_remove() {
+    local image_spec=""
+    local arch=""
+    local remove_all=false
+    local force=false
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --arch)  arch="${2:?--arch requires a value}"; shift 2 ;;
+            --all)   remove_all=true; shift ;;
+            --force|-f) force=true; shift ;;
+            --help|-h) _image_remove_usage; exit 0 ;;
+            -*)      mps_log_error "Unknown option: $1"; exit 1 ;;
+            *)       image_spec="$1"; shift ;;
+        esac
+    done
+
+    # Validate mutually exclusive options
+    if [[ "$remove_all" == "true" && -n "$image_spec" ]]; then
+        mps_die "--all cannot be used with an image specifier"
+    fi
+
+    if [[ "$remove_all" == "true" && -n "$arch" ]]; then
+        mps_die "--arch cannot be used with --all"
+    fi
+
+    if [[ "$remove_all" == "false" && -z "$image_spec" ]]; then
+        mps_die "Usage: mps image remove <name>[:<version>] or mps image remove --all"
+    fi
+
+    # Validate arch if specified
+    if [[ -n "$arch" && "$arch" != "amd64" && "$arch" != "arm64" ]]; then
+        mps_die "Invalid architecture: '${arch}'. Must be 'amd64' or 'arm64'"
+    fi
+
+    local cache_dir
+    cache_dir="$(mps_cache_dir)/images"
+
+    # Build list of targets to remove
+    local -a targets=()
+
+    if [[ "$remove_all" == "true" ]]; then
+        if [[ ! -d "$cache_dir" ]] || [[ -z "$(ls -A "$cache_dir" 2>/dev/null)" ]]; then
+            mps_log_info "No cached images to remove."
+            return 0
+        fi
+        targets=("$cache_dir")
+    else
+        # Parse name:version
+        local image_name="${image_spec%%:*}"
+        local image_version="${image_spec#*:}"
+        if [[ "$image_version" == "$image_name" ]]; then
+            image_version=""
+        fi
+
+        if [[ -z "$image_version" ]]; then
+            # Remove all versions of this image
+            local image_dir="${cache_dir}/${image_name}"
+            if [[ ! -d "$image_dir" ]]; then
+                mps_die "Image not found: '${image_name}'"
+            fi
+            targets=("$image_dir")
+        elif [[ -n "$arch" ]]; then
+            # Remove specific arch files only
+            local tag_dir="${cache_dir}/${image_name}/${image_version}"
+            if [[ ! -d "$tag_dir" ]]; then
+                mps_die "Image not found: '${image_name}:${image_version}'"
+            fi
+            local img_file="${tag_dir}/${arch}.img"
+            local meta_file="${tag_dir}/${arch}.meta"
+            if [[ ! -f "$img_file" ]]; then
+                mps_die "Architecture '${arch}' not found for '${image_name}:${image_version}'"
+            fi
+            [[ -f "$img_file" ]] && targets+=("$img_file")
+            [[ -f "$meta_file" ]] && targets+=("$meta_file")
+        else
+            # Remove specific version directory
+            local tag_dir="${cache_dir}/${image_name}/${image_version}"
+            if [[ ! -d "$tag_dir" ]]; then
+                mps_die "Image not found: '${image_name}:${image_version}'"
+            fi
+            targets=("$tag_dir")
+        fi
+    fi
+
+    # Preview what will be removed
+    local total_size
+    total_size="$(du -shc "${targets[@]}" 2>/dev/null | tail -1 | cut -f1)"
+
+    mps_log_info "The following will be removed:"
+    for t in "${targets[@]}"; do
+        local entry_size
+        entry_size="$(du -sh "$t" 2>/dev/null | cut -f1)"
+        echo "  ${t}  (${entry_size})"
+    done
+    echo ""
+    mps_log_info "Total: ${total_size}"
+
+    # Confirm unless --force
+    if [[ "$force" != "true" ]]; then
+        if ! mps_confirm "Proceed with removal?"; then
+            mps_log_info "Aborted."
+            return 0
+        fi
+    fi
+
+    # Delete targets
+    local removed=0
+    for t in "${targets[@]}"; do
+        if [[ -d "$t" ]]; then
+            rm -rf "$t"
+        else
+            rm -f "$t"
+        fi
+        removed=$((removed + 1))
+    done
+
+    # Clean up empty parent directories after arch-specific removal
+    if [[ -n "$arch" && -n "${image_version:-}" ]]; then
+        local tag_dir="${cache_dir}/${image_name}/${image_version}"
+        local image_dir="${cache_dir}/${image_name}"
+        # Remove tag dir if empty
+        if [[ -d "$tag_dir" ]] && [[ -z "$(ls -A "$tag_dir" 2>/dev/null)" ]]; then
+            rmdir "$tag_dir"
+        fi
+        # Remove image dir if empty
+        if [[ -d "$image_dir" ]] && [[ -z "$(ls -A "$image_dir" 2>/dev/null)" ]]; then
+            rmdir "$image_dir"
+        fi
+    fi
+
+    # Re-create cache dir if --all wiped it
+    if [[ "$remove_all" == "true" ]]; then
+        mkdir -p "$cache_dir"
+    fi
+
+    mps_log_info "Removed ${removed} item(s), freed ${total_size}."
 }
