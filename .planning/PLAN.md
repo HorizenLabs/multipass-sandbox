@@ -39,6 +39,8 @@ A blockchain software development company needs an internal tool to spin up isol
 - **Image metadata**: `x-mps:` blocks in layer YAMLs → `manifest.json` → `.meta` sidecar on pull/import → runtime validation warnings in `mps create`.
 - Build system logic refinements
 - mps command changes as needed
+- **Installer refinement**: Auto-install dependencies (multipass, jq) with OS detection and user prompts. Default install dir changed to `~/.local/bin` with PATH detection.
+- **Uninstaller**: `uninstall.sh` reverses install.sh and cleans up VMs, SSH configs, instance metadata, cached images, and user config.
 
 ## Phase 6 — Linting CI
 

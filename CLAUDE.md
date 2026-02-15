@@ -35,6 +35,7 @@ Internal CLI tool for spinning up isolated VM-based development environments usi
 - `Dockerfile.linter` — Linter/test image (shellcheck, hadolint, BATS, PSScriptAnalyzer, yamllint, etc.)
 - `Makefile` — All targets run inside Docker containers via `docker run`
 - `install.sh` / `install.ps1` — Installer scripts
+- `uninstall.sh` — Uninstaller (removes symlink, VMs, caches, configs)
 - `checkmake.ini`, `.yamllint` — Linter configuration files
 - `vendor/hl-claude-marketplace` — Git submodule: private Claude Code plugin marketplace (relative URL)
 - `.planning/` — Implementation plan, architecture decisions, status tracking
@@ -84,6 +85,8 @@ make image-smart-contract-dev     # Build smart-contract-dev image (+ Solana/Fou
 make image-smart-contract-audit   # Build smart-contract-audit image (+ Slither/Echidna/Medusa)
 make import-base              # Import host-arch base image into mps cache
 make publish-base VERSION=1.0.0   # Publish to Backblaze B2
+make install          # Install mps (symlink to PATH, runs on host)
+make uninstall        # Uninstall mps (remove symlink, cleanup artifacts, runs on host)
 ```
 
 Non-base flavors chain from their parent's QCOW2 image, applying only the delta cloud-init layer (`--base-image` flag in `build.sh`). The Makefile wires this automatically via stamp dependencies — `make image-smart-contract-audit` builds the full chain (base → protocol-dev → smart-contract-dev → smart-contract-audit). From-scratch builds (all layers merged) are still supported by running `build.sh` without `--base-image`.
@@ -93,7 +96,7 @@ The Makefile detects host uid:gid and the entrypoint uses setpriv to step down f
 ## Workflow
 
 - After modifying any linted file, run `make lint` before committing. Linted files:
-  - **Bash**: `bin/mps`, `lib/*.sh`, `commands/*.sh`, `images/**/*.sh`, `install.sh`
+  - **Bash**: `bin/mps`, `lib/*.sh`, `commands/*.sh`, `images/**/*.sh`, `install.sh`, `uninstall.sh`
   - **PowerShell**: `*.ps1`
   - **Dockerfile**: `Dockerfile.builder`, `Dockerfile.linter`
   - **Makefile**: `Makefile`

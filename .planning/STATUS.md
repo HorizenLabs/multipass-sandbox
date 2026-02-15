@@ -26,6 +26,8 @@
 - [x] Runtime validation warnings in mps create (check image requirements vs resolved resources)
 - [x] Build system logic refinements
 - [ ] mps command changes as needed
+- [x] Installer refinement (auto-install deps, `~/.local/bin` default, PATH detection)
+- [x] Uninstaller (`uninstall.sh` — symlink, VMs, SSH configs, cache, config cleanup)
 
 ## Phase 6 — Linting CI: NOT STARTED
 

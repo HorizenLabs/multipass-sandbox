@@ -134,7 +134,7 @@ Additional:
 
 | File type | Linter | Files |
 |---|---|---|
-| Bash | shellcheck | `bin/mps`, `lib/*.sh`, `commands/*.sh`, `images/**/*.sh`, `install.sh` |
+| Bash | shellcheck | `bin/mps`, `lib/*.sh`, `commands/*.sh`, `images/**/*.sh`, `install.sh`, `uninstall.sh` |
 | PowerShell | py-psscriptanalyzer | `*.ps1` |
 | Dockerfile | hadolint | `Dockerfile.builder`, `Dockerfile.linter` |
 | Makefile | checkmake | `Makefile` |
@@ -328,4 +328,4 @@ For yq merge (`*+`): scalar keys in `x-mps` are overwritten by later layers, so 
 
 ## Windows Support
 
-**Decision**: PowerShell parity planned (Phase 7). `ConvertFrom-Json` instead of `jq`. Multipass uses Hyper-V (Pro/Enterprise) or VirtualBox (Home).
+**Decision**: PowerShell parity planned (Phase 9). `ConvertFrom-Json` instead of `jq`. Multipass uses Hyper-V (Pro/Enterprise) or VirtualBox (Home).

@@ -37,7 +37,7 @@ docker run --rm \
 endef
 
 # ---------- File sets ----------
-BASH_SCRIPTS := $(shell find bin/ lib/ commands/ images/ -name '*.sh' -o -name 'mps' 2>/dev/null | grep -v '.ps1') install.sh
+BASH_SCRIPTS := $(shell find bin/ lib/ commands/ images/ -name '*.sh' -o -name 'mps' 2>/dev/null | grep -v '.ps1') install.sh uninstall.sh
 PS_SCRIPTS   := $(shell find . -name '*.ps1' 2>/dev/null)
 YAML_FILES   := $(shell find templates/ images/layers/ -name '*.yaml' 2>/dev/null)
 HCL_FILES    := $(shell find images/ -name '*.pkr.hcl' 2>/dev/null)
@@ -75,7 +75,7 @@ IMPORT_PHONY      := $(foreach f,$(FLAVORS),import-$(f))
 PUBLISH_PHONY     := $(foreach f,$(FLAVORS),publish-$(f))
 CLEAN_IMAGE_PHONY := $(foreach f,$(FLAVORS),clean-image-$(f) $(foreach a,$(ARCHS),clean-image-$(f)-$(a)))
 
-.PHONY: all help build-docker-builder build-docker-linter install test clean \
+.PHONY: all help build-docker-builder build-docker-linter install uninstall test clean \
 	lint lint-bash lint-powershell lint-dockerfile lint-makefile lint-yaml lint-hcl \
 	clean-docker-builder clean-docker-linter clean-images \
 	$(IMAGE_PHONY) $(IMPORT_PHONY) $(PUBLISH_PHONY) $(CLEAN_IMAGE_PHONY)
@@ -117,6 +117,10 @@ $(LINTER_STAMP): $(LINTER_DEPS)
 install: ## Install mps (symlink to PATH, runs on host)
 	@chmod +x bin/mps install.sh
 	@./install.sh
+
+uninstall: ## Uninstall mps (remove symlink, cleanup artifacts, runs on host)
+	@chmod +x uninstall.sh
+	@./uninstall.sh
 
 # ---------- Test ----------
 test: $(LINTER_STAMP) ## Run BATS tests inside linter container

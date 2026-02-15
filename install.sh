@@ -4,38 +4,113 @@ set -euo pipefail
 # Multi Pass Sandbox (mps) — Installer
 # Symlinks bin/mps to a location on PATH and creates ~/.mps/ directory structure.
 
-_color_reset="\033[0m"
-_color_red="\033[0;31m"
-_color_green="\033[0;32m"
-_color_yellow="\033[0;33m"
-_color_bold="\033[1m"
+_color_reset=$'\033[0m'
+_color_red=$'\033[0;31m'
+_color_green=$'\033[0;32m'
+_color_yellow=$'\033[0;33m'
+_color_bold=$'\033[1m'
 
 info()  { printf "${_color_green}[mps installer]${_color_reset} %s\n" "$*"; }
 warn()  { printf "${_color_yellow}[mps installer]${_color_reset} %s\n" "$*"; }
 error() { printf "${_color_red}[mps installer]${_color_reset} %s\n" "$*"; }
 
 MPS_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-INSTALL_DIR="${MPS_INSTALL_DIR:-/usr/local/bin}"
+
+# ---------- Helper Functions ----------
+
+detect_os() {
+    case "$(uname -s)" in
+        Linux*)  echo "linux" ;;
+        Darwin*) echo "macos" ;;
+        *)       echo "unknown" ;;
+    esac
+}
+
+confirm() {
+    local prompt="${1:-Are you sure?}"
+    local response
+    printf "%s [y/N] " "$prompt" >&2
+    read -r response
+    [[ "$response" =~ ^[Yy]([Ee][Ss])?$ ]]
+}
+
+OS="$(detect_os)"
+
+# Default install directory: ~/.local/bin (no sudo required)
+INSTALL_DIR="${MPS_INSTALL_DIR:-${HOME}/.local/bin}"
 
 # ---------- Preflight Checks ----------
 
-check_dependency() {
+install_dependency() {
     local cmd="$1"
-    local install_hint="$2"
     if command -v "$cmd" &>/dev/null; then
-        info "  ✓ $cmd found: $(command -v "$cmd")"
+        info "  Found $cmd: $(command -v "$cmd")"
         return 0
-    else
-        warn "  ✗ $cmd not found. Install with: $install_hint"
-        return 1
     fi
+
+    warn "  $cmd not found."
+
+    case "${cmd}:${OS}" in
+        multipass:linux)
+            if command -v snap &>/dev/null; then
+                if confirm "  Install $cmd via snap?"; then
+                    sudo snap install multipass
+                    return $?
+                fi
+            else
+                warn "  snap not found. Install multipass manually:"
+                warn "    https://github.com/canonical/multipass/releases"
+            fi
+            return 1
+            ;;
+        multipass:macos)
+            if command -v brew &>/dev/null; then
+                if confirm "  Install $cmd via Homebrew?"; then
+                    brew install --cask multipass
+                    return $?
+                fi
+            else
+                warn "  Homebrew not found. Install multipass manually:"
+                warn "    https://github.com/canonical/multipass/releases"
+            fi
+            return 1
+            ;;
+        jq:linux)
+            if command -v apt-get &>/dev/null; then
+                if confirm "  Install $cmd via apt?"; then
+                    sudo apt-get install -y jq
+                    return $?
+                fi
+            else
+                warn "  apt-get not found. Install jq manually:"
+                warn "    https://github.com/jqlang/jq/releases"
+            fi
+            return 1
+            ;;
+        jq:macos)
+            if command -v brew &>/dev/null; then
+                if confirm "  Install $cmd via Homebrew?"; then
+                    brew install jq
+                    return $?
+                fi
+            else
+                warn "  Homebrew not found. Install jq manually:"
+                warn "    https://github.com/jqlang/jq/releases"
+            fi
+            return 1
+            ;;
+        *)
+            warn "  Cannot auto-install $cmd on this platform."
+            return 1
+            ;;
+    esac
 }
 
 info "Checking dependencies..."
 
 missing=0
-check_dependency "multipass" "https://multipass.run/ (snap install multipass / brew install multipass)" || missing=1
-check_dependency "jq" "sudo apt install jq / brew install jq" || missing=1
+install_dependency "multipass" || missing=1
+install_dependency "jq" || missing=1
 
 if [[ "$missing" -eq 1 ]]; then
     warn ""
@@ -51,6 +126,9 @@ mkdir -p "${HOME}/.mps/cache/images"
 mkdir -p "${HOME}/.ssh/config.d"
 
 # ---------- Install ----------
+
+# Ensure install directory exists
+mkdir -p "${INSTALL_DIR}"
 
 info "Installing mps to ${INSTALL_DIR}/mps..."
 
@@ -76,6 +154,32 @@ else
     sudo ln -sf "${MPS_ROOT}/bin/mps" "${INSTALL_DIR}/mps"
     info "Symlinked (sudo): ${INSTALL_DIR}/mps → ${MPS_ROOT}/bin/mps"
 fi
+
+# ---------- PATH Check ----------
+
+# Check if INSTALL_DIR is on PATH
+case ":${PATH}:" in
+    *":${INSTALL_DIR}:"*)
+        # Already on PATH, nothing to do
+        ;;
+    *)
+        warn ""
+        warn "${INSTALL_DIR} is not in your PATH."
+        shell_name="$(basename "${SHELL:-bash}")"
+        case "$shell_name" in
+            zsh)  rc_file="${HOME}/.zshrc" ;;
+            *)    rc_file="${HOME}/.bashrc" ;;
+        esac
+        path_line="export PATH=\"\$HOME/.local/bin:\$PATH\""
+        if confirm "Add it to ~/${rc_file##*/}?"; then
+            printf '\n# Added by mps installer\n%s\n' "$path_line" >> "$rc_file"
+            info "Added to ${rc_file}. Restart your shell or run: source ${rc_file}"
+        else
+            warn "Add this to your shell profile manually:"
+            warn "  $path_line"
+        fi
+        ;;
+esac
 
 # ---------- Verify ----------
 
