@@ -10,7 +10,7 @@
 #           -e B2_APPLICATION_KEY_ID -e B2_APPLICATION_KEY \
 #           mps-publisher bash images/publish.sh ...
 
-FROM ubuntu:24.04
+FROM ubuntu:25.10
 
 ARG TARGETARCH
 

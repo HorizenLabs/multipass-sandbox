@@ -105,7 +105,7 @@ Additional:
 | hadolint v2.14.0 | linter | SHA256 from `.sha256` sidecar |
 | checkmake v0.3.2 | linter | SHA256 from `checksums.txt` |
 | BATS v1.13.0 | linter | None (no hashes published) |
-| PowerShell | linter | GPG-signed Microsoft apt repo |
+| PowerShell v7.5.4 | linter | SHA256 from `hashes.sha256` sidecar (GitHub tar.gz) |
 | yamllint, py-psscriptanalyzer | linter | None (pip) |
 | yq v4.45.1 | builder, publisher | SHA256 from rhash `checksums` file (field $19) |
 
