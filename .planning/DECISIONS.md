@@ -9,13 +9,13 @@ Decisions made during planning sessions, preserved to avoid re-asking.
 **base layer** (all flavors):
 - Docker: Official apt repo (`docker-ce`, `docker-ce-cli`, `containerd.io`, `docker-buildx-plugin`, `docker-compose-plugin`). V2 plugin only.
 - Node.js: Latest LTS via `nvm`, plus `pnpm`, `yarn`, `bun`
-- Python: System Python 3 + `pip`, `venv`, `uv`
+- Python: System Python 3 + `venv`, `uv`
 - CLI dev tools: `git`, `curl`, `wget`, `jq`, `yq`, `tmux`, `htop`, `tree`, `ripgrep`, `fd-find`, `vim`, `neovim`, `nano`, `shellcheck`, `hadolint`, `pv`, `p7zip-full`, `screen`
 - AI coding assistants: Claude Code, Crush, OpenCode, Gemini CLI, Codex CLI
 - Shell: Bash default, zsh installed but not default. `just` via apt.
 
 **protocol-dev layer** (protocol-dev and above):
-- Build toolchain: `build-essential`, `pkg-config`, `autoconf`, `automake`, `libtool`, `clang`, `llvm`, `libclang-dev`, `lld`, `cmake`
+- Build toolchain: `build-essential`, `python3-pip`, `pkg-config`, `autoconf`, `automake`, `libtool`, `clang`, `llvm`, `libclang-dev`, `lld`, `cmake`
 - SSL/crypto/dev libs: `libssl-dev`, `libffi-dev`, `zlib1g-dev`, `libbz2-dev`, `libreadline-dev`, `libsqlite3-dev`, `libncurses-dev`, `libxml2-dev`, `libxmlsec1-dev`, `liblzma-dev`, `libzstd-dev`, `libsquashfs-dev`, `libudev-dev`, `protobuf-compiler`, `libprotobuf-dev`
 - Go: Latest stable from golang.org/dl (direct install to `/usr/local/go`)
 - Rust: Via `rustup`, per-user (`~ubuntu/.cargo`), plus `cargo-audit`
@@ -89,7 +89,7 @@ Additional:
 
 ## Dockerized Build System
 
-**Decision**: All build, test, lint, and publish commands run inside Docker containers. Two images: builder (heavy, QEMU) and linter (lightweight).
+**Decision**: All build, test, lint, and publish commands run inside Docker containers. Three images: builder (heavy, QEMU), linter (lightweight), and publisher (b2, jq, yq — credential-isolated from builder).
 
 **Why setpriv over gosu**: gosu re-execs as the target user but does not apply supplementary groups added via `usermod`. When the builder user needed KVM group membership for QEMU acceleration, gosu silently dropped it, causing "permission denied" on `/dev/kvm`. `setpriv --groups` explicitly passes supplementary group IDs. setpriv is also a util-linux builtin (no extra install).
 
@@ -99,15 +99,15 @@ Additional:
 
 | Tool | Image | Verification |
 |---|---|---|
-| Packer | both | GPG-signed HashiCorp apt repo |
-| b2 CLI v4.5.1 | builder | SHA256 from `_hashes.txt` sidecar |
+| Packer | builder, linter | GPG-signed HashiCorp apt repo |
+| b2 CLI v4.5.1 | publisher | SHA256 from `_hashes.txt` sidecar |
 | shellcheck v0.11.0 | linter | None (no hashes published) |
 | hadolint v2.14.0 | linter | SHA256 from `.sha256` sidecar |
 | checkmake v0.3.2 | linter | SHA256 from `checksums.txt` |
 | BATS v1.13.0 | linter | None (no hashes published) |
 | PowerShell | linter | GPG-signed Microsoft apt repo |
 | yamllint, py-psscriptanalyzer | linter | None (pip) |
-| yq v4.45.1 | builder | SHA256 from rhash `checksums` file (field $19) |
+| yq v4.45.1 | builder, publisher | SHA256 from rhash `checksums` file (field $19) |
 
 **b2 standalone binary**: Replaces pip-based `b2[full]`. Eliminates python3/pip/venv from builder image.
 
@@ -162,7 +162,7 @@ Additional:
 |---|---|---|
 | Bash | shellcheck | `bin/mps`, `lib/*.sh`, `commands/*.sh`, `images/**/*.sh`, `install.sh`, `uninstall.sh` |
 | PowerShell | py-psscriptanalyzer | `*.ps1` |
-| Dockerfile | hadolint | `Dockerfile.builder`, `Dockerfile.linter` |
+| Dockerfile | hadolint | `Dockerfile.builder`, `Dockerfile.linter`, `Dockerfile.publisher` |
 | Makefile | checkmake | `Makefile` |
 | YAML | yamllint | `templates/**/*.yaml`, `images/layers/*.yaml` |
 | HCL | packer fmt -check | `images/**/*.pkr.hcl` |
@@ -171,12 +171,13 @@ Additional:
 
 ## Build System Stamp Files
 
-**Decision**: `.stamp-*` files track Docker image build state in Make.
+**Decision**: `.stamps/` directory tracks Docker image build state in Make.
 
-- `.stamp-builder` depends on `Dockerfile.builder` + `docker/entrypoint.sh`
-- `.stamp-linter` depends on `Dockerfile.linter` + `docker/entrypoint.sh`
-- `.stamp-image-<flavor>-{amd64,arm64}` — per-flavor per-arch, depend on builder stamp + common image deps (packer.pkr.hcl, packer-user-data.pkrtpl.hcl, build.sh, arch-config.sh, scripts/post-provision.sh) + per-flavor layer file + parent flavor stamp (non-base only, for chained builds)
-- `make clean` removes `.stamp-*`; `.stamp-*` is in `.gitignore`
+- `.stamps/builder` depends on `Dockerfile.builder` + `docker/entrypoint.sh`
+- `.stamps/linter` depends on `Dockerfile.linter` + `docker/entrypoint.sh`
+- `.stamps/publisher` depends on `Dockerfile.publisher` + `docker/entrypoint.sh`
+- `.stamps/image-<flavor>-{amd64,arm64}` — per-flavor per-arch, depend on builder stamp + common image deps (packer.pkr.hcl, packer-user-data.pkrtpl.hcl, build.sh, arch-config.sh, scripts/post-provision.sh) + per-flavor layer file + parent flavor stamp (non-base only, for chained builds)
+- `make clean` removes `.stamps/`; `.stamps/` is in `.gitignore`
 
 ## File Transfer
 
@@ -344,10 +345,10 @@ For yq merge (`*+`): scalar keys in `x-mps` are overwritten by later layers, so 
 **Make dependency graph**: Same-arch builds serialize via stamp deps; cross-arch builds run in parallel. `make image-smart-contract-audit` builds the full chain automatically:
 
 ```
-.stamp-image-base-<arch>
-    └── .stamp-image-protocol-dev-<arch>
-            └── .stamp-image-smart-contract-dev-<arch>
-                    └── .stamp-image-smart-contract-audit-<arch>
+.stamps/image-base-<arch>
+    └── .stamps/image-protocol-dev-<arch>
+            └── .stamps/image-smart-contract-dev-<arch>
+                    └── .stamps/image-smart-contract-audit-<arch>
 ```
 
 **SHA256 verification**: Chained builds use `file:<parent>.sha256` sidecar files (generated by Packer's QEMU builder) for Packer's checksum verification. `publish.sh` reads the same sidecar files rather than recomputing checksums.
@@ -369,17 +370,17 @@ For yq merge (`*+`): scalar keys in `x-mps` are overwritten by later layers, so 
 
 ## Publishing Architecture
 
-**Decision**: Independent per-arch publishing with remote-first manifest. No fan-in step needed in CI.
+**Decision**: Fan-in publishing pattern with credential-isolated publisher container and remote-first manifest.
 
-**Per-arch independence**: Each CI runner (amd64, arm64) builds and publishes independently. Image files upload to different B2 paths (`<flavor>/<version>/amd64.img` vs `arm64.img`), so there's no upload conflict. Each runner downloads the remote manifest, merges in its arch entry, and re-uploads.
+**CI flow**: Per-arch runners call `publish.sh --upload-only` to upload images + `.sha256` sidecars to B2 (no manifest touch). A fan-in job then runs `update-manifest.sh` which downloads sidecars from B2 and performs a single manifest read-modify-write. Zero race window.
 
-**Remote-first manifest**: `publish.sh` downloads the live manifest from B2 before updating (source of truth for multi-arch state). Falls back to the local skeleton `images/manifest.json` for the very first publish. The local manifest is never modified by publish — it serves as the initial template and as a metadata source for `mps image import`.
+**Local flow**: `publish.sh` (no flag) does upload + manifest update in one shot.
 
-**Manifest schema additions**: Per-arch entries include `build_date` (ISO 8601 UTC) alongside `url` and `sha256`, for traceability of weekly rebuilds.
+**Remote-first manifest**: `publish.sh` and `update-manifest.sh` download the live manifest from B2 before updating (source of truth for multi-arch state). Falls back to the local skeleton `images/manifest.json` for the very first publish. The local manifest is never modified by publish — it serves as the initial template and as a metadata source for `mps image import`.
 
-**B2 storage cleanup**: Old file versions of image files are deleted after each upload (B2 retains all versions by default, consuming storage). Manifest file versions are intentionally kept — they're tiny and provide an audit trail / reconciliation safety net for the rare case of a CI race condition. Unfinished large file uploads are canceled after each publish to reclaim storage from failed/interrupted uploads.
+**Manifest schema additions**: Per-arch entries include `build_date` (ISO 8601 UTC, inferred from B2 upload timestamp) alongside `url` and `sha256`, for traceability of weekly rebuilds.
 
-**Why no fan-in**: Transferring multi-GB QCOW2 files through GH Actions artifact store for a final publish step would be slow and expensive. The manifest race window is negligible for weekly builds (runners finish minutes apart), and any missed entry self-heals on the next build.
+**B2 storage cleanup**: Old file versions of image files are deleted after each upload (B2 retains all versions by default, consuming storage). Manifest file versions are intentionally kept — they're tiny and provide an audit trail. Unfinished large file uploads are canceled after each publish to reclaim storage from failed/interrupted uploads.
 
 ## Git Tagging Strategy
 

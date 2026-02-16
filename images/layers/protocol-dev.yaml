@@ -13,6 +13,7 @@ package_update: true
 
 packages:
   - build-essential
+  - python3-pip
   - pkg-config
   - autoconf
   - automake

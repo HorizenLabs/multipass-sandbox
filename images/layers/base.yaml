@@ -9,6 +9,11 @@ x-mps:
   min_memory: 1G
   min_cpus: 1
 
+write_files:
+  - path: /etc/apt/apt.conf.d/90-always-phased-updates
+    content: |
+      APT::Get::Always-Include-Phased-Updates "true";
+
 package_update: true
 package_upgrade: true
 
@@ -40,10 +45,7 @@ packages:
   - screen
   # Python
   - python3
-  - python3-pip
   - python3-venv
-  # HWE edge kernel (newer than default)
-  - linux-virtual-hwe-24.04-edge
 
 groups:
   - docker
@@ -52,6 +54,9 @@ users:
   - default
 
 runcmd:
+  # ---------- HWE edge kernel (with recommends for firmware/headers) ----------
+  - apt-get install -y --install-recommends linux-virtual-hwe-24.04-edge
+
   # ---------- Docker (official repo) ----------
   - |
     install -m 0755 -d /etc/apt/keyrings
