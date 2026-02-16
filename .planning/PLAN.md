@@ -37,6 +37,7 @@ A blockchain software development company needs an internal tool to spin up isol
 - Publishing scripts, metadata handling and versioning
 - First publish to B2
 - End-to-end `mps image pull` flow (code complete, needs E2E testing against live infra)
+- Parallel image downloads via aria2c (optional, curl fallback)
 
 ## Phase 7 — GH Actions CI/CD Pipeline
 

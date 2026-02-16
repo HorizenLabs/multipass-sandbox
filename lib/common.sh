@@ -21,6 +21,26 @@ _mps_md5() {
     fi
 }
 
+# ---------- Download Helper ----------
+# Uses aria2c for multi-connection downloads when available, falls back to curl
+
+_mps_download_file() {
+    local url="$1"
+    local dest="$2"
+
+    if command -v aria2c &>/dev/null; then
+        aria2c -x 8 -s 8 \
+            --file-allocation=none \
+            --console-log-level=warn \
+            --summary-interval=0 \
+            -d "$(dirname "$dest")" \
+            -o "$(basename "$dest")" \
+            "$url"
+    else
+        curl --progress-bar -fSL "$url" -o "$dest"
+    fi
+}
+
 # ---------- Colors & Logging ----------
 
 _color_reset=$'\033[0m'
@@ -487,7 +507,7 @@ _mps_pull_image() {
     local dest_file="${cache_dir}/${arch}.img"
 
     mps_log_info "Downloading ${image_name}:${image_version} (${arch})..."
-    if ! curl --progress-bar -fSL "$full_url" -o "$dest_file"; then
+    if ! _mps_download_file "$full_url" "$dest_file"; then
         rm -f "$dest_file"
         mps_log_error "Failed to download image from ${full_url}"
         return 1

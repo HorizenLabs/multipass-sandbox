@@ -22,6 +22,7 @@
 - [x] First publish to B2 (amd64 images live; arm64 build in progress)
 - [x] Client-side staleness detection (compare cached SHA256 vs remote manifest, conditional GET with CF caching)
 - [x] `mps image pull` + auto-pull on `mps create`/`mps up` (code complete, needs E2E testing against live infra)
+- [x] Parallel image downloads: `_mps_download_file()` uses aria2c (8 connections) when available, curl fallback
 
 ## Phase 7 — GH Actions CI/CD Pipeline: NOT STARTED
 
