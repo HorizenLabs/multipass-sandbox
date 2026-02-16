@@ -19,14 +19,10 @@ set -euo pipefail
 #   B2_APPLICATION_KEY_ID — B2 application key ID (required, read by b2 CLI)
 #   B2_APPLICATION_KEY    — B2 application key (required, read by b2 CLI)
 #   MPS_B2_BUCKET         — B2 bucket name (default: from config/defaults.env)
-#   MPS_B2_BUCKET_PREFIX  — Path prefix in bucket (default: mps)
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-MPS_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-
-# Load defaults
-# shellcheck source=../config/defaults.env
-source "${MPS_ROOT}/config/defaults.env"
+# shellcheck source=lib/publish-common.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/publish-common.sh"
+publish_init
 
 # Parse flags
 UPLOAD_ONLY=false
@@ -39,15 +35,7 @@ IMAGE_NAME="${1:?Usage: publish.sh [--upload-only] <image-name> <version> <image
 VERSION="${2:?Usage: publish.sh [--upload-only] <image-name> <version> <image-file>}"
 IMAGE_FILE="${3:?Usage: publish.sh [--upload-only] <image-name> <version> <image-file>}"
 
-BUCKET="${MPS_B2_BUCKET:-mps-images}"
-PREFIX="${MPS_B2_BUCKET_PREFIX:-mps}"
-MANIFEST_FILE="${SCRIPT_DIR}/manifest.json"
-
-# Validate SemVer format
-if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-    echo "ERROR: Version must be SemVer format (e.g., 1.0.0). Got: $VERSION"
-    exit 1
-fi
+_validate_semver "$VERSION"
 
 if [[ ! -f "$IMAGE_FILE" ]]; then
     echo "ERROR: Image file not found: $IMAGE_FILE"
@@ -81,40 +69,8 @@ fi
 SHA256="$(awk '{print $1}' "$SHA256_FILE")"
 echo "SHA256: ${SHA256} (from ${SHA256_FILE})"
 
-# ---------- Helper: delete old file versions ----------
-# B2 retains all file versions; old versions still consume storage.
-# Deletes all but the latest (newest) version of a specific file.
-_b2_cleanup_old_versions() {
-    local file_path="$1"
-
-    # List all versions in the parent directory (b2 ls --versions: newest first)
-    local parent_dir
-    parent_dir="$(dirname "$file_path")"
-
-    local versions
-    versions="$(b2 ls --json --versions "b2://${BUCKET}/${parent_dir}/" 2>/dev/null)" || return 0
-
-    # Filter to upload actions matching the exact file path, skip newest, collect old IDs
-    local old_ids
-    old_ids="$(echo "$versions" \
-        | jq -r --arg fp "$file_path" \
-            'select(.action == "upload" and .fileName == $fp) | .fileId' \
-        | tail -n +2)"
-
-    [[ -n "$old_ids" ]] || return 0
-
-    local count=0
-    while IFS= read -r file_id; do
-        [[ -n "$file_id" ]] || continue
-        echo "  Deleting old version: ${file_id}"
-        b2 file delete "b2id://${file_id}" || true
-        count=$((count + 1))
-    done <<< "$old_ids"
-    echo "  Removed ${count} old version(s)."
-}
-
 # ---------- Upload image to B2 ----------
-B2_PATH="${PREFIX}/${IMAGE_NAME}/${VERSION}/${ARCH}.img"
+B2_PATH="${IMAGE_NAME}/${VERSION}/${ARCH}.img"
 echo "Uploading image to b2://${BUCKET}/${B2_PATH}..."
 b2 file upload --no-progress "${BUCKET}" "$IMAGE_FILE" "$B2_PATH"
 echo "Image upload complete."
@@ -152,11 +108,14 @@ fi
 # ---------- Update manifest (default mode, for local dev) ----------
 BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
+# Get file size for manifest
+FILE_SIZE="$(stat -c '%s' "$IMAGE_FILE")"
+
 # Download the remote manifest from B2 (source of truth for multi-arch publishing).
 # Falls back to the local skeleton manifest for the very first publish.
 echo "Fetching remote manifest..."
 REMOTE_MANIFEST="$(mktemp)"
-if b2 file download "b2://${BUCKET}/${PREFIX}/manifest.json" "$REMOTE_MANIFEST" 2>/dev/null; then
+if b2 file download "b2://${BUCKET}/manifest.json" "$REMOTE_MANIFEST" 2>/dev/null; then
     echo "Using remote manifest from B2."
 else
     echo "Remote manifest not found, using local skeleton."
@@ -170,61 +129,25 @@ fi
 
 # Extract x-mps metadata from the layer YAML for this flavor
 LAYER_FILE="${SCRIPT_DIR}/layers/${IMAGE_NAME}.yaml"
+_read_xmps_metadata "$LAYER_FILE"
 
-META_DISK_SIZE=""
-META_MIN_PROFILE=""
-META_MIN_DISK=""
-META_MIN_MEMORY=""
-META_MIN_CPUS=""
-if [[ -f "$LAYER_FILE" ]] && command -v yq &>/dev/null; then
-    META_DISK_SIZE="$(yq '.x-mps.disk_size // ""' "$LAYER_FILE")"
-    META_MIN_PROFILE="$(yq '.x-mps.min_profile // ""' "$LAYER_FILE")"
-    META_MIN_DISK="$(yq '.x-mps.min_disk // ""' "$LAYER_FILE")"
-    META_MIN_MEMORY="$(yq '.x-mps.min_memory // ""' "$LAYER_FILE")"
-    META_MIN_CPUS="$(yq '.x-mps.min_cpus // ""' "$LAYER_FILE")"
-fi
-
-# Merge new entry into manifest: version data, arch-specific data, x-mps metadata
+# Merge new entry into manifest
 echo "Updating manifest..."
 RELATIVE_URL="${IMAGE_NAME}/${VERSION}/${ARCH}.img"
 TMP_MANIFEST="$(mktemp)"
 
-jq \
-    --arg name "$IMAGE_NAME" \
-    --arg ver "$VERSION" \
-    --arg arch "$ARCH" \
-    --arg url "$RELATIVE_URL" \
-    --arg sha "$SHA256" \
-    --arg build_date "$BUILD_DATE" \
-    --arg disk_size "$META_DISK_SIZE" \
-    --arg min_profile "$META_MIN_PROFILE" \
-    --arg min_disk "$META_MIN_DISK" \
-    --arg min_memory "$META_MIN_MEMORY" \
-    --arg min_cpus "$META_MIN_CPUS" \
-    '
-    # Ensure image entry exists
-    .images[$name] //= {"description": "", "versions": {}, "latest": null} |
-    # Inject x-mps metadata (overwrite if present)
-    (if $disk_size != "" then .images[$name].disk_size = $disk_size else . end) |
-    (if $min_profile != "" then .images[$name].min_profile = $min_profile else . end) |
-    (if $min_disk != "" then .images[$name].min_disk = $min_disk else . end) |
-    (if $min_memory != "" then .images[$name].min_memory = $min_memory else . end) |
-    (if $min_cpus != "" then .images[$name].min_cpus = ($min_cpus | tonumber) else . end) |
-    # Ensure version entry exists
-    .images[$name].versions[$ver] //= {} |
-    # Set arch-specific data
-    .images[$name].versions[$ver][$arch] = {
-        "url": $url,
-        "sha256": $sha,
-        "build_date": $build_date
-    } |
-    # Update latest pointer
-    .images[$name].latest = $ver
-    ' "$REMOTE_MANIFEST" > "$TMP_MANIFEST"
+_b2_merge_manifest_entry "$REMOTE_MANIFEST" "$TMP_MANIFEST" \
+    "$IMAGE_NAME" "$VERSION" "$ARCH" "$RELATIVE_URL" "$SHA256" "$BUILD_DATE" \
+    "$FILE_SIZE" "$META_DISK_SIZE" "$META_MIN_PROFILE" "$META_MIN_DISK" \
+    "$META_MIN_MEMORY" "$META_MIN_CPUS"
 
 # Upload updated manifest to B2 (old versions intentionally kept for audit/reconciliation)
-echo "Uploading manifest to b2://${BUCKET}/${PREFIX}/manifest.json..."
-b2 file upload --no-progress "${BUCKET}" "$TMP_MANIFEST" "${PREFIX}/manifest.json"
+echo "Uploading manifest to b2://${BUCKET}/manifest.json..."
+b2 file upload --no-progress "${BUCKET}" "$TMP_MANIFEST" "manifest.json"
+
+# Generate index pages
+echo "Generating index pages..."
+bash "${SCRIPT_DIR}/generate-index.sh" "$TMP_MANIFEST" "$BUCKET"
 
 rm -f "$REMOTE_MANIFEST" "$TMP_MANIFEST"
 echo "Manifest updated: ${IMAGE_NAME}:${VERSION} (${ARCH})"
@@ -235,4 +158,4 @@ echo "  Image:      ${IMAGE_NAME}:${VERSION} (${ARCH})"
 echo "  B2 path:    b2://${BUCKET}/${B2_PATH}"
 echo "  SHA256:     ${SHA256}"
 echo "  Build date: ${BUILD_DATE}"
-echo "  Manifest:   b2://${BUCKET}/${PREFIX}/manifest.json"
+echo "  Manifest:   b2://${BUCKET}/manifest.json"

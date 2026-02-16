@@ -12,8 +12,12 @@
 
 ## Phase 6 — Image Distribution: IN PROGRESS
 
-- [ ] Backblaze B2 bucket + Cloudflare proxy setup (handled externally)
+- [x] Backblaze B2 bucket + Cloudflare proxy setup (`mpsandbox` bucket, `mpsandbox.horizenlabs.io` domain, CF rewrite rules for index.html)
 - [x] Publishing scripts: remote-first manifest, build_date tracking, B2 old version cleanup, unfinished large file cancellation
+- [x] Shared publish helpers: `images/lib/publish-common.sh` (DRY refactor of publish/update-manifest)
+- [x] Drop `MPS_B2_BUCKET_PREFIX` — files at bucket root, URLs map 1:1
+- [x] `file_size` in manifest entries (from `stat` local, `contentLength` CI)
+- [x] Autoindex HTML generation: `images/generate-index.sh` (root, per-flavor, per-version pages)
 - [x] Image versioning conventions: SemVer for tooling, weekly rebuilds for OS patches
 - [ ] First publish to B2
 - [ ] Client-side staleness detection (compare cached SHA256 vs remote manifest)

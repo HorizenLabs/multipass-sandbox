@@ -28,8 +28,10 @@ Internal CLI tool for spinning up isolated VM-based development environments usi
 - `images/artifacts/` — Built QCOW2 images (gitignored)
 - `images/scripts/post-provision.sh` — Post-build cleanup (runs after cloud-init)
 - `images/manifest.json` — Local skeleton manifest (image descriptions + metadata); live manifest lives in B2
+- `images/lib/publish-common.sh` — Shared helpers for publish, update-manifest, and generate-index scripts
 - `images/publish.sh` — Upload images to B2 (`--upload-only` for CI, default includes manifest update for local dev)
 - `images/update-manifest.sh` — Fan-in manifest update: downloads .sha256 sidecars from B2, single manifest write
+- `images/generate-index.sh` — Generate autoindex HTML pages from manifest and upload to B2
 - `templates/profiles/` — Resource profiles (micro, lite, standard, heavy) with auto-scaling CPU/memory
 - `VERSION` — Tool version (SemVer), read by `bin/mps` at startup
 - `config/defaults.env` — Shipped defaults
