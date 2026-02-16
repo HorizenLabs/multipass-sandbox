@@ -45,13 +45,15 @@ YAML_FILES   := $(shell find templates/ images/layers/ -name '*.yaml' 2>/dev/nul
 HCL_FILES    := $(shell find images/ -name '*.pkr.hcl' 2>/dev/null)
 DOCKERFILES  := Dockerfile.builder Dockerfile.linter Dockerfile.publisher
 
-BUILDER_STAMP := .stamp-builder
+STAMP_DIR := .stamps
+
+BUILDER_STAMP := $(STAMP_DIR)/builder
 BUILDER_DEPS  := Dockerfile.builder docker/entrypoint.sh
 
-LINTER_STAMP := .stamp-linter
+LINTER_STAMP := $(STAMP_DIR)/linter
 LINTER_DEPS  := Dockerfile.linter docker/entrypoint.sh
 
-PUBLISHER_STAMP := .stamp-publisher
+PUBLISHER_STAMP := $(STAMP_DIR)/publisher
 PUBLISHER_DEPS  := Dockerfile.publisher docker/entrypoint.sh
 
 # Common deps shared by all image builds
@@ -111,19 +113,19 @@ help: ## Show this help
 # ---------- Docker images ----------
 build-docker-builder: $(BUILDER_STAMP) ## Build the mps-builder Docker image
 
-$(BUILDER_STAMP): $(BUILDER_DEPS)
+$(BUILDER_STAMP): $(BUILDER_DEPS) | $(STAMP_DIR)
 	docker build --progress plain -f Dockerfile.builder -t $(BUILDER_IMAGE):$(BUILDER_TAG) .
 	@touch $@
 
 build-docker-linter: $(LINTER_STAMP) ## Build the mps-linter Docker image
 
-$(LINTER_STAMP): $(LINTER_DEPS)
+$(LINTER_STAMP): $(LINTER_DEPS) | $(STAMP_DIR)
 	docker build --progress plain -f Dockerfile.linter -t $(LINTER_IMAGE):$(LINTER_TAG) .
 	@touch $@
 
 build-docker-publisher: $(PUBLISHER_STAMP) ## Build the mps-publisher Docker image
 
-$(PUBLISHER_STAMP): $(PUBLISHER_DEPS)
+$(PUBLISHER_STAMP): $(PUBLISHER_DEPS) | $(STAMP_DIR)
 	docker build --progress plain -f Dockerfile.publisher -t $(PUBLISHER_IMAGE):$(PUBLISHER_TAG) .
 	@touch $@
 
@@ -221,11 +223,11 @@ lint-hcl: $(LINTER_STAMP) ## Lint HCL/Packer files with packer fmt
 # and both-arch parallel targets.  Adding a new flavor only requires
 # entries in FLAVORS, PARENT_*, and IMAGE_LAYERS_*.
 
-# .stamp-image-<flavor>-<arch>  (the real build rule)
+# $(STAMP_DIR)/image-<flavor>-<arch>  (the real build rule)
 # $(1) = flavor, $(2) = arch
 define image_stamp_rule
-.stamp-image-$(1)-$(2): $$(BUILDER_STAMP) $$(IMAGE_COMMON_DEPS) $$(IMAGE_LAYERS_$(1)) \
-        $(if $(PARENT_$(1)),.stamp-image-$(PARENT_$(1))-$(2))
+$$(STAMP_DIR)/image-$(1)-$(2): $$(BUILDER_STAMP) $$(IMAGE_COMMON_DEPS) $$(IMAGE_LAYERS_$(1)) \
+        $(if $(PARENT_$(1)),$$(STAMP_DIR)/image-$(PARENT_$(1))-$(2)) | $$(STAMP_DIR)
 	$$(call docker_run_image,$(2)) bash -c \
 	    'cd images && bash build.sh $(if $(PARENT_$(1)),--base-image artifacts/mps-$(PARENT_$(1))-$(2).qcow2.img )$(1)'
 	@touch $$@
@@ -234,7 +236,7 @@ $(foreach f,$(FLAVORS),$(foreach a,$(ARCHS),$(eval $(call image_stamp_rule,$(f),
 
 # image-<flavor>-<arch> → stamp dependency
 define image_arch_rule
-image-$(1)-$(2): .stamp-image-$(1)-$(2)
+image-$(1)-$(2): $$(STAMP_DIR)/image-$(1)-$(2)
 endef
 $(foreach f,$(FLAVORS),$(foreach a,$(ARCHS),$(eval $(call image_arch_rule,$(f),$(a)))))
 
@@ -278,9 +280,9 @@ endef
 
 # Shared credential validation
 define check_publish_env
-@test -n "$$(VERSION)" || (echo "ERROR: VERSION is required (e.g., VERSION=1.0.0)"; exit 1)
-@test -n "$$(B2_APPLICATION_KEY_ID)" || (echo "ERROR: B2_APPLICATION_KEY_ID not set (export it or pass inline)"; exit 1)
-@test -n "$$(B2_APPLICATION_KEY)" || (echo "ERROR: B2_APPLICATION_KEY not set (export it or pass inline)"; exit 1)
+@test -n "$(VERSION)" || (echo "ERROR: VERSION is required (e.g., VERSION=1.0.0)"; exit 1)
+@test -n "$(B2_APPLICATION_KEY_ID)" || (echo "ERROR: B2_APPLICATION_KEY_ID not set (export it or pass inline)"; exit 1)
+@test -n "$(B2_APPLICATION_KEY)" || (echo "ERROR: B2_APPLICATION_KEY not set (export it or pass inline)"; exit 1)
 endef
 
 # upload-<flavor>-<arch>  (CI: image + sidecar only, no manifest)
@@ -318,6 +320,10 @@ endef
 $(foreach f,$(FLAVORS),$(eval $(call publish_both_rule,$(f))))
 
 # ---------- Clean ----------
+# ---------- Stamp directory ----------
+$(STAMP_DIR):
+	@mkdir -p $@
+
 clean-docker-builder: ## Remove mps-builder Docker image
 	@echo "Removing $(BUILDER_IMAGE):$(BUILDER_TAG) image..."
 	@docker rmi $(BUILDER_IMAGE):$(BUILDER_TAG) 2>/dev/null || true
@@ -338,7 +344,7 @@ define clean_flavor_rule
 clean-image-$(1):
 	@echo "Removing $(1) image artifacts..."
 	@rm -f images/artifacts/mps-$(1)-*
-	@rm -f .stamp-image-$(1)-*
+	@rm -f $$(STAMP_DIR)/image-$(1)-*
 endef
 $(foreach f,$(FLAVORS),$(eval $(call clean_flavor_rule,$(f))))
 
@@ -348,7 +354,7 @@ clean-image-$(1)-$(2):
 	@echo "Removing $(1) $(2) image artifacts..."
 	@rm -f images/artifacts/mps-$(1)-$(2).qcow2.img
 	@rm -f images/artifacts/mps-$(1)-$(2).qcow2.img.sha256
-	@rm -f .stamp-image-$(1)-$(2)
+	@rm -f $$(STAMP_DIR)/image-$(1)-$(2)
 endef
 $(foreach f,$(FLAVORS),$(foreach a,$(ARCHS),$(eval $(call clean_flavor_arch_rule,$(f),$(a)))))
 

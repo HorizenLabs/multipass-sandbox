@@ -142,7 +142,7 @@ fi
 
 echo ""
 echo "Uploading manifest to b2://${BUCKET}/manifest.json..."
-b2 file upload --no-progress "${BUCKET}" "$REMOTE_MANIFEST" "manifest.json"
+b2 file upload "${BUCKET}" "$REMOTE_MANIFEST" "manifest.json"
 
 # Generate index pages
 echo "Generating index pages..."

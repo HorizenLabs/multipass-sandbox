@@ -77,7 +77,7 @@ _upload_index() {
     local local_file="$1"
     local b2_key="$2"
 
-    b2 file upload --no-progress --content-type "text/html" \
+    b2 file upload --content-type "text/html" \
         "${BUCKET}" "$local_file" "$b2_key" >/dev/null
     _b2_cleanup_old_versions "$b2_key"
 }

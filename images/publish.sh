@@ -72,13 +72,13 @@ echo "SHA256: ${SHA256} (from ${SHA256_FILE})"
 # ---------- Upload image to B2 ----------
 B2_PATH="${IMAGE_NAME}/${VERSION}/${ARCH}.img"
 echo "Uploading image to b2://${BUCKET}/${B2_PATH}..."
-b2 file upload --no-progress "${BUCKET}" "$IMAGE_FILE" "$B2_PATH"
+b2 file upload "${BUCKET}" "$IMAGE_FILE" "$B2_PATH"
 echo "Image upload complete."
 
 # Upload .sha256 sidecar (used by update-manifest.sh in fan-in CI flow)
 B2_SHA_PATH="${B2_PATH}.sha256"
 echo "Uploading sidecar to b2://${BUCKET}/${B2_SHA_PATH}..."
-b2 file upload --no-progress "${BUCKET}" "$SHA256_FILE" "$B2_SHA_PATH"
+b2 file upload "${BUCKET}" "$SHA256_FILE" "$B2_SHA_PATH"
 echo "Sidecar upload complete."
 
 # Clean up old versions of both files
@@ -89,8 +89,13 @@ _b2_cleanup_old_versions "$B2_SHA_PATH"
 # ---------- Cancel unfinished large file uploads ----------
 # Failed/interrupted uploads leave partial data that consumes storage.
 # Safe to cancel all — no legitimate in-progress uploads after a completed upload.
-echo "Canceling any unfinished large file uploads..."
-b2 file large unfinished cancel "b2://${BUCKET}" 2>/dev/null || true
+echo "Checking for unfinished large file uploads..."
+CANCEL_OUTPUT="$(b2 file large unfinished cancel "b2://${BUCKET}" 2>&1)" || true
+if [[ -n "$CANCEL_OUTPUT" ]]; then
+    echo "$CANCEL_OUTPUT"
+else
+    echo "No unfinished uploads found."
+fi
 
 # ---------- Upload-only mode: stop here ----------
 if [[ "$UPLOAD_ONLY" == "true" ]]; then
@@ -143,7 +148,7 @@ _b2_merge_manifest_entry "$REMOTE_MANIFEST" "$TMP_MANIFEST" \
 
 # Upload updated manifest to B2 (old versions intentionally kept for audit/reconciliation)
 echo "Uploading manifest to b2://${BUCKET}/manifest.json..."
-b2 file upload --no-progress "${BUCKET}" "$TMP_MANIFEST" "manifest.json"
+b2 file upload "${BUCKET}" "$TMP_MANIFEST" "manifest.json"
 
 # Generate index pages
 echo "Generating index pages..."

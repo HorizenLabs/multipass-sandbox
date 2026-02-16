@@ -62,7 +62,10 @@ _b2_cleanup_old_versions() {
             'select(.action == "upload" and .fileName == $fp) | .fileId' \
         | tail -n +2)"
 
-    [[ -n "$old_ids" ]] || return 0
+    if [[ -z "$old_ids" ]]; then
+        echo "  No old versions found."
+        return 0
+    fi
 
     local count=0
     while IFS= read -r file_id; do
