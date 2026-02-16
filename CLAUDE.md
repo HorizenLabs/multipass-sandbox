@@ -61,7 +61,7 @@ Internal CLI tool for spinning up isolated VM-based development environments usi
   - Override with `--name` flag or `MPS_NAME` in `.mps.env`
   - Long names truncated with short hash suffix (max 40 chars for Multipass)
   - `--no-mount` without `--name` errors (can't derive folder name)
-- Config cascade: `config/defaults.env` → `~/.mps/config` → `.mps.env` → CLI flags → auto-scaling
+- Config cascade: `config/defaults.env` → `~/.mps/config` → `.mps.env` → profile → auto-scaling → CLI flags
 - **Default profile**: `lite` (auto-scales CPU/memory from host hardware fractions with min/cap)
 - **Profiles**: micro (1/8 CPU, 1/16 mem), lite (1/4, 1/6), standard (1/3, 1/4), heavy (1/2, 1/3)
 - **Image metadata**: `x-mps:` blocks in layer YAMLs define disk_size, min_profile, min_disk/memory/cpus

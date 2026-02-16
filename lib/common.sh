@@ -593,6 +593,7 @@ mps_resolve_image() {
     if [[ -f "$img_file" ]]; then
         local abs_path
         abs_path="$(cd "$(dirname "$img_file")" && pwd)/$(basename "$img_file")"
+        _mps_warn_image_staleness "file://${abs_path}"
         echo "file://${abs_path}"
         return
     fi
@@ -669,6 +670,117 @@ _mps_semver_gt() {
     if (( a_minor < b_minor )); then return 1; fi
     if (( a_patch > b_patch )); then return 0; fi
     return 1
+}
+
+# ---------- Image Staleness Detection ----------
+
+# Fetch remote manifest.json to stdout. Caches locally at ~/.mps/cache/manifest.json.
+# Uses conditional GET (If-Modified-Since via curl -z) to avoid re-downloading
+# when the remote hasn't changed. Falls back to cached copy when offline.
+# Returns 1 only if no manifest is available (neither remote nor cached).
+_mps_fetch_manifest() {
+    local base_url="${MPS_IMAGE_BASE_URL:-}"
+    [[ -z "$base_url" ]] && return 1
+
+    local cache_file
+    cache_file="$(mps_cache_dir)/manifest.json"
+    local manifest_url="${base_url}/manifest.json"
+
+    if [[ -f "$cache_file" ]]; then
+        # Conditional GET: -z sends If-Modified-Since, server returns 304 if unchanged
+        curl --connect-timeout 1 --max-time 3 -fsSL \
+            -z "$cache_file" -o "$cache_file" \
+            "$manifest_url" 2>/dev/null || true
+    else
+        # No cache — full download (fail if offline)
+        curl --connect-timeout 1 --max-time 3 -fsSL \
+            -o "$cache_file" "$manifest_url" 2>/dev/null || return 1
+    fi
+
+    [[ -f "$cache_file" ]] || return 1
+    cat "$cache_file"
+}
+
+# Compare local .meta SHA256 vs remote manifest.
+# Prints one of: up-to-date, stale, update:<ver>, unknown.
+_mps_check_image_staleness() {
+    local manifest="$1" name="$2" version="$3" arch="$4"
+
+    # Skip non-SemVer tags (e.g. "local")
+    if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        echo "unknown"
+        return
+    fi
+
+    # Get local SHA256 from .meta
+    local local_sha256
+    local_sha256="$(mps_image_meta "$name" "$version" "$arch" "SHA256")"
+    if [[ -z "$local_sha256" ]]; then
+        echo "unknown"
+        return
+    fi
+
+    # Check if there's a newer version available
+    local latest_version
+    latest_version="$(echo "$manifest" | jq -r ".images[\"${name}\"].latest // empty")"
+    if [[ -n "$latest_version" && "$latest_version" != "$version" ]] && _mps_semver_gt "$latest_version" "$version"; then
+        echo "update:${latest_version}"
+        return
+    fi
+
+    # Compare SHA256 for same version (rebuild detection)
+    local remote_sha256
+    remote_sha256="$(echo "$manifest" | jq -r ".images[\"${name}\"].versions[\"${version}\"][\"${arch}\"].sha256 // empty")"
+    if [[ -n "$remote_sha256" ]]; then
+        if [[ "$local_sha256" == "$remote_sha256" ]]; then
+            echo "up-to-date"
+        else
+            echo "stale"
+        fi
+    else
+        echo "unknown"
+    fi
+}
+
+# High-level wrapper: parse file:// URL, check staleness, emit warnings.
+# Called from mps_resolve_image(). Respects MPS_IMAGE_CHECK_UPDATES opt-out.
+# Silent on failure/offline — never blocks.
+_mps_warn_image_staleness() {
+    local file_url="$1"
+
+    # Opt-out check
+    [[ "${MPS_IMAGE_CHECK_UPDATES:-true}" == "true" ]] || return 0
+
+    # Parse name/version/arch from cache path
+    # Format: file:///home/.../.mps/cache/images/<name>/<version>/<arch>.img
+    local img_path="${file_url#file://}"
+    local arch
+    arch="$(basename "$img_path" .img)"
+    local version
+    version="$(basename "$(dirname "$img_path")")"
+    local name
+    name="$(basename "$(dirname "$(dirname "$img_path")")")"
+
+    # Skip non-SemVer (e.g. "local")
+    [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || return 0
+
+    # Fetch manifest (silent on failure)
+    local manifest
+    manifest="$(_mps_fetch_manifest)" || return 0
+
+    local status
+    status="$(_mps_check_image_staleness "$manifest" "$name" "$version" "$arch")"
+
+    case "$status" in
+        stale)
+            mps_log_warn "Image '${name}:${version}' has been rebuilt with OS updates. Run 'mps image pull ${name}:${version}' to update."
+            ;;
+        update:*)
+            local new_ver="${status#update:}"
+            mps_log_warn "Image '${name}:${version}' is outdated. Version ${new_ver} is available. Run 'mps image pull ${name}' to update."
+            ;;
+    esac
+    return 0
 }
 
 # ---------- Metadata Helpers ----------

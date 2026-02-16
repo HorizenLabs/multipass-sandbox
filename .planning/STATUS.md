@@ -19,14 +19,15 @@
 - [x] `file_size` in manifest entries (from `stat` local, `contentLength` CI)
 - [x] Autoindex HTML generation: `images/generate-index.sh` (root, per-flavor, per-version pages)
 - [x] Image versioning conventions: SemVer for tooling, weekly rebuilds for OS patches
-- [ ] First publish to B2
-- [ ] Client-side staleness detection (compare cached SHA256 vs remote manifest)
+- [x] First publish to B2 (amd64 images live; arm64 build in progress)
+- [x] Client-side staleness detection (compare cached SHA256 vs remote manifest, conditional GET with CF caching)
 - [x] `mps image pull` + auto-pull on `mps create`/`mps up` (code complete, needs E2E testing against live infra)
 
 ## Phase 7 — GH Actions CI/CD Pipeline: NOT STARTED
 
 - [ ] GitHub Actions workflow: `make lint` on push/PR
 - [ ] Automated image builds
+- [ ] Cloudflare cache invalidation after publish (purge `.json`, `.html`, `.sha256` files via CF API; edge TTL 1d, browser TTL 1h)
 
 ## Phase 8 — Testing: NOT STARTED
 

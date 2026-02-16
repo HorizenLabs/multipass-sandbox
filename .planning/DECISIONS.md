@@ -177,7 +177,7 @@ Additional:
 - `.stamps/linter` depends on `Dockerfile.linter` + `docker/entrypoint.sh`
 - `.stamps/publisher` depends on `Dockerfile.publisher` + `docker/entrypoint.sh`
 - `.stamps/image-<flavor>-{amd64,arm64}` — per-flavor per-arch, depend on builder stamp + common image deps (packer.pkr.hcl, packer-user-data.pkrtpl.hcl, build.sh, arch-config.sh, scripts/post-provision.sh) + per-flavor layer file + parent flavor stamp (non-base only, for chained builds)
-- `make clean` removes `.stamps/`; `.stamps/` is in `.gitignore`
+- `make clean` removes stamp files inside `.stamps/`; `.stamps/` is in `.gitignore`
 
 ## File Transfer
 
