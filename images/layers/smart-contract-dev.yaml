@@ -5,7 +5,7 @@
 x-mps:
   disk_size: 11G
   min_profile: lite
-  min_disk: 20G
+  min_disk: 15G
   min_memory: 4G
   min_cpus: 2
 

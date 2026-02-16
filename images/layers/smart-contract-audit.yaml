@@ -5,7 +5,7 @@
 x-mps:
   disk_size: 13G
   min_profile: standard
-  min_disk: 25G
+  min_disk: 15G
   min_memory: 4G
   min_cpus: 4
 

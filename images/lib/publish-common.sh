@@ -56,10 +56,11 @@ _b2_cleanup_old_versions() {
     versions="$(b2 ls --json --versions "b2://${BUCKET}/${parent_dir}/" 2>/dev/null)" || return 0
 
     # Filter to upload actions matching the exact file path, skip newest, collect old IDs
+    # b2 ls --json returns an array; .[] unwraps it into individual objects
     local old_ids
     old_ids="$(echo "$versions" \
         | jq -r --arg fp "$file_path" \
-            'select(.action == "upload" and .fileName == $fp) | .fileId' \
+            '.[] | select(.action == "upload" and .fileName == $fp) | .fileId' \
         | tail -n +2)"
 
     if [[ -z "$old_ids" ]]; then
@@ -71,7 +72,7 @@ _b2_cleanup_old_versions() {
     while IFS= read -r file_id; do
         [[ -n "$file_id" ]] || continue
         echo "  Deleting old version: ${file_id}"
-        b2 file delete "b2id://${file_id}" || true
+        b2 rm "b2id://${file_id}" || true
         count=$((count + 1))
     done <<< "$old_ids"
     echo "  Removed ${count} old version(s)."
