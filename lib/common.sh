@@ -1252,11 +1252,13 @@ mps_collect_port_specs() {
 }
 
 # Forward a single port via SSH tunnel.
+# Args: instance_name short_name port_spec [--privileged]
 # Returns 0 on success, 1 on failure (warns but never dies).
 mps_forward_port() {
     local instance_name="$1"
     local short_name="$2"
     local port_spec="$3"
+    local privileged="${4:-}"
 
     # Parse and validate
     local host_port="${port_spec%%:*}"
@@ -1269,6 +1271,16 @@ mps_forward_port() {
     if [[ ! "$host_port" =~ ^[0-9]+$ ]] || [[ ! "$guest_port" =~ ^[0-9]+$ ]]; then
         mps_log_warn "Ports must be numbers (got '${port_spec}') — skipping"
         return 1
+    fi
+
+    # Privileged port check (< 1024 requires root)
+    local _use_sudo=false
+    if [[ "$host_port" -lt 1024 ]] && [[ "$(id -u)" -ne 0 ]]; then
+        if [[ "$privileged" != "--privileged" ]]; then
+            mps_log_warn "Host port ${host_port} is a privileged port (< 1024) and requires elevated privileges. Re-run with --privileged: mps port forward --privileged ${short_name} ${port_spec}"
+            return 1
+        fi
+        _use_sudo=true
     fi
 
     # Get instance IP
@@ -1299,10 +1311,26 @@ mps_forward_port() {
     local ports_file
     ports_file="$(mps_ports_file "$short_name")"
     if [[ -f "$ports_file" ]]; then
-        while IFS=: read -r fhp _ fpid; do
-            if [[ "$fhp" == "$host_port" && -n "$fpid" ]] && kill -0 "$fpid" 2>/dev/null; then
-                mps_log_debug "Port ${host_port} already forwarded (PID ${fpid}) — skipping"
-                return 0
+        local _line
+        while IFS= read -r _line; do
+            [[ -z "$_line" ]] && continue
+            local _fhp="" _fpid="" _fsudo=false
+            if [[ "$_line" =~ ^([0-9]+):[0-9]+:s:([0-9]+)$ ]]; then
+                _fhp="${BASH_REMATCH[1]}"; _fpid="${BASH_REMATCH[2]}"; _fsudo=true
+            elif [[ "$_line" =~ ^([0-9]+):[0-9]+:([0-9]+)$ ]]; then
+                _fhp="${BASH_REMATCH[1]}"; _fpid="${BASH_REMATCH[2]}"
+            fi
+            if [[ "$_fhp" == "$host_port" && -n "$_fpid" ]]; then
+                local _alive=false
+                if [[ "$_fsudo" == "true" ]]; then
+                    sudo kill -0 "$_fpid" 2>/dev/null && _alive=true
+                else
+                    kill -0 "$_fpid" 2>/dev/null && _alive=true
+                fi
+                if [[ "$_alive" == "true" ]]; then
+                    mps_log_debug "Port ${host_port} already forwarded (PID ${_fpid}) — skipping"
+                    return 0
+                fi
             fi
         done < "$ports_file"
     fi
@@ -1319,16 +1347,29 @@ mps_forward_port() {
     fi
     ssh_cmd+=("${ssh_user}@${ip}")
 
-    if ! "${ssh_cmd[@]}"; then
+    # Elevate with sudo for privileged ports
+    if [[ "$_use_sudo" == "true" ]]; then
+        if ! sudo "${ssh_cmd[@]}"; then
+            mps_log_warn "Failed to forward privileged port ${host_port}:${guest_port} (sudo may have been denied)"
+            return 1
+        fi
+    elif ! "${ssh_cmd[@]}"; then
         mps_log_warn "Failed to forward port ${host_port}:${guest_port}"
         return 1
     fi
 
-    # Track PID
+    # Track PID (sudo-spawned ssh runs as root, needs sudo pgrep)
     local pid
-    pid="$(pgrep -f "ssh.*-L.*${host_port}:localhost:${guest_port}.*${ip}" | tail -1)" || true
+    if [[ "$_use_sudo" == "true" ]]; then
+        pid="$(sudo pgrep -f "ssh.*-L.*${host_port}:localhost:${guest_port}.*${ip}" | tail -1)" || true
+    else
+        pid="$(pgrep -f "ssh.*-L.*${host_port}:localhost:${guest_port}.*${ip}" | tail -1)" || true
+    fi
     if [[ -n "$pid" ]]; then
-        echo "${host_port}:${guest_port}:${pid}" >> "$ports_file"
+        # Prefix with 's:' to mark sudo-owned tunnels for cleanup
+        local owner_prefix=""
+        [[ "$_use_sudo" == "true" ]] && owner_prefix="s:"
+        echo "${host_port}:${guest_port}:${owner_prefix}${pid}" >> "$ports_file"
         mps_log_debug "Port forward active (PID ${pid}): localhost:${host_port} → ${instance_name}:${guest_port}"
     else
         mps_log_warn "Port forward started but could not track PID for ${port_spec}"
@@ -1373,8 +1414,26 @@ mps_kill_port_forwards() {
     fi
 
     local killed=0
-    while IFS=: read -r _hp _ pid; do
-        if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
+    local line
+    while IFS= read -r line; do
+        [[ -z "$line" ]] && continue
+        # Format: host_port:guest_port:[s:]pid — 's:' prefix marks sudo-owned tunnels
+        local pid="" use_sudo=false
+        if [[ "$line" =~ :s:([0-9]+)$ ]]; then
+            pid="${BASH_REMATCH[1]}"
+            use_sudo=true
+        elif [[ "$line" =~ :([0-9]+)$ ]]; then
+            pid="${BASH_REMATCH[1]}"
+        fi
+        if [[ -z "$pid" ]]; then
+            continue
+        fi
+        if [[ "$use_sudo" == "true" ]]; then
+            if sudo kill -0 "$pid" 2>/dev/null; then
+                sudo kill "$pid" 2>/dev/null || true
+                killed=$((killed + 1))
+            fi
+        elif kill -0 "$pid" 2>/dev/null; then
             kill "$pid" 2>/dev/null || true
             killed=$((killed + 1))
         fi

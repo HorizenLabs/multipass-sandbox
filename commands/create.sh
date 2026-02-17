@@ -11,7 +11,7 @@
 #
 # Flags:
 #   --image <image>         Image name (default: base; accepts mps names or Ubuntu versions)
-#   --cpus <n>              CPU cores (default: from config/profile)
+#   --cpus <n>              vCPUs (default: from config/profile)
 #   --memory <size>         Memory with unit (default: from config/profile)
 #   --disk <size>           Disk with unit (default: from config/profile)
 #   --cloud-init <name>     Cloud-init template name or path
@@ -304,7 +304,7 @@ ${_color_bold}Naming:${_color_reset}
 ${_color_bold}Flags:${_color_reset}
     --name <name>           Override auto-generated instance name
     --image <image>         Image: mps name (base, base:1.0.0) or Ubuntu version (24.04)
-    --cpus <n>              CPU cores (default: auto-scaled from profile)
+    --cpus <n>              vCPUs (default: auto-scaled from profile)
     --memory <size>         Memory, e.g. 4G, 8G (default: auto-scaled from profile)
     --disk <size>           Disk, e.g. 20G, 50G (default: ${MPS_DEFAULT_DISK:-20G})
     --cloud-init <name>     Cloud-init template (default: ${MPS_DEFAULT_CLOUD_INIT:-default})

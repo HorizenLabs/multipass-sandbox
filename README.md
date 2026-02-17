@@ -1,4 +1,8 @@
-# Multi Pass Sandbox (mps)
+# Multipass Sandbox
+
+<p align="center">
+  <img src="assets/mps.png" alt="Multipass Sandbox" width="1000">
+</p>
 
 Isolated VM-based development environments powered by [Multipass](https://multipass.run/). Spin up full Linux VMs with Docker, language runtimes, and dev tools pre-configured — stronger isolation than containers alone.
 
@@ -11,6 +15,9 @@ Isolated VM-based development environments powered by [Multipass](https://multip
 # Create and start a sandbox (auto-names from CWD, mounts current directory)
 mps up
 
+# Or seed it with your Claude config
+mps up --transfer ~/.claude:/home/ubuntu/.claude
+
 # Open a shell (auto-resolves sandbox from CWD)
 mps shell
 
@@ -20,17 +27,41 @@ mps exec -- docker ps
 # List sandboxes
 mps list
 
-# Stop
+# Stop (prevents auto-restart on host reboot)
 mps down
 
 # Destroy
 mps destroy --force
 ```
 
+**Note:** Multipass automatically restarts running VMs on host reboot. Use `mps down` to stop sandboxes you don't want restarting.
+
 ## Requirements
 
 - [Multipass](https://multipass.run/) — VM engine (snap, brew, or Windows installer)
 - [jq](https://jqlang.github.io/jq/) — JSON processing (Linux/macOS only; Windows uses `ConvertFrom-Json`)
+
+## Installation
+
+```bash
+# Install (symlinks bin/mps to ~/.local/bin/)
+./install.sh
+
+# Or via make
+make install
+```
+
+The installer checks for `multipass` and `jq`, creates `~/.mps/` directories, symlinks `mps` onto your PATH, and offers to update your shell profile if needed. Override the install directory with `MPS_INSTALL_DIR`.
+
+### Uninstall
+
+```bash
+# Remove symlink, VMs, caches, and configs
+./uninstall.sh
+
+# Or via make
+make uninstall
+```
 
 ## Commands
 
@@ -46,8 +77,10 @@ mps destroy --force
 | `mps list` | List all sandboxes |
 | `mps status [--name <name>]` | Show detailed sandbox status |
 | `mps ssh-config [--name <name>]` | Generate SSH config for VS Code |
-| `mps image list\|pull` | Manage sandbox images |
-| `mps port forward\|list` | Manage port forwarding |
+| `mps image <list\|pull\|import\|remove>` | Manage sandbox images |
+| `mps port <forward\|list>` | Manage port forwarding |
+
+Run `mps <command> --help` for detailed usage on any command.
 
 ## Auto-Naming
 
@@ -57,7 +90,7 @@ VMs are automatically named based on your project directory, cloud-init template
 mps-<folder>-<template>-<profile>
 ```
 
-For example, running `mps up` from `~/projects/myapp` produces `mps-myapp-base-standard`.
+For example, running `mps up` from `~/projects/myapp` produces `mps-myapp-base-lite`.
 
 - Override with `--name <name>` flag or `MPS_NAME` in `.mps.env`
 - Long names (>40 chars) are truncated with a short hash suffix for uniqueness
@@ -131,82 +164,246 @@ MPS_MOUNTS="./data:~/extra-data"
 MPS_NO_AUTOMOUNT=false
 ```
 
+### Configuration Reference
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `MPS_NAME` | (auto) | Override auto-generated sandbox name |
+| `MPS_DEFAULT_IMAGE` | `base` | Default image (`base`, `base:1.0.0`, or Ubuntu version like `24.04`) |
+| `MPS_DEFAULT_PROFILE` | `lite` | Default resource profile (`micro`, `lite`, `standard`, `heavy`) |
+| `MPS_DEFAULT_CLOUD_INIT` | `default` | Cloud-init template name or file path |
+| `MPS_CPUS` | (from profile) | vCPUs (host threads) |
+| `MPS_MEMORY` | (from profile) | Memory with unit (e.g., `4G`) |
+| `MPS_DISK` | (from profile) | Disk with unit (e.g., `40G`) |
+| `MPS_PORTS` | (empty) | Space-separated `host:guest` port pairs, auto-forwarded on create/up |
+| `MPS_MOUNTS` | (empty) | Extra mounts (`src:dst`), additive on top of auto-mount |
+| `MPS_NO_AUTOMOUNT` | `false` | Disable automatic CWD mount |
+| `MPS_SSH_KEY` | (auto-detect) | SSH key path (auto-detect: ed25519 > ecdsa > rsa) |
+| `MPS_IMAGE_BASE_URL` | `https://mpsandbox.horizenlabs.io` | Image registry URL |
+| `MPS_IMAGE_CHECK_UPDATES` | `true` | Check for image updates on create/up |
+| `MPS_INSTANCE_PREFIX` | `mps` | Prefix for auto-generated instance names |
+| `MPS_B2_BUCKET` | `mpsandbox` | Backblaze B2 bucket (build/publish only) |
+
 ## Profiles
 
-| Profile | CPUs | RAM | Disk |
-|---------|------|-----|------|
-| `lite` | 2 | 2GB | 20GB |
-| `standard` (default) | 4 | 4GB | 50GB |
-| `heavy` | 8 | 8GB | 100GB |
+Profiles define resource allocation as **fractions of host hardware**, with minimum floors and maximum caps. A `lite` profile on a 16-thread machine allocates more resources than on a 4-thread machine.
+
+| Profile | vCPU Fraction | vCPU Min | Mem Fraction | Mem Min | Mem Cap | Disk |
+|---------|-------------|---------|--------------|---------|---------|------|
+| `micro` | 1/8 | 1 | 1/16 | 1G | 2G | 10G |
+| `lite` **(default)** | 1/4 | 2 | 1/6 | 2G | 8G | 20G |
+| `standard` | 1/3 | 4 | 1/4 | 4G | 16G | 40G |
+| `heavy` | 1/2 | 6 | 1/3 | 6G | 64G | 75G |
+
+Example resolved values on a 16-thread / 64GB host:
+
+| Profile | CPUs | Memory | Disk |
+|---------|------|--------|------|
+| `micro` | 2 | 4G | 10G |
+| `lite` | 4 | 8G | 20G |
+| `standard` | 5 | 16G | 40G |
+| `heavy` | 8 | 21G | 75G |
+
+Disk sizes are upper limits — Multipass creates thin-provisioned (sparse) virtual disks that start at the size of the source image and grow on demand up to the configured maximum.
 
 ```bash
 mps create --profile heavy
-mps create --profile lite --cpus 1 --memory 1G   # Profile + overrides
+mps create --profile lite --cpus 4 --memory 4G   # Profile + overrides
 ```
 
 ## Cloud-init Templates
 
-| Template | Location | Purpose |
-|----------|----------|---------|
-| `default` | `templates/cloud-init/default.yaml` | Minimal customization template (commented-out examples). Used at VM launch from pre-built images. |
-| (build) | `images/layers/*.yaml` | Composable cloud-init layers merged at build time. Flavors: base, protocol-dev, smart-contract-dev, smart-contract-audit. |
+Cloud-init templates customize VMs **at launch time**, on top of pre-built images. This is how you install extra packages, enable plugins, write config files, or run setup scripts without rebuilding an image.
 
-## Port Forwarding
-
-Ports are forwarded via SSH tunnels. Forward on create/up, or manage individually:
+### Using templates
 
 ```bash
-# Forward host:3000 -> VM:3000
-mps port forward 3000:3000
+# Use the default template (enabled plugins, commented-out examples)
+mps create
 
-# Forward during creation
-mps create --port 3000:3000 --port 8080:8080
+# Use a named template from templates/cloud-init/
+mps create --cloud-init mytemplate
 
-# List active forwards
-mps port list
+# Use any file path directly
+mps create --cloud-init ./my-cloud-init.yaml
 
-# Auto-forward via .mps.env
-# MPS_PORTS="8899:8899 3000:3000"
+# Set a default in .mps.env
+MPS_DEFAULT_CLOUD_INIT=mytemplate
 ```
 
-Ports are automatically cleaned up on `mps down` and `mps destroy`.
+### The default template
 
-## VS Code Integration
+The shipped `default` template (`templates/cloud-init/default.yaml`) enables HorizenLabs Claude Code marketplace plugins and includes commented-out examples for:
 
-Generate an SSH config for VS Code Remote-SSH. This resolves your SSH key, injects it into the VM, and generates the config — no `sudo` required.
+- **Packages**: Install additional apt packages (`packages:` block)
+- **Run commands**: Execute scripts on first boot (`runcmd:` block)
+- **Write files**: Drop config files into the VM (`write_files:` block)
+- **Hostname / timezone**: Set VM hostname and timezone
+- **Claude Code plugins**: Enable plugin marketplaces (Trail of Bits, GSD, SuperClaude, Superpowers, BMAD, GitHub Spec Kit)
+
+### Creating custom templates
+
+Create a `#cloud-config` YAML file and either:
+1. Place it in `templates/cloud-init/` to reference by name (e.g., `mytemplate.yaml` → `--cloud-init mytemplate`)
+2. Pass any file path directly (e.g., `--cloud-init ~/configs/dev-setup.yaml`)
+
+```yaml
+#cloud-config
+packages:
+  - postgresql-client
+  - redis-tools
+
+runcmd:
+  - echo "Hello from cloud-init" > /tmp/hello.txt
+  - sudo -u ubuntu bash -c 'pip install my-tool'
+
+write_files:
+  - path: /home/ubuntu/.env
+    content: |
+      DATABASE_URL=postgres://localhost/mydb
+    owner: ubuntu:ubuntu
+    permissions: '0600'
+
+timezone: America/New_York
+```
+
+These templates run on top of whatever image you're using. For the image build-time layers (what packages come pre-installed), see `images/layers/*.yaml`.
+
+## Image Flavors
+
+Pre-built images come in four flavors. Each builds on the previous, adding specialized tooling:
+
+| Flavor | Builds On | Description | Min Profile |
+|--------|-----------|-------------|-------------|
+| `base` | — | Ubuntu 24.04 + Docker + Node.js + Python + dev tools + AI assistants | micro |
+| `protocol-dev` | base | + C/C++ toolchain + Go + Rust | lite |
+| `smart-contract-dev` | protocol-dev | + Solana + Anchor + Foundry + Hardhat | lite |
+| `smart-contract-audit` | smart-contract-dev | + Slither + Mythril + Echidna + Medusa + Halmos | standard |
+
+<details>
+<summary>What's in each flavor</summary>
+
+**base**: Docker (CE + Compose + Buildx), Node.js (LTS via nvm), pnpm, yarn, Bun, Python 3 + uv, git, curl, jq, yq, tmux, ripgrep, fd, Neovim, shellcheck, hadolint, zsh. AI assistants: Claude Code, Crush, OpenCode, Gemini CLI, Codex CLI.
+
+**protocol-dev** adds: build-essential, clang, LLVM, lld, cmake, Go (latest stable), Rust (stable via rustup + cargo-audit), protobuf, SSL/crypto dev libraries.
+
+**smart-contract-dev** adds: Solana CLI + Anchor (via avm), Foundry (forge, cast, anvil, chisel), Hardhat, Solhint.
+
+**smart-contract-audit** adds: Slither, solc-select, Mythril, Halmos (via uv), Aderyn, Echidna (sigstore-verified), Medusa, cosign.
+
+</details>
+
+Images warn (but do not block) when your profile is below the minimum. For example, launching `smart-contract-audit` with `micro` triggers a warning since it requires `standard`.
 
 ```bash
-# Auto-detect key, inject, print config
-mps ssh-config --name dev
+mps create --image protocol-dev --profile standard
+mps create --image smart-contract-audit --profile heavy
+```
+
+## Advanced: SSH & Port Forwarding
+
+SSH and port forwarding require explicit setup — by design, `mps` does not automatically inject SSH keys or open tunnels.
+
+### SSH Setup
+
+Configure SSH access with `mps ssh-config`. This resolves your SSH key, injects it into the VM, and generates an SSH config entry — no `sudo` required.
+
+```bash
+# Auto-detect key, inject, print config to stdout
+mps ssh-config
 
 # Use a specific key
-mps ssh-config --ssh-key ~/.ssh/id_ed25519 --name dev
+mps ssh-config --ssh-key ~/.ssh/id_ed25519
 
-# Append to ~/.ssh/config.d/
-mps ssh-config --append --name dev
+# Write config to ~/.ssh/config.d/ (for VS Code)
+mps ssh-config --append
 ```
 
 SSH key resolution order: `--ssh-key` flag > `MPS_SSH_KEY` config > auto-detect from `~/.ssh/` (ed25519 > ecdsa > rsa).
 
-Then in VS Code: Remote-SSH -> Connect to Host -> `mps-<name>`.
+### VS Code Remote-SSH
 
-**Note:** Port forwarding requires SSH to be configured first. Run `mps ssh-config` before `mps port forward`.
+The primary use case for `mps ssh-config` is connecting to sandboxes from VS Code via the [Remote-SSH](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-ssh) extension.
+
+```bash
+# 1. Write SSH config for your sandbox
+mps ssh-config --append
+
+# 2. Ensure ~/.ssh/config includes the config.d directory
+#    Add this line if not already present:
+#    Include config.d/*
+
+# 3. In VS Code: Cmd/Ctrl+Shift+P -> "Remote-SSH: Connect to Host" -> select mps-<name>
+```
+
+The `--append` flag writes to `~/.ssh/config.d/<instance-name>`, which VS Code picks up automatically when your `~/.ssh/config` includes `config.d/*`. Use `--print` (the default) if you prefer to manage SSH config manually.
+
+### Port Forwarding
+
+Ports are forwarded via SSH tunnels, so `mps ssh-config` must be run first. The `--port` flag on create stores forwarding rules in instance metadata but does not activate them until SSH is configured.
+
+```bash
+# 1. Create with port rules (stored, not yet active)
+mps create --port 3000:3000 --port 8080:8080
+
+# 2. Configure SSH (required before any forwarding)
+mps ssh-config
+
+# 3. Forward ports (uses stored rules, or specify manually)
+mps port forward mydev 3000:3000
+
+# List active forwards
+mps port list
+
+# Auto-forward via .mps.env (activated on next mps up after ssh-config)
+# MPS_PORTS="8899:8899 3000:3000"
+```
+
+Forwards bind to `localhost` only — they are not exposed on external network interfaces. Privileged ports (< 1024) require the `--privileged` flag, which elevates the SSH tunnel via `sudo`:
+
+```bash
+mps port forward --privileged mydev 80:80
+```
+
+Ports are automatically cleaned up on `mps down` and `mps destroy`.
 
 ## Pre-built Images
 
-Pre-built QCOW2 images skip cloud-init provisioning for faster startup. Images are distributed via Backblaze B2 with Cloudflare proxy, versioned with SemVer, and verified with SHA256 checksums.
+Pre-built QCOW2 images come with tools pre-installed, so cloud-init has far less to do at startup. Images are distributed via Backblaze B2 with Cloudflare proxy, versioned with SemVer, and verified with SHA256 checksums.
 
 ```bash
-# Browse available images
+# Browse cached images (shows update status)
+mps image list
+
+# Browse remote registry
 mps image list --remote
 
-# Pull an image
-mps image pull base:latest
+# Pull an image (auto-detects host architecture)
+mps image pull base
 mps image pull base:1.0.0
+mps image pull base --force      # Re-download even if up to date
 
-# Build locally with Packer (runs inside Docker, outputs .qcow2.img)
-make image-base                     # Native architecture
-make image-base ARCH=arm64          # Cross-architecture
+# Import a locally built image
+mps image import images/artifacts/mps-base-amd64.qcow2.img
+
+# Remove cached images
+mps image remove base:1.0.0
+mps image remove --all
+```
+
+Images are checked for updates automatically on `mps create` and `mps up`. Disable with `MPS_IMAGE_CHECK_UPDATES=false`.
+
+### Building Images Locally
+
+Image builds run inside Docker via Packer + QEMU. Flavors chain from their parent — building `smart-contract-audit` automatically builds the full chain.
+
+```bash
+make image-base                     # Both architectures (parallel)
+make image-base-amd64               # Single architecture
+make image-protocol-dev             # Chains from base
+make image-smart-contract-dev       # Chains from protocol-dev
+make image-smart-contract-audit     # Full chain: base → protocol-dev → sc-dev → sc-audit
+make import-base                    # Import host-arch image into local mps cache
 ```
 
 ## Development
@@ -214,13 +411,22 @@ make image-base ARCH=arm64          # Cross-architecture
 All build, lint, and test commands run inside Docker containers for reproducibility. The Makefile auto-builds the container images when their Dockerfiles change.
 
 ```bash
-make linter          # Build the linter image
-make builder         # Build the builder image (Packer, QEMU, b2)
-make lint            # Run all linters (shellcheck, hadolint, yamllint, checkmake, packer fmt, py-psscriptanalyzer)
-make test            # Run BATS tests
-make image-base      # Build base VM image with Packer
-make publish-base VERSION=1.0.0   # Publish to Backblaze B2
-make help            # Show all targets
+# Docker images (auto-built on first use)
+make build-docker-linter      # Linter/test image
+make build-docker-builder     # Builder image (Packer, QEMU)
+make build-docker-publisher   # Publisher image (b2, jq, yq)
+
+# Lint and test
+make lint                     # Run all linters
+make lint-actions             # Lint GitHub Actions workflows
+make test                     # Run BATS tests
+
+# Publish (requires B2_APPLICATION_KEY_ID and B2_APPLICATION_KEY)
+make publish-base VERSION=1.0.0        # Upload + manifest (both archs)
+make upload-base-amd64 VERSION=1.0.0   # CI: upload only (no manifest)
+make update-manifest VERSION=1.0.0     # CI fan-in: single manifest write
+
+make help                     # Show all targets
 ```
 
 ### Linters
@@ -233,7 +439,8 @@ make help            # Show all targets
 | Makefile | checkmake |
 | YAML | yamllint |
 | HCL/Packer | packer fmt |
+| GitHub Actions | actionlint |
 
 ## License
 
-Internal use.
+Proprietary — internal use only. All rights reserved.

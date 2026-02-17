@@ -42,6 +42,7 @@ Internal CLI tool for spinning up isolated VM-based development environments usi
 - `install.sh` / `install.ps1` — Installer scripts
 - `uninstall.sh` — Uninstaller (removes symlink, VMs, caches, configs)
 - `checkmake.ini`, `.yamllint`, `.github/actionlint.yaml` — Linter configuration files
+- `CODEOWNERS` — GitHub code ownership for PR review routing
 - `.github/workflows/` — GitHub Actions CI/CD pipelines (ci, images, release, update-submodule)
 - `.github/actions/verify-gpg-tag/` — Composite action for GPG tag signature verification
 - `vendor/hl-claude-marketplace` — Git submodule: private Claude Code plugin marketplace (relative URL)

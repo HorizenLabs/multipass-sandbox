@@ -208,7 +208,7 @@ ${_color_bold}Naming:${_color_reset}
 ${_color_bold}Flags:${_color_reset}
     --name <name>           Override auto-generated instance name
     --image <image>         Ubuntu image (only used on create)
-    --cpus <n>              CPU cores (only used on create)
+    --cpus <n>              vCPUs (only used on create)
     --memory <size>         Memory (only used on create)
     --disk <size>           Disk (only used on create)
     --cloud-init <name>     Cloud-init template (only used on create)

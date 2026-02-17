@@ -11,11 +11,13 @@ ${_color_bold}Subcommands:${_color_reset}
     list [name]                      List active port forwards
 
 ${_color_bold}Options:${_color_reset}
+    --privileged                     Allow binding to privileged ports (< 1024) via sudo
     --help, -h                       Show this help message
 
 ${_color_bold}Examples:${_color_reset}
     mps port forward dev 3000:3000
     mps port forward dev 8080:80
+    mps port forward --privileged dev 80:80   # Binds privileged port via sudo
     mps port list
     mps port list dev
 EOF
@@ -51,9 +53,11 @@ cmd_port() {
 _port_forward() {
     local name=""
     local port_spec=""
+    local privileged=""
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
+            --privileged) privileged="--privileged"; shift ;;
             --help|-h) _port_usage; exit 0 ;;
             -*)        mps_log_error "Unknown option: $1"; exit 1 ;;
             *)
@@ -97,7 +101,7 @@ _port_forward() {
 
     mps_log_info "Forwarding localhost:${host_port} → ${instance_name}:${guest_port}..."
 
-    if ! mps_forward_port "$instance_name" "$name" "${host_port}:${guest_port}"; then
+    if ! mps_forward_port "$instance_name" "$name" "${host_port}:${guest_port}" "$privileged"; then
         mps_die "Failed to establish port forward"
     fi
 
@@ -137,10 +141,31 @@ _port_list() {
             continue
         fi
 
-        while IFS=: read -r host_port guest_port pid; do
-            [[ -z "$host_port" ]] && continue
+        local line
+        while IFS= read -r line; do
+            [[ -z "$line" ]] && continue
+            # Format: host_port:guest_port:[s:]pid — 's:' prefix marks sudo-owned tunnels
+            local host_port="" guest_port="" pid="" use_sudo=false
+            if [[ "$line" =~ ^([0-9]+):([0-9]+):s:([0-9]+)$ ]]; then
+                host_port="${BASH_REMATCH[1]}"
+                guest_port="${BASH_REMATCH[2]}"
+                pid="${BASH_REMATCH[3]}"
+                use_sudo=true
+            elif [[ "$line" =~ ^([0-9]+):([0-9]+):([0-9]+)$ ]]; then
+                host_port="${BASH_REMATCH[1]}"
+                guest_port="${BASH_REMATCH[2]}"
+                pid="${BASH_REMATCH[3]}"
+            else
+                continue
+            fi
             local status
-            if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
+            if [[ "$use_sudo" == "true" ]]; then
+                if sudo kill -0 "$pid" 2>/dev/null; then
+                    status="${_color_green}active${_color_reset}"
+                else
+                    status="${_color_red}dead${_color_reset}"
+                fi
+            elif kill -0 "$pid" 2>/dev/null; then
                 status="${_color_green}active${_color_reset}"
             else
                 status="${_color_red}dead${_color_reset}"
