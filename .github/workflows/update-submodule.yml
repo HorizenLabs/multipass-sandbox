@@ -17,9 +17,26 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          submodules: true
-          ssh-key: ${{ secrets.SUBMODULE_DEPLOY_KEY }}
+
+      - name: Configure SSH for submodule
+        env:
+          DEPLOY_KEY: ${{ secrets.SUBMODULE_DEPLOY_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$DEPLOY_KEY" > ~/.ssh/submodule_key
+          chmod 600 ~/.ssh/submodule_key
+          ssh-keyscan github.com >> ~/.ssh/known_hosts 2>/dev/null
+          cat >> ~/.ssh/config <<'SSH'
+          Host github-submodule
+            HostName github.com
+            IdentityFile ~/.ssh/submodule_key
+            IdentitiesOnly yes
+          SSH
+          # Relative submodule URL resolves to HTTPS — rewrite to SSH with deploy key
+          git config --global url."git@github-submodule:HorizenLabs/hl-claude-marketplace".insteadOf "https://github.com/HorizenLabs/hl-claude-marketplace"
+
+      - name: Init submodules
+        run: git submodule update --init --recursive
 
       - name: Check for submodule updates
         id: check
