@@ -106,6 +106,7 @@ Additional:
 | checkmake v0.3.2 | linter | SHA256 from `checksums.txt` |
 | BATS v1.13.0 | linter | None (no hashes published) |
 | PowerShell v7.5.4 | linter | SHA256 from `hashes.sha256` sidecar (GitHub tar.gz) |
+| actionlint v1.7.11 | linter | SHA256 from `checksums.txt` |
 | yamllint, py-psscriptanalyzer | linter | None (pip) |
 | yq v4.45.1 | builder, publisher | SHA256 from rhash `checksums` file (field $19) |
 
@@ -166,6 +167,7 @@ Additional:
 | Makefile | checkmake | `Makefile` |
 | YAML | yamllint | `templates/**/*.yaml`, `images/layers/*.yaml` |
 | HCL | packer fmt -check | `images/**/*.pkr.hcl` |
+| GitHub Actions | actionlint | `.github/workflows/*.yml` |
 
 **Shellcheck**: Command files use `# shellcheck disable=SC2154` at file-level — they're sourced by `bin/mps` which provides color variables from `lib/common.sh`. ShellCheck can't trace cross-file sourcing.
 

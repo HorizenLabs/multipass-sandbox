@@ -1,0 +1,276 @@
+name: Images
+
+on:
+  push:
+    tags: ["images/v*"]
+  schedule:
+    # Weekly rebuild — Sunday 03:00 UTC
+    - cron: "0 3 * * 0"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Image version (e.g. 1.0.0). Defaults to latest images/v* tag."
+        required: false
+      flavors:
+        description: "Space-separated flavors to build (default: all)"
+        required: false
+
+concurrency:
+  group: images
+  cancel-in-progress: false
+
+env:
+  CDN_BASE: https://mpsandbox.horizenlabs.io
+  ALL_FLAVORS: base protocol-dev smart-contract-dev smart-contract-audit
+
+jobs:
+  # ── Resolve version, verify GPG tag, compute matrix ─────────────
+  resolve:
+    runs-on: warp-ubuntu-latest-x64-2x
+    outputs:
+      version: ${{ steps.resolve.outputs.version }}
+      tag: ${{ steps.resolve.outputs.tag }}
+      flavors_json: ${{ steps.flavors.outputs.flavors_json }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Resolve version and tag
+        id: resolve
+        run: |
+          # Determine version from tag ref, input, or latest tag
+          if [[ "$GITHUB_REF" == refs/tags/images/v* ]]; then
+            VERSION="${GITHUB_REF#refs/tags/images/v}"
+          elif [[ -n "${{ inputs.version }}" ]]; then
+            VERSION="${{ inputs.version }}"
+          else
+            # Cron or dispatch without version — find latest images/v* tag
+            LATEST_TAG="$(git tag -l 'images/v*' --sort=-v:refname | head -n1)"
+            if [[ -z "$LATEST_TAG" ]]; then
+              echo "::error::No images/v* tags found"
+              exit 1
+            fi
+            VERSION="${LATEST_TAG#images/v}"
+          fi
+
+          TAG="images/v${VERSION}"
+
+          # Validate SemVer
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Version must be SemVer (x.y.z). Got: $VERSION"
+            exit 1
+          fi
+
+          # Verify the tag exists locally
+          if ! git rev-parse "$TAG" &>/dev/null; then
+            echo "::error::Tag $TAG does not exist"
+            exit 1
+          fi
+
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Verify GPG-signed tag
+        uses: ./.github/actions/verify-gpg-tag
+        with:
+          tag: ${{ steps.resolve.outputs.tag }}
+          maintainer-keys: ${{ vars.MAINTAINER_KEYS }}
+
+      - name: Resolve flavors
+        id: flavors
+        run: |
+          INPUT_FLAVORS="${{ inputs.flavors }}"
+          if [[ -n "$INPUT_FLAVORS" ]]; then
+            read -ra FLAVORS <<< "$INPUT_FLAVORS"
+          else
+            read -ra FLAVORS <<< "$ALL_FLAVORS"
+          fi
+
+          # Convert to JSON array for matrix
+          JSON="$(printf '%s\n' "${FLAVORS[@]}" | jq -R . | jq -sc .)"
+          echo "flavors_json=$JSON" >> "$GITHUB_OUTPUT"
+          echo "Flavors: ${FLAVORS[*]}"
+
+      - name: Notify Slack on failure
+        if: failure()
+        run: |
+          if [[ -n "${{ secrets.SLACK_WEBHOOK_URL }}" ]]; then
+            curl -sf -X POST -H 'Content-type: application/json' \
+              --data "{\"text\":\"*images.yml — resolve* failed\\nRepo: \`${{ github.repository }}\`\\nRef: \`${{ github.ref }}\`\\nRun: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\"}" \
+              "${{ secrets.SLACK_WEBHOOK_URL }}" || true
+          fi
+
+  # ── Build + upload per-arch ─────────────────────────────────────
+  build:
+    needs: resolve
+    runs-on: ${{ matrix.arch == 'arm64' && 'warp-ubuntu-2404-arm64-16x' || 'warp-ubuntu-latest-x64-16x' }}
+    environment: build
+    timeout-minutes: 240
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [amd64, arm64]
+    steps:
+      - name: Checkout at tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve.outputs.tag }}
+          submodules: true
+          ssh-key: ${{ secrets.SUBMODULE_DEPLOY_KEY }}
+
+      - name: Verify submodule
+        run: |
+          if [[ ! -f vendor/hl-claude-marketplace/.git ]] && [[ ! -d vendor/hl-claude-marketplace/.git ]]; then
+            echo "::error::Submodule vendor/hl-claude-marketplace not initialized"
+            exit 1
+          fi
+
+      - name: Verify KVM
+        run: |
+          if [[ ! -e /dev/kvm ]]; then
+            echo "::error::/dev/kvm not available — QEMU will be slow"
+            exit 1
+          fi
+          echo "KVM available"
+
+      - name: Build Docker images
+        run: |
+          make build-docker-builder
+          make build-docker-publisher
+
+      - name: Build and upload images
+        env:
+          B2_APPLICATION_KEY_ID: ${{ secrets.B2_APPLICATION_KEY_ID }}
+          B2_APPLICATION_KEY: ${{ secrets.B2_APPLICATION_KEY }}
+        run: |
+          set -euo pipefail
+          V="${{ needs.resolve.outputs.version }}"
+          ARCH="${{ matrix.arch }}"
+          FLAVORS_JSON='${{ needs.resolve.outputs.flavors_json }}'
+
+          # Ordered build chain — each flavor's upload overlaps the next build
+          CHAIN=(base protocol-dev smart-contract-dev smart-contract-audit)
+          UPLOAD_PIDS=()
+          UPLOAD_FAILED=0
+          LOG_DIR="$(mktemp -d)"
+
+          for flavor in "${CHAIN[@]}"; do
+            # Skip if not in requested flavors (but Make handles chain deps)
+            if ! echo "$FLAVORS_JSON" | jq -e --arg f "$flavor" 'index($f) != null' >/dev/null; then
+              continue
+            fi
+
+            echo "=== Building ${flavor}-${ARCH} ==="
+            make "image-${flavor}-${ARCH}"
+
+            echo "=== Uploading ${flavor}-${ARCH} (background) ==="
+            make "upload-${flavor}-${ARCH}" VERSION="$V" \
+              > "${LOG_DIR}/${flavor}.log" 2>&1 &
+            UPLOAD_PIDS+=("$!:${flavor}")
+          done
+
+          # Wait for all background uploads
+          for entry in "${UPLOAD_PIDS[@]}"; do
+            pid="${entry%%:*}"
+            name="${entry##*:}"
+            if wait "$pid"; then
+              echo "=== Upload ${name}-${ARCH}: success ==="
+            else
+              echo "::error::Upload failed: ${name}-${ARCH}"
+              UPLOAD_FAILED=1
+            fi
+            echo "--- ${name}-${ARCH} upload log ---"
+            cat "${LOG_DIR}/${name}.log"
+            echo "--- end ${name}-${ARCH} ---"
+          done
+
+          rm -rf "$LOG_DIR"
+
+          if [[ "$UPLOAD_FAILED" -ne 0 ]]; then
+            exit 1
+          fi
+
+      - name: Notify Slack on failure
+        if: failure()
+        run: |
+          if [[ -n "${{ secrets.SLACK_WEBHOOK_URL }}" ]]; then
+            curl -sf -X POST -H 'Content-type: application/json' \
+              --data "{\"text\":\"*images.yml — build (${{ matrix.arch }})* failed\\nVersion: \`${{ needs.resolve.outputs.version }}\`\\nRun: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\"}" \
+              "${{ secrets.SLACK_WEBHOOK_URL }}" || true
+          fi
+
+  # ── Publish manifest + purge CF cache ───────────────────────────
+  publish:
+    needs: [resolve, build]
+    if: always() && needs.resolve.result == 'success' && needs.build.result != 'cancelled'
+    runs-on: warp-ubuntu-latest-x64-2x
+    environment: publish
+    steps:
+      - name: Checkout at tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve.outputs.tag }}
+
+      - name: Build publisher image
+        run: make build-docker-publisher
+
+      - name: Update manifest and generate indexes
+        env:
+          B2_APPLICATION_KEY_ID: ${{ secrets.B2_APPLICATION_KEY_ID }}
+          B2_APPLICATION_KEY: ${{ secrets.B2_APPLICATION_KEY }}
+        run: |
+          V="${{ needs.resolve.outputs.version }}"
+          make update-manifest VERSION="$V"
+
+      - name: Purge Cloudflare cache
+        env:
+          CF_ZONE_ID: ${{ secrets.CF_ZONE_ID }}
+          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          V="${{ needs.resolve.outputs.version }}"
+          BASE="${CDN_BASE}"
+          FLAVORS_JSON='${{ needs.resolve.outputs.flavors_json }}'
+
+          # Build URL list for cache purge
+          URLS=()
+          URLS+=("${BASE}/manifest.json")
+          URLS+=("${BASE}/index.html")
+
+          for flavor in $(echo "$FLAVORS_JSON" | jq -r '.[]'); do
+            URLS+=("${BASE}/${flavor}/index.html")
+            URLS+=("${BASE}/${flavor}/${V}/index.html")
+            for arch in amd64 arm64; do
+              URLS+=("${BASE}/${flavor}/${V}/${arch}.img.sha256")
+            done
+          done
+
+          echo "Purging ${#URLS[@]} URLs from Cloudflare cache..."
+          printf '  %s\n' "${URLS[@]}"
+
+          # Build JSON files array
+          FILES_JSON="$(printf '%s\n' "${URLS[@]}" | jq -R . | jq -sc .)"
+
+          HTTP_CODE="$(curl -sf -o /dev/null -w '%{http_code}' \
+            -X POST "https://api.cloudflare.com/client/v4/zones/${CF_ZONE_ID}/purge_cache" \
+            -H "Authorization: Bearer ${CF_API_TOKEN}" \
+            -H "Content-Type: application/json" \
+            --data "{\"files\":${FILES_JSON}}")" || true
+
+          if [[ "$HTTP_CODE" == "200" ]]; then
+            echo "Cache purge successful."
+          else
+            echo "::warning::Cache purge returned HTTP ${HTTP_CODE} (non-fatal, cache expires at edge TTL)"
+          fi
+
+      - name: Notify Slack on failure
+        if: failure()
+        run: |
+          if [[ -n "${{ secrets.SLACK_WEBHOOK_URL }}" ]]; then
+            curl -sf -X POST -H 'Content-type: application/json' \
+              --data "{\"text\":\"*images.yml — publish* failed\\nVersion: \`${{ needs.resolve.outputs.version }}\`\\nRun: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\"}" \
+              "${{ secrets.SLACK_WEBHOOK_URL }}" || true
+          fi

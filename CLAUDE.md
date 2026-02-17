@@ -41,9 +41,11 @@ Internal CLI tool for spinning up isolated VM-based development environments usi
 - `Makefile` — All targets run inside Docker containers via `docker run`
 - `install.sh` / `install.ps1` — Installer scripts
 - `uninstall.sh` — Uninstaller (removes symlink, VMs, caches, configs)
-- `checkmake.ini`, `.yamllint` — Linter configuration files
+- `checkmake.ini`, `.yamllint`, `.github/actionlint.yaml` — Linter configuration files
+- `.github/workflows/` — GitHub Actions CI/CD pipelines (ci, images, release, update-submodule)
+- `.github/actions/verify-gpg-tag/` — Composite action for GPG tag signature verification
 - `vendor/hl-claude-marketplace` — Git submodule: private Claude Code plugin marketplace (relative URL)
-- `.planning/` — Implementation plan, architecture decisions, status tracking
+- `.planning/` — Implementation plan, architecture decisions, CI design, status tracking
 
 ## Commands
 
@@ -81,7 +83,8 @@ Build/test/lint runs inside Docker containers — linter image for lint/test, bu
 make build-docker-linter    # Build the linter image (shellcheck, hadolint, BATS, etc.)
 make build-docker-builder   # Build the builder image (Packer, QEMU — no credentials)
 make build-docker-publisher # Build the publisher image (b2, jq, yq — credential-isolated)
-make lint             # Run all linters (shellcheck, hadolint, yamllint, checkmake, packer fmt, py-psscriptanalyzer)
+make lint             # Run all linters (shellcheck, hadolint, yamllint, checkmake, packer fmt, py-psscriptanalyzer, actionlint)
+make lint-actions      # Lint GitHub Actions workflows with actionlint
 make test             # Run BATS tests
 make image-base       # Build base VM image (both archs in parallel via sub-make -j2)
 make image-base-amd64 # Build base VM image (amd64 only)
@@ -124,6 +127,7 @@ The Makefile detects host uid:gid and the entrypoint uses setpriv to step down f
   - **Makefile**: `Makefile`
   - **YAML**: `templates/**/*.yaml`, `images/layers/*.yaml`
   - **HCL**: `images/**/*.pkr.hcl`
+  - **GitHub Actions**: `.github/workflows/*.yml`
 - Linting requires Docker. The linter image is built automatically if missing (`make lint` depends on the stamp file).
 - Fix all lint errors before committing — do not bypass with `--no-verify` or inline disables unless there is a documented reason.
 

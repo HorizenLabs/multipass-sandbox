@@ -118,6 +118,20 @@ RUN pwsh -NoProfile -NonInteractive -Command \
         'Install-Module -Name PSScriptAnalyzer -Scope AllUsers -Force; \
          Get-Module -ListAvailable PSScriptAnalyzer'
 
+# ---------- actionlint (GitHub Actions workflow linter) ----------
+RUN set -eux; \
+    AL_VERSION="1.7.11"; \
+    ARCH="$(dpkg --print-architecture)"; \
+    AL_FILE="actionlint_${AL_VERSION}_linux_${ARCH}.tar.gz"; \
+    curl -fsSL "https://github.com/rhysd/actionlint/releases/download/v${AL_VERSION}/${AL_FILE}" \
+        -o /tmp/"${AL_FILE}"; \
+    curl -fsSL "https://github.com/rhysd/actionlint/releases/download/v${AL_VERSION}/actionlint_${AL_VERSION}_checksums.txt" \
+        -o /tmp/al_checksums.txt; \
+    echo "$(grep "${AL_FILE}" /tmp/al_checksums.txt | awk '{print $1}')  /tmp/${AL_FILE}" | sha256sum -c -; \
+    tar -xzf /tmp/"${AL_FILE}" -C /usr/local/bin actionlint; \
+    rm /tmp/"${AL_FILE}" /tmp/al_checksums.txt; \
+    actionlint --version
+
 # ---------- Python tools: yamllint, py-psscriptanalyzer ----------
 # hadolint ignore=DL3013
 RUN pip3 install --no-cache-dir --break-system-packages \

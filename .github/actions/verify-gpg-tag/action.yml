@@ -1,0 +1,53 @@
+name: Verify GPG-signed tag
+description: Verify a git tag is GPG-signed by an authorized maintainer
+
+inputs:
+  tag:
+    description: Git tag to verify (e.g. images/v1.0.0)
+    required: true
+  maintainer-keys:
+    description: Space-separated GPG fingerprints of authorized signers
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Verify GPG-signed tag
+      shell: bash
+      env:
+        TAG: ${{ inputs.tag }}
+        MAINTAINER_KEYS: ${{ inputs.maintainer-keys }}
+      run: |
+        if [[ -z "$MAINTAINER_KEYS" ]]; then
+          echo "::error::MAINTAINER_KEYS variable is not set"
+          exit 1
+        fi
+
+        # Import maintainer keys from keyservers
+        KEYSERVERS="keys.openpgp.org keyserver.ubuntu.com pgp.mit.edu keys.gnupg.net"
+        for fpr in $MAINTAINER_KEYS; do
+          imported=false
+          for ks in $KEYSERVERS; do
+            if gpg --keyserver "$ks" --recv-keys "$fpr" 2>/dev/null; then
+              imported=true; break
+            fi
+          done
+          if [[ "$imported" != "true" ]]; then
+            echo "::error::Failed to import key $fpr from any keyserver"
+            exit 1
+          fi
+        done
+
+        # Verify tag signature
+        if ! git verify-tag "$TAG" 2>/dev/null; then
+          echo "::error::Tag $TAG is not GPG-signed or signature is invalid"
+          exit 1
+        fi
+
+        # Check signing key against allowed list
+        SIGNING_FPR="$(git verify-tag --raw "$TAG" 2>&1 | grep '^\[GNUPG:\] VALIDSIG' | awk '{print $3}')"
+        if ! echo " $MAINTAINER_KEYS " | grep -q " $SIGNING_FPR "; then
+          echo "::error::Tag $TAG signed by unknown key: $SIGNING_FPR"
+          exit 1
+        fi
+        echo "Tag $TAG verified: signed by $SIGNING_FPR"

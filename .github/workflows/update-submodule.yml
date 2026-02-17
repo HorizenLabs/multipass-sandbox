@@ -1,0 +1,97 @@
+name: Update Submodule
+
+on:
+  schedule:
+    # Weekdays 14:00 UTC — 9 AM EST / 3 PM CET
+    - cron: "0 14 * * 1-5"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  update-submodule:
+    runs-on: warp-ubuntu-latest-x64-2x
+    environment: submodule
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+          ssh-key: ${{ secrets.SUBMODULE_DEPLOY_KEY }}
+
+      - name: Check for submodule updates
+        id: check
+        run: |
+          cd vendor/hl-claude-marketplace
+          OLD_SHA="$(git rev-parse HEAD)"
+          git fetch origin main
+          NEW_SHA="$(git rev-parse origin/main)"
+
+          if [[ "$OLD_SHA" == "$NEW_SHA" ]]; then
+            echo "Submodule already up to date ($OLD_SHA)"
+            echo "has_updates=false" >> "$GITHUB_OUTPUT"
+          else
+            COUNT="$(git rev-list --count "${OLD_SHA}..${NEW_SHA}")"
+            {
+              echo "has_updates=true"
+              echo "old_sha=${OLD_SHA:0:7}"
+              echo "new_sha=${NEW_SHA:0:7}"
+              echo "commit_count=$COUNT"
+            } >> "$GITHUB_OUTPUT"
+            echo "${COUNT} new commit(s): ${OLD_SHA:0:7} → ${NEW_SHA:0:7}"
+          fi
+
+      - name: Check for existing PR
+        if: steps.check.outputs.has_updates == 'true'
+        id: existing
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          OPEN="$(gh pr list --search 'chore/update-submodule in:head' --state open --json number --jq 'length')"
+          if [[ "$OPEN" -gt 0 ]]; then
+            echo "Open submodule update PR already exists — skipping."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create PR
+        if: steps.check.outputs.has_updates == 'true' && steps.existing.outputs.skip == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          BRANCH="chore/update-submodule-$(date -u +%Y%m%d)"
+          git checkout -b "$BRANCH"
+          git -C vendor/hl-claude-marketplace checkout origin/main
+          git add vendor/hl-claude-marketplace
+          git commit -m "chore: update hl-claude-marketplace submodule (${{ steps.check.outputs.old_sha }}..${{ steps.check.outputs.new_sha }})"
+          git push origin "$BRANCH"
+
+          gh pr create \
+            --title "chore: update hl-claude-marketplace submodule" \
+            --body "$(cat <<'EOF'
+          Updates `vendor/hl-claude-marketplace` — ${{ steps.check.outputs.commit_count }} new commit(s) (${{ steps.check.outputs.old_sha }} → ${{ steps.check.outputs.new_sha }}).
+
+          > **Note:** CI may not trigger automatically on this PR ([`GITHUB_TOKEN` limitation](https://docs.github.com/en/actions/security-for-github-actions/security-guides/automatic-token-authentication#using-the-github_token-in-a-workflow)). Close and reopen to trigger, or merge if the submodule change is low-risk.
+          EOF
+          )"
+
+      - name: Notify Slack
+        if: steps.check.outputs.has_updates == 'true' && steps.existing.outputs.skip == 'false'
+        run: |
+          if [[ -n "${{ secrets.SLACK_WEBHOOK_URL }}" ]]; then
+            curl -sf -X POST -H 'Content-type: application/json' \
+              --data "{\"text\":\"*Submodule update PR created*\\n\`hl-claude-marketplace\` has ${{ steps.check.outputs.commit_count }} new commit(s) (${{ steps.check.outputs.old_sha }} → ${{ steps.check.outputs.new_sha }})\\n${{ github.server_url }}/${{ github.repository }}/pulls\"}" \
+              "${{ secrets.SLACK_WEBHOOK_URL }}" || true
+          fi
+
+      - name: Notify Slack on failure
+        if: failure()
+        run: |
+          if [[ -n "${{ secrets.SLACK_WEBHOOK_URL }}" ]]; then
+            curl -sf -X POST -H 'Content-type: application/json' \
+              --data "{\"text\":\"*update-submodule.yml* failed\\nRun: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\"}" \
+              "${{ secrets.SLACK_WEBHOOK_URL }}" || true
+          fi

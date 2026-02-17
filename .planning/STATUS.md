@@ -24,11 +24,16 @@
 - [x] `mps image pull` + auto-pull on `mps create`/`mps up` (code complete, needs E2E testing against live infra)
 - [x] Parallel image downloads: `_mps_download_file()` uses aria2c (8 connections) when available, curl fallback
 
-## Phase 7 — GH Actions CI/CD Pipeline: NOT STARTED
+## Phase 7 — GH Actions CI/CD Pipeline: COMPLETE
 
-- [ ] GitHub Actions workflow: `make lint` on push/PR
-- [ ] Automated image builds
-- [ ] Cloudflare cache invalidation after publish (purge `.json`, `.html`, `.sha256` files via CF API; edge TTL 1d, browser TTL 1h)
+- [x] GitHub Actions workflow: `make lint` on push/PR (`ci.yml`)
+- [x] Automated image builds with pipelined upload (`images.yml` — GPG tag verification, matrix build, fan-in publish)
+- [x] Tool release workflow (`release.yml` — GPG tag verification, lint, GH release)
+- [x] Submodule update workflow (`update-submodule.yml`)
+- [x] GPG tag signature verification (composite action `.github/actions/verify-gpg-tag/`)
+- [x] Cloudflare cache invalidation after publish (purge `.json`, `.html`, `.sha256` files via CF API)
+- [x] Slack failure notifications (per-job)
+- [x] actionlint added to linter image and `make lint`
 
 ## Phase 8 — Testing: NOT STARTED
 

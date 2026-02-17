@@ -43,6 +43,7 @@ BASH_SCRIPTS := $(shell find bin/ lib/ commands/ images/ -name '*.sh' -o -name '
 PS_SCRIPTS   := $(shell find . -name '*.ps1' 2>/dev/null)
 YAML_FILES   := $(shell find templates/ images/layers/ -name '*.yaml' 2>/dev/null)
 HCL_FILES    := $(shell find images/ -name '*.pkr.hcl' 2>/dev/null)
+GHA_FILES    := $(shell find .github/workflows/ -name '*.yml' -o -name '*.yaml' 2>/dev/null)
 DOCKERFILES  := Dockerfile.builder Dockerfile.linter Dockerfile.publisher
 
 STAMP_DIR := .stamps
@@ -85,7 +86,7 @@ CLEAN_IMAGE_PHONY := $(foreach f,$(FLAVORS),clean-image-$(f) $(foreach a,$(ARCHS
 
 .PHONY: all help install uninstall test clean \
 	build-docker-builder build-docker-linter build-docker-publisher \
-	lint lint-bash lint-powershell lint-dockerfile lint-makefile lint-yaml lint-hcl \
+	lint lint-bash lint-powershell lint-dockerfile lint-makefile lint-yaml lint-hcl lint-actions \
 	clean-docker-builder clean-docker-linter clean-docker-publisher clean-images \
 	update-manifest \
 	$(IMAGE_PHONY) $(IMPORT_PHONY) $(UPLOAD_PHONY) $(PUBLISH_PHONY) $(CLEAN_IMAGE_PHONY)
@@ -143,7 +144,7 @@ test: $(LINTER_STAMP) ## Run BATS tests inside linter container
 	$(DOCKER_RUN) bats tests/
 
 # ---------- Lint (all) ----------
-lint: lint-bash lint-powershell lint-dockerfile lint-makefile lint-yaml lint-hcl ## Run all linters
+lint: lint-bash lint-powershell lint-dockerfile lint-makefile lint-yaml lint-hcl lint-actions ## Run all linters
 
 lint-bash: $(LINTER_STAMP) ## Lint Bash scripts with shellcheck
 	$(DOCKER_RUN) bash -c '\
@@ -216,6 +217,15 @@ lint-hcl: $(LINTER_STAMP) ## Lint HCL/Packer files with packer fmt
 			exit $$exit_code'; \
 	else \
 		echo "No HCL files found, skipping."; \
+	fi
+
+lint-actions: $(LINTER_STAMP) ## Lint GitHub Actions workflows with actionlint
+	@if [ -n "$(GHA_FILES)" ]; then \
+		$(DOCKER_RUN) bash -c '\
+			echo "actionlint: $(GHA_FILES)"; \
+			actionlint $(GHA_FILES)'; \
+	else \
+		echo "No GitHub Actions workflow files found, skipping."; \
 	fi
 
 # ---------- Image builds ----------

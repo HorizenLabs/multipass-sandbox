@@ -41,8 +41,13 @@ A blockchain software development company needs an internal tool to spin up isol
 
 ## Phase 7 — GH Actions CI/CD Pipeline
 
-- GitHub Actions workflow: run `make lint` on push/PR
-- Automated image builds
+- CI workflow (`ci.yml`): run `make lint` + `make test` on push/PR to `main`
+- Image build/publish workflow (`images.yml`): GPG-signed tag trigger + weekly cron + manual dispatch, WarpBuild native KVM runners (amd64+arm64), pipelined build+upload, fan-in manifest update, Cloudflare cache purge, Slack failure notifications
+- Tool release workflow (`release.yml`): GPG-signed tag trigger, lint+test, GitHub Release with install scripts
+- Submodule update workflow (`update-submodule.yml`): keep vendor submodule in sync
+- GPG tag verification: composite action (`.github/actions/verify-gpg-tag/`) shared by images and release workflows, validates signatures against `MAINTAINER_KEYS` repo variable
+- actionlint added to linter image for GitHub Actions workflow linting
+- Full CI design doc: `.planning/CI.md`
 
 ## Phase 8 — Testing
 

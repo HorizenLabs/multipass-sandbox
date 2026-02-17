@@ -1,0 +1,74 @@
+name: Release
+
+on:
+  push:
+    tags: ["mps/v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: warp-ubuntu-latest-x64-2x
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Resolve tag and version
+        id: resolve
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          VERSION="${TAG#mps/v}"
+
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Version must be SemVer (x.y.z). Got: $VERSION"
+            exit 1
+          fi
+
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Verify GPG-signed tag
+        uses: ./.github/actions/verify-gpg-tag
+        with:
+          tag: ${{ steps.resolve.outputs.tag }}
+          maintainer-keys: ${{ vars.MAINTAINER_KEYS }}
+
+      - name: Validate version matches VERSION file
+        run: |
+          FILE_VERSION="$(cat VERSION)"
+          TAG_VERSION="${{ steps.resolve.outputs.version }}"
+          if [[ "$FILE_VERSION" != "$TAG_VERSION" ]]; then
+            echo "::error::Tag version ($TAG_VERSION) does not match VERSION file ($FILE_VERSION)"
+            exit 1
+          fi
+
+      - name: Lint
+        run: make lint
+
+      - name: Test
+        run: |
+          if [[ -d tests/ ]]; then
+            make test
+          else
+            echo "No tests/ directory yet — skipping."
+          fi
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.resolve.outputs.tag }}
+          name: mps ${{ steps.resolve.outputs.version }}
+          generate_release_notes: true
+
+      - name: Notify Slack on failure
+        if: failure()
+        run: |
+          if [[ -n "${{ secrets.SLACK_WEBHOOK_URL }}" ]]; then
+            curl -sf -X POST -H 'Content-type: application/json' \
+              --data "{\"text\":\"*release.yml — release* failed\\nVersion: \`${{ steps.resolve.outputs.version }}\`\\nRun: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\"}" \
+              "${{ secrets.SLACK_WEBHOOK_URL }}" || true
+          fi
