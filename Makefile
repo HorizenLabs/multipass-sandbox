@@ -77,6 +77,12 @@ PARENT_protocol-dev          := base
 PARENT_smart-contract-dev    := protocol-dev
 PARENT_smart-contract-audit  := smart-contract-dev
 
+# Cumulative layers for from-scratch builds (arm64 — no layered chain)
+CUMULATIVE_LAYERS_base                  := $(IMAGE_LAYERS_base)
+CUMULATIVE_LAYERS_protocol-dev          := $(IMAGE_LAYERS_base) $(IMAGE_LAYERS_protocol-dev)
+CUMULATIVE_LAYERS_smart-contract-dev    := $(IMAGE_LAYERS_base) $(IMAGE_LAYERS_protocol-dev) $(IMAGE_LAYERS_smart-contract-dev)
+CUMULATIVE_LAYERS_smart-contract-audit  := $(IMAGE_LAYERS_base) $(IMAGE_LAYERS_protocol-dev) $(IMAGE_LAYERS_smart-contract-dev) $(IMAGE_LAYERS_smart-contract-audit)
+
 # Generated .PHONY lists
 IMAGE_PHONY       := $(foreach f,$(FLAVORS),image-$(f) $(foreach a,$(ARCHS),image-$(f)-$(a)))
 IMPORT_PHONY      := $(foreach f,$(FLAVORS),import-$(f))
@@ -235,11 +241,19 @@ lint-actions: $(LINTER_STAMP) ## Lint GitHub Actions workflows with actionlint
 
 # $(STAMP_DIR)/image-<flavor>-<arch>  (the real build rule)
 # $(1) = flavor, $(2) = arch
+#
+# amd64: layered chain — each flavor depends on its parent stamp and uses
+#   --base-image to apply only the delta layer on top.
+# arm64: from-scratch — no layered chain because arm64 CI runners lack KVM,
+#   forcing TCG emulation (~1h per build).  Parallel from-scratch jobs are
+#   faster than a serial 4-flavor chain.  Depends on CUMULATIVE_LAYERS
+#   (all ancestor layers merged by build.sh) with no parent stamp dep.
 define image_stamp_rule
-$$(STAMP_DIR)/image-$(1)-$(2): $$(BUILDER_STAMP) $$(IMAGE_COMMON_DEPS) $$(IMAGE_LAYERS_$(1)) \
-        $(if $(PARENT_$(1)),$$(STAMP_DIR)/image-$(PARENT_$(1))-$(2)) | $$(STAMP_DIR)
+$$(STAMP_DIR)/image-$(1)-$(2): $$(BUILDER_STAMP) $$(IMAGE_COMMON_DEPS) \
+        $(if $(filter amd64,$(2)),$$(IMAGE_LAYERS_$(1)),$$(CUMULATIVE_LAYERS_$(1))) \
+        $(if $(and $(PARENT_$(1)),$(filter amd64,$(2))),$$(STAMP_DIR)/image-$(PARENT_$(1))-$(2)) | $$(STAMP_DIR)
 	$$(call docker_run_image,$(2)) bash -c \
-	    'cd images && bash build.sh $(if $(PARENT_$(1)),--base-image artifacts/mps-$(PARENT_$(1))-$(2).qcow2.img )$(1)'
+	    'cd images && bash build.sh $(if $(and $(PARENT_$(1)),$(filter amd64,$(2))),--base-image artifacts/mps-$(PARENT_$(1))-$(2).qcow2.img )$(1)'
 	@touch $$@
 endef
 $(foreach f,$(FLAVORS),$(foreach a,$(ARCHS),$(eval $(call image_stamp_rule,$(f),$(a)))))

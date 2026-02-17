@@ -98,7 +98,8 @@ Linter-to-file mapping is in CLAUDE.md "Workflow" section. Additional note: comm
 `.stamps/` directory tracks Docker image build state in Make.
 
 - `.stamps/{builder,linter,publisher}` depend on respective Dockerfile + `docker/entrypoint.sh`
-- `.stamps/image-<flavor>-{amd64,arm64}` — depend on builder stamp + common image deps + per-flavor layer file + parent flavor stamp (non-base only)
+- `.stamps/image-<flavor>-amd64` — depend on builder stamp + common image deps + per-flavor layer file + parent flavor stamp (non-base only, layered chain)
+- `.stamps/image-<flavor>-arm64` — depend on builder stamp + common image deps + cumulative layer files (from-scratch, no parent stamp dep)
 - `make clean` removes stamp files; `.stamps/` is in `.gitignore`
 
 ## File Transfer

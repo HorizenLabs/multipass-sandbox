@@ -17,7 +17,7 @@ runcmd:
     COSIGN_FILE="cosign-linux-${ARCH}"
     curl -fsSL "https://github.com/sigstore/cosign/releases/download/${COSIGN_VERSION}/${COSIGN_FILE}" -o /tmp/"${COSIGN_FILE}"
     curl -fsSL "https://github.com/sigstore/cosign/releases/download/${COSIGN_VERSION}/cosign_checksums.txt" -o /tmp/cosign_checksums.txt
-    grep "${COSIGN_FILE}" /tmp/cosign_checksums.txt | sed "s|${COSIGN_FILE}|/tmp/${COSIGN_FILE}|" | sha256sum -c -
+    grep -w "${COSIGN_FILE}" /tmp/cosign_checksums.txt | sed "s|${COSIGN_FILE}|/tmp/${COSIGN_FILE}|" | sha256sum -c -
     install -m 755 /tmp/"${COSIGN_FILE}" /usr/local/bin/cosign
     rm /tmp/"${COSIGN_FILE}" /tmp/cosign_checksums.txt
 

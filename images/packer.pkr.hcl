@@ -75,6 +75,11 @@ variable "cpus" {
   default = 6
 }
 
+variable "memory" {
+  type    = number
+  default = 8192
+}
+
 variable "disk_size" {
   type    = string
   default = "15G"
@@ -121,7 +126,7 @@ source "qemu" "base" {
   efi_boot          = var.efi_boot
   efi_firmware_code = var.efi_firmware_code
   efi_firmware_vars = var.efi_firmware_vars
-  memory            = 8192
+  memory            = var.memory
   cpus              = var.cpus
   ssh_username      = "ubuntu"
   ssh_password      = "ubuntu"
@@ -141,6 +146,7 @@ source "qemu" "base" {
   qemuargs = [
     ["-serial", "mon:stdio"],
     ["-display", "none"],
+    ["-device", "virtio-rng-pci"],
   ]
 }
 

@@ -24,7 +24,7 @@ Internal CLI tool for spinning up isolated VM-based development environments usi
 - `images/build.sh` — Image build script (takes flavor arg, merges layers with yq)
 - `images/packer.pkr.hcl` — Packer template (shared across all flavors)
 - `images/packer-user-data.pkrtpl.hcl` — Packer user-data template (cloud-init wrapper for builds)
-- `images/arch-config.sh` — Per-arch Packer variable resolution (KVM vs TCG, EFI firmware)
+- `images/arch-config.sh` — Per-arch Packer variable resolution (KVM vs TCG, EFI firmware, CPU/memory auto-detect)
 - `images/artifacts/` — Built QCOW2 images (gitignored)
 - `images/scripts/post-provision.sh` — Post-build cleanup (runs after cloud-init)
 - `images/manifest.json` — Local skeleton manifest (image descriptions + metadata); live manifest lives in B2
@@ -102,7 +102,7 @@ make install                           # Install mps (symlink to PATH, runs on h
 make uninstall        # Uninstall mps (remove symlink, cleanup artifacts, runs on host)
 ```
 
-Non-base flavors chain from their parent's QCOW2 image, applying only the delta cloud-init layer (`--base-image` flag in `build.sh`). The Makefile wires this automatically via stamp dependencies — `make image-smart-contract-audit` builds the full chain (base → protocol-dev → smart-contract-dev → smart-contract-audit). From-scratch builds (all layers merged) are still supported by running `build.sh` without `--base-image`.
+On amd64, non-base flavors chain from their parent's QCOW2 image, applying only the delta cloud-init layer (`--base-image` flag in `build.sh`). On arm64, all flavors build from scratch (cumulative layers merged) — arm64 CI runners lack KVM, so parallel from-scratch jobs are faster than a serial layered chain. The Makefile wires this automatically via stamp dependencies and `CUMULATIVE_LAYERS_*` variables.
 
 The Makefile detects host uid:gid and the entrypoint uses setpriv to step down from root, so build artifacts match host ownership.
 

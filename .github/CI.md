@@ -2,7 +2,7 @@
 
 ## Context
 
-The mpsandbox project has a mature, fully containerized build system (Makefile + Docker) but no CI/CD. Phase 7 adds GitHub Actions workflows for lint/test on push/PR, image build/publish on tag push + weekly cron, and tool releases. WarpBuild runners provide native KVM for fast QEMU builds on both amd64 and arm64.
+The mpsandbox project has a mature, fully containerized build system (Makefile + Docker) but no CI/CD. Phase 7 adds GitHub Actions workflows for lint/test on push/PR, image build/publish on tag push + weekly cron, and tool releases. WarpBuild runners provide native KVM for fast QEMU builds on amd64; arm64 runners lack KVM, so arm64 builds use TCG emulation with a parallel from-scratch strategy.
 
 ## Files to Create
 
@@ -83,46 +83,31 @@ Runner: `warp-ubuntu-latest-x64-2x`
 - Outputs: `version`, `tag` (e.g., `images/v1.0.0`), `flavors_json`
 - Downstream `build` jobs checkout the verified tag ref (not `main`)
 
-### Job: `build` (matrix: amd64, arm64)
-Runner: `warp-ubuntu-latest-x64-16x` (amd64) / `warp-ubuntu-2404-arm64-16x` (arm64)
-Environment: `build` — Timeout: 240 min — `fail-fast: false`
+### Job: `build-amd64` (single job, layered chain)
+Runner: `warp-ubuntu-latest-x64-4x`
+Environment: `build` — Timeout: 240 min
 - Checkout at tag ref `${{ needs.resolve.outputs.tag }}` with submodules (uses `SUBMODULE_DEPLOY_KEY` from `build` environment)
 - Verify submodule initialized, verify `/dev/kvm` available
 - `make build-docker-builder` + `make build-docker-publisher` (both upfront, so stamps exist for uploads)
-- **Pipelined build+upload**: overlap each flavor's upload with the next flavor's build. Uploads are network-bound, builds are CPU-bound — they don't contend. Saves ~15-30 min per arch (3 upload times hidden behind builds).
-
-```bash
-# Pipeline: build N → background upload N + build N+1 → ...
-UPLOAD_PIDS=()
-ARCH=${{ matrix.arch }}
-
-make image-base-$ARCH
-make upload-base-$ARCH VERSION=$V &
-UPLOAD_PIDS+=($!)
-
-make image-protocol-dev-$ARCH
-make upload-protocol-dev-$ARCH VERSION=$V &
-UPLOAD_PIDS+=($!)
-
-make image-smart-contract-dev-$ARCH
-make upload-smart-contract-dev-$ARCH VERSION=$V &
-UPLOAD_PIDS+=($!)
-
-make image-smart-contract-audit-$ARCH
-make upload-smart-contract-audit-$ARCH VERSION=$V &
-UPLOAD_PIDS+=($!)
-
-# Wait for all background uploads, fail if any failed
-for pid in "${UPLOAD_PIDS[@]}"; do
-  wait "$pid" || exit 1
-done
-```
+- **Pipelined build+upload**: overlap each flavor's upload with the next flavor's build. Uploads are network-bound, builds are CPU-bound — they don't contend. Saves ~15-30 min (3 upload times hidden behind builds).
 
 When only specific flavors are requested, the loop skips non-requested flavors (but Make auto-builds chain deps via stamp rules). Safe because: publisher Docker image is pre-built, each `docker run --rm` is isolated, uploads target different B2 paths.
 
-### Job: `publish` (needs: resolve, build)
+### Job: `build-arm64` (matrix by flavor, parallel from-scratch)
+Runner: `warp-ubuntu-latest-arm64-8x` — one job per flavor
+Environment: `build` — Timeout: 180 min — `fail-fast: false`
+Strategy: `matrix.flavor: ${{ fromJson(needs.resolve.outputs.flavors_json) }}`
+
+**Why parallel from-scratch instead of layered chain:**
+ARM64 CI runners (GitHub/WarpBuild) lack KVM/nested virtualization, forcing TCG emulation. Benchmarks on a 16-vCPU arm64 runner show ~1h per from-scratch build (4T→1:24h, 8T→1:04h, 12T→1h, 16T→1:10h), making the serial 4-flavor layered chain take 5+ hours. Fanning out to 4 parallel jobs — each building one flavor from scratch — runs all flavors in ~1h wall time.
+
+- Each matrix job: `make image-<flavor>-arm64` (from-scratch via Makefile CUMULATIVE_LAYERS) + `upload_with_retry`
+- Same checkout, submodule, secrets validation, KVM check steps as amd64
+- Simpler upload — only one flavor per job, no pipelining needed
+
+### Job: `publish` (needs: resolve, build-amd64, build-arm64)
 Runner: `warp-ubuntu-latest-x64-2x`
-Environment: `publish` — Condition: `always() && needs.resolve.result == 'success' && needs.build.result != 'cancelled'`
+Environment: `publish` — Condition: `always() && needs.resolve.result == 'success' && needs.build-amd64.result != 'cancelled' && needs.build-arm64.result != 'cancelled'`
 - `make build-docker-publisher`
 - `make update-manifest VERSION=...` (downloads sidecars from B2, skips missing archs gracefully; calls `generate-index.sh` automatically)
 - Cloudflare cache purge (same step, runs only if manifest update succeeded):
@@ -155,21 +140,21 @@ Steps:
                     │  version + GPG      │  no env
                     └──────────┬──────────┘
                                │
-                 ┌─────────────┴─────────────┐
-                 │                           │
-    ┌────────────▼────────────┐  ┌───────────▼────────────┐
-    │     build (amd64)       │  │     build (arm64)      │
-    │  x64-16x               │  │  arm64-16x             │
-    │  env: build             │  │  env: build            │
-    │  pipelined build+upload │  │  pipelined build+upload│
-    └────────────┬────────────┘  └───────────┬────────────┘
-                 │                           │
-                 └─────────────┬─────────────┘
-                               │
-                    ┌──────────▼──────────┐
-                    │      publish        │  x64-2x
-                    │  manifest + CF purge│  env: publish
-                    └─────────────────────┘
+    ┌──────────────┬───────────┼───────────┬──────────────┐
+    │              │           │           │              │
+┌───▼───┐   ┌─────▼────┐ ┌───▼────┐ ┌────▼───┐ ┌───────▼──────┐
+│build  │   │build-arm │ │  arm   │ │  arm   │ │    arm       │
+│amd64  │   │  base    │ │ p-dev  │ │  scd   │ │    sca       │
+│x64-4x │   │arm64-8x │ │arm64-8x│ │arm64-8x│ │  arm64-8x   │
+│layered│   │scratch   │ │scratch │ │scratch │ │  scratch     │
+└───┬───┘   └─────┬────┘ └───┬────┘ └────┬───┘ └───────┬──────┘
+    │              │          │           │              │
+    └──────────────┴──────────┼───────────┴──────────────┘
+                              │
+                   ┌──────────▼──────────┐
+                   │      publish        │  x64-2x
+                   │  manifest + CF purge│  env: publish
+                   └─────────────────────┘
 ```
 
 ## Required GitHub Configuration
@@ -215,7 +200,8 @@ Steps:
 |---|---|---|---|
 | `ci.yml` | `lint-and-test` | *(none)* | SLACK_WEBHOOK_URL |
 | `images.yml` | `resolve` | *(none)* | SLACK_WEBHOOK_URL + MAINTAINER_KEYS var |
-| `images.yml` | `build` | `build` | B2, deploy key, SLACK_WEBHOOK_URL |
+| `images.yml` | `build-amd64` | `build` | B2, deploy key, SLACK_WEBHOOK_URL |
+| `images.yml` | `build-arm64` | `build` | B2, deploy key, SLACK_WEBHOOK_URL |
 | `images.yml` | `publish` | `publish` | B2, CF, SLACK_WEBHOOK_URL |
 | `release.yml` | `release` | *(none)* | SLACK_WEBHOOK_URL + MAINTAINER_KEYS var |
 | `update-submodule.yml` | `update-submodule` | `submodule` | deploy key, SLACK_WEBHOOK_URL |

@@ -25,7 +25,7 @@ case "$TARGET_ARCH" in
         PACKER_ARCH_VARS=(
             -var "target_arch=arm64"
             -var "qemu_binary=qemu-system-aarch64"
-            -var "machine_type=virt"
+            -var "machine_type=virt,gic-version=max"
             -var "efi_boot=true"
             -var "efi_firmware_code=/usr/share/AAVMF/AAVMF_CODE.fd"
             -var "efi_firmware_vars=/usr/share/AAVMF/AAVMF_VARS.fd"
@@ -50,20 +50,26 @@ else
     echo "Accelerator: TCG (emulation — this will be slow)"
 fi
 
-# CPU count: override with PACKER_CPUS, otherwise auto-detect
+# CPU count: override with PACKER_CPUS, otherwise 3/4 of available vCPUs
 if [ -n "${PACKER_CPUS:-}" ]; then
     echo "CPUs: $PACKER_CPUS (override)"
-elif [ "$TARGET_ARCH" = "$HOST_ARCH" ] && [ -e /dev/kvm ]; then
-    # Native (KVM): floor(physical_cores * 3/4), minimum 2
-    PHYSICAL_CORES="$(lscpu -p=SOCKET,CORE | grep '^[0-9]' | sort -u | wc -l)"
-    PACKER_CPUS=$(( PHYSICAL_CORES * 3 / 4 ))
-    [ "$PACKER_CPUS" -lt 2 ] && PACKER_CPUS=2
-    echo "CPUs: $PACKER_CPUS (auto — ${PHYSICAL_CORES} physical cores × 3/4)"
 else
-    # TCG (emulation): capped at 4 (no benefit above; 8 is slower)
-    PACKER_CPUS=4
-    echo "CPUs: $PACKER_CPUS (TCG default)"
+    VCPUS="$(nproc)"
+    PACKER_CPUS=$(( VCPUS * 3 / 4 ))
+    [ "$PACKER_CPUS" -lt 2 ] && PACKER_CPUS=2
+    echo "CPUs: $PACKER_CPUS (auto — ${VCPUS} vCPUs × 3/4)"
 fi
 PACKER_ARCH_VARS+=( -var "cpus=$PACKER_CPUS" )
+
+# Memory: override with PACKER_MEMORY, otherwise auto-detect (3/4 of host RAM)
+if [ -n "${PACKER_MEMORY:-}" ]; then
+    echo "Memory: ${PACKER_MEMORY}MB (override)"
+else
+    TOTAL_MB="$(awk '/^MemTotal/ {printf "%d", $2/1024}' /proc/meminfo)"
+    PACKER_MEMORY=$(( TOTAL_MB * 3 / 4 ))
+    [ "$PACKER_MEMORY" -lt 4096 ] && PACKER_MEMORY=4096
+    echo "Memory: ${PACKER_MEMORY}MB (auto — ${TOTAL_MB}MB total × 3/4)"
+fi
+PACKER_ARCH_VARS+=( -var "memory=$PACKER_MEMORY" )
 
 echo "Host: $HOST_ARCH → Target: $TARGET_ARCH"

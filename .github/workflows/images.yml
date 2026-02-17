@@ -106,16 +106,12 @@ jobs:
               "${{ secrets.SLACK_WEBHOOK_URL }}" || true
           fi
 
-  # ── Build + upload per-arch ─────────────────────────────────────
-  build:
+  # ── Build + upload: amd64 (layered chain, single job) ─────────
+  build-amd64:
     needs: resolve
-    runs-on: ${{ matrix.arch == 'arm64' && 'warp-ubuntu-2404-arm64-16x' || 'warp-ubuntu-latest-x64-16x' }}
+    runs-on: warp-ubuntu-latest-x64-4x
     environment: build
     timeout-minutes: 240
-    strategy:
-      fail-fast: false
-      matrix:
-        arch: [amd64, arm64]
     steps:
       - name: Checkout at tag
         uses: actions/checkout@v4
@@ -145,15 +141,15 @@ jobs:
       - name: Validate required secrets
         run: |
           MISSING=()
-          [[ -z "$B2_KEY_ID" ]] && MISSING+=(B2_APPLICATION_KEY_ID)
-          [[ -z "$B2_KEY" ]]    && MISSING+=(B2_APPLICATION_KEY)
+          [[ -z "$B2_APPLICATION_KEY_ID" ]] && MISSING+=(B2_APPLICATION_KEY_ID)
+          [[ -z "$B2_APPLICATION_KEY" ]]    && MISSING+=(B2_APPLICATION_KEY)
           if [[ ${#MISSING[@]} -gt 0 ]]; then
             echo "::error::Missing required secrets: ${MISSING[*]}"
             exit 1
           fi
         env:
-          B2_KEY_ID: ${{ secrets.B2_APPLICATION_KEY_ID }}
-          B2_KEY: ${{ secrets.B2_APPLICATION_KEY }}
+          B2_APPLICATION_KEY_ID: ${{ secrets.B2_APPLICATION_KEY_ID }}
+          B2_APPLICATION_KEY: ${{ secrets.B2_APPLICATION_KEY }}
 
       - name: Verify submodule
         run: |
@@ -178,14 +174,14 @@ jobs:
           make build-docker-builder
           make build-docker-publisher
 
-      - name: Build and upload images
+      - name: Build and upload images (layered chain)
         env:
           B2_APPLICATION_KEY_ID: ${{ secrets.B2_APPLICATION_KEY_ID }}
           B2_APPLICATION_KEY: ${{ secrets.B2_APPLICATION_KEY }}
         run: |
           set -euo pipefail
           V="${{ needs.resolve.outputs.version }}"
-          ARCH="${{ matrix.arch }}"
+          ARCH="amd64"
           FLAVORS_JSON='${{ needs.resolve.outputs.flavors_json }}'
 
           MAX_UPLOAD_ATTEMPTS=3
@@ -263,14 +259,134 @@ jobs:
         run: |
           if [[ -n "${{ secrets.SLACK_WEBHOOK_URL }}" ]]; then
             curl -sf -X POST -H 'Content-type: application/json' \
-              --data "{\"text\":\"*images.yml — build (${{ matrix.arch }})* failed\\nVersion: \`${{ needs.resolve.outputs.version }}\`\\nRun: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\"}" \
+              --data "{\"text\":\"*images.yml — build-amd64* failed\\nVersion: \`${{ needs.resolve.outputs.version }}\`\\nRun: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\"}" \
+              "${{ secrets.SLACK_WEBHOOK_URL }}" || true
+          fi
+
+  # ── Build + upload: arm64 (parallel from-scratch per flavor) ──
+  # ARM64 CI runners lack KVM — TCG emulation takes ~1h per from-scratch
+  # build.  Parallel matrix jobs are faster than a serial layered chain.
+  build-arm64:
+    needs: resolve
+    runs-on: warp-ubuntu-latest-arm64-8x
+    environment: build
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        flavor: ${{ fromJson(needs.resolve.outputs.flavors_json) }}
+    steps:
+      - name: Checkout at tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve.outputs.tag }}
+
+      - name: Configure SSH for submodule
+        env:
+          DEPLOY_KEY: ${{ secrets.SUBMODULE_DEPLOY_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$DEPLOY_KEY" > ~/.ssh/submodule_key
+          chmod 600 ~/.ssh/submodule_key
+          ssh-keyscan github.com >> ~/.ssh/known_hosts 2>/dev/null
+          cat >> ~/.ssh/config <<'SSH'
+          Host github-submodule
+            HostName github.com
+            IdentityFile ~/.ssh/submodule_key
+            IdentitiesOnly yes
+          SSH
+          # Relative submodule URL resolves to HTTPS — rewrite to SSH with deploy key
+          git config --global url."git@github-submodule:HorizenLabs/hl-claude-marketplace".insteadOf "https://github.com/HorizenLabs/hl-claude-marketplace"
+
+      - name: Init submodules
+        run: git submodule update --init --recursive
+
+      - name: Validate required secrets
+        run: |
+          MISSING=()
+          [[ -z "$B2_APPLICATION_KEY_ID" ]] && MISSING+=(B2_APPLICATION_KEY_ID)
+          [[ -z "$B2_APPLICATION_KEY" ]]    && MISSING+=(B2_APPLICATION_KEY)
+          if [[ ${#MISSING[@]} -gt 0 ]]; then
+            echo "::error::Missing required secrets: ${MISSING[*]}"
+            exit 1
+          fi
+        env:
+          B2_APPLICATION_KEY_ID: ${{ secrets.B2_APPLICATION_KEY_ID }}
+          B2_APPLICATION_KEY: ${{ secrets.B2_APPLICATION_KEY }}
+
+      - name: Verify submodule
+        run: |
+          if [[ ! -f vendor/hl-claude-marketplace/.git ]] && [[ ! -d vendor/hl-claude-marketplace/.git ]]; then
+            echo "::error::Submodule vendor/hl-claude-marketplace not initialized"
+            exit 1
+          fi
+
+      - name: Check KVM
+        run: |
+          if [[ ! -e /dev/kvm ]]; then
+            sudo modprobe kvm 2>/dev/null || true
+          fi
+          if [[ -e /dev/kvm ]]; then
+            echo "KVM available"
+          else
+            echo "::warning::KVM not available — builds will use TCG (slower)"
+          fi
+
+      - name: Build Docker images
+        run: |
+          make build-docker-builder
+          make build-docker-publisher
+
+      - name: Build and upload image (from scratch)
+        env:
+          B2_APPLICATION_KEY_ID: ${{ secrets.B2_APPLICATION_KEY_ID }}
+          B2_APPLICATION_KEY: ${{ secrets.B2_APPLICATION_KEY }}
+        run: |
+          set -euo pipefail
+          V="${{ needs.resolve.outputs.version }}"
+          FLAVOR="${{ matrix.flavor }}"
+
+          MAX_UPLOAD_ATTEMPTS=3
+
+          upload_with_retry() {
+            local target="$1" version="$2"
+            local attempt=1 backoff=30
+            while [[ $attempt -le $MAX_UPLOAD_ATTEMPTS ]]; do
+              if make "$target" VERSION="$version"; then
+                return 0
+              fi
+              if [[ $attempt -lt $MAX_UPLOAD_ATTEMPTS ]]; then
+                echo "Upload attempt ${attempt}/${MAX_UPLOAD_ATTEMPTS} failed, retrying in ${backoff}s..."
+                sleep "$backoff"
+                backoff=$((backoff * 2))
+              fi
+              attempt=$((attempt + 1))
+            done
+            return 1
+          }
+
+          echo "=== Building ${FLAVOR}-arm64 (from scratch) ==="
+          make "image-${FLAVOR}-arm64"
+
+          echo "=== Uploading ${FLAVOR}-arm64 ==="
+          upload_with_retry "upload-${FLAVOR}-arm64" "$V"
+
+      - name: Notify Slack on failure
+        if: failure()
+        run: |
+          if [[ -n "${{ secrets.SLACK_WEBHOOK_URL }}" ]]; then
+            curl -sf -X POST -H 'Content-type: application/json' \
+              --data "{\"text\":\"*images.yml — build-arm64 (${{ matrix.flavor }})* failed\\nVersion: \`${{ needs.resolve.outputs.version }}\`\\nRun: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\"}" \
               "${{ secrets.SLACK_WEBHOOK_URL }}" || true
           fi
 
   # ── Publish manifest + purge CF cache ───────────────────────────
   publish:
-    needs: [resolve, build]
-    if: always() && needs.resolve.result == 'success' && needs.build.result != 'cancelled'
+    needs: [resolve, build-amd64, build-arm64]
+    if: >-
+      always() && needs.resolve.result == 'success'
+      && needs.build-amd64.result != 'cancelled'
+      && needs.build-arm64.result != 'cancelled'
     runs-on: warp-ubuntu-latest-x64-2x
     environment: publish
     steps:
@@ -282,19 +398,19 @@ jobs:
       - name: Validate required secrets
         run: |
           MISSING=()
-          [[ -z "$B2_KEY_ID" ]] && MISSING+=(B2_APPLICATION_KEY_ID)
-          [[ -z "$B2_KEY" ]]    && MISSING+=(B2_APPLICATION_KEY)
-          [[ -z "$CF_ZONE" ]]  && MISSING+=(CF_ZONE_ID)
-          [[ -z "$CF_TOKEN" ]] && MISSING+=(CF_API_TOKEN)
+          [[ -z "$B2_APPLICATION_KEY_ID" ]] && MISSING+=(B2_APPLICATION_KEY_ID)
+          [[ -z "$B2_APPLICATION_KEY" ]]    && MISSING+=(B2_APPLICATION_KEY)
+          [[ -z "$CF_ZONE_ID" ]]            && MISSING+=(CF_ZONE_ID)
+          [[ -z "$CF_API_TOKEN" ]]          && MISSING+=(CF_API_TOKEN)
           if [[ ${#MISSING[@]} -gt 0 ]]; then
             echo "::error::Missing required secrets: ${MISSING[*]}"
             exit 1
           fi
         env:
-          B2_KEY_ID: ${{ secrets.B2_APPLICATION_KEY_ID }}
-          B2_KEY: ${{ secrets.B2_APPLICATION_KEY }}
-          CF_ZONE: ${{ secrets.CF_ZONE_ID }}
-          CF_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          B2_APPLICATION_KEY_ID: ${{ secrets.B2_APPLICATION_KEY_ID }}
+          B2_APPLICATION_KEY: ${{ secrets.B2_APPLICATION_KEY }}
+          CF_ZONE_ID: ${{ secrets.CF_ZONE_ID }}
+          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
 
       - name: Build publisher image
         run: make build-docker-publisher
