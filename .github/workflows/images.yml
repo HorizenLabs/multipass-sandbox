@@ -121,6 +121,19 @@ jobs:
           submodules: true
           ssh-key: ${{ secrets.SUBMODULE_DEPLOY_KEY }}
 
+      - name: Validate required secrets
+        run: |
+          MISSING=()
+          [[ -z "$B2_KEY_ID" ]] && MISSING+=(B2_APPLICATION_KEY_ID)
+          [[ -z "$B2_KEY" ]]    && MISSING+=(B2_APPLICATION_KEY)
+          if [[ ${#MISSING[@]} -gt 0 ]]; then
+            echo "::error::Missing required secrets: ${MISSING[*]}"
+            exit 1
+          fi
+        env:
+          B2_KEY_ID: ${{ secrets.B2_APPLICATION_KEY_ID }}
+          B2_KEY: ${{ secrets.B2_APPLICATION_KEY }}
+
       - name: Verify submodule
         run: |
           if [[ ! -f vendor/hl-claude-marketplace/.git ]] && [[ ! -d vendor/hl-claude-marketplace/.git ]]; then
@@ -213,6 +226,23 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ needs.resolve.outputs.tag }}
+
+      - name: Validate required secrets
+        run: |
+          MISSING=()
+          [[ -z "$B2_KEY_ID" ]] && MISSING+=(B2_APPLICATION_KEY_ID)
+          [[ -z "$B2_KEY" ]]    && MISSING+=(B2_APPLICATION_KEY)
+          [[ -z "$CF_ZONE" ]]  && MISSING+=(CF_ZONE_ID)
+          [[ -z "$CF_TOKEN" ]] && MISSING+=(CF_API_TOKEN)
+          if [[ ${#MISSING[@]} -gt 0 ]]; then
+            echo "::error::Missing required secrets: ${MISSING[*]}"
+            exit 1
+          fi
+        env:
+          B2_KEY_ID: ${{ secrets.B2_APPLICATION_KEY_ID }}
+          B2_KEY: ${{ secrets.B2_APPLICATION_KEY }}
+          CF_ZONE: ${{ secrets.CF_ZONE_ID }}
+          CF_TOKEN: ${{ secrets.CF_API_TOKEN }}
 
       - name: Build publisher image
         run: make build-docker-publisher
