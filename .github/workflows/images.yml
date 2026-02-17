@@ -38,6 +38,9 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
 
+      - name: Fetch tag objects
+        run: git fetch origin 'refs/tags/*:refs/tags/*' --force
+
       - name: Resolve version and tag
         id: resolve
         run: |
