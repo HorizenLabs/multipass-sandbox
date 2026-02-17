@@ -10,30 +10,8 @@
 - **File Transfer**: `mps transfer` with colon-prefix convention, `--transfer` flag on create/up
 - **Phase 5 — Core Changes**: Image flavors (composable layers, chained builds, dynamic disk sizes), auto-scaling profiles (micro/lite/standard/heavy), image metadata + runtime validation, build system refinements, installer/uninstaller
 
-## Phase 6 — Image Distribution: IN PROGRESS
-
-- [x] Backblaze B2 bucket + Cloudflare proxy setup (`mpsandbox` bucket, `mpsandbox.horizenlabs.io` domain, CF rewrite rules for index.html)
-- [x] Publishing scripts: remote-first manifest, build_date tracking, B2 old version cleanup, unfinished large file cancellation
-- [x] Shared publish helpers: `images/lib/publish-common.sh` (DRY refactor of publish/update-manifest)
-- [x] Drop `MPS_B2_BUCKET_PREFIX` — files at bucket root, URLs map 1:1
-- [x] `file_size` in manifest entries (from `stat` local, `contentLength` CI)
-- [x] Autoindex HTML generation: `images/generate-index.sh` (root, per-flavor, per-version pages)
-- [x] Image versioning conventions: SemVer for tooling, weekly rebuilds for OS patches
-- [x] First publish to B2 (amd64 images live; arm64 build in progress)
-- [x] Client-side staleness detection (compare cached SHA256 vs remote manifest, conditional GET with CF caching)
-- [x] `mps image pull` + auto-pull on `mps create`/`mps up` (code complete, needs E2E testing against live infra)
-- [x] Parallel image downloads: `_mps_download_file()` uses aria2c (8 connections) when available, curl fallback
-
-## Phase 7 — GH Actions CI/CD Pipeline: COMPLETE
-
-- [x] GitHub Actions workflow: `make lint` on push/PR (`ci.yml`)
-- [x] Automated image builds with pipelined upload (`images.yml` — GPG tag verification, matrix build, fan-in publish)
-- [x] Tool release workflow (`release.yml` — GPG tag verification, lint, GH release)
-- [x] Submodule update workflow (`update-submodule.yml`)
-- [x] GPG tag signature verification (composite action `.github/actions/verify-gpg-tag/`)
-- [x] Cloudflare cache invalidation after publish (purge `.json`, `.html`, `.sha256` files via CF API)
-- [x] Slack failure notifications (per-job)
-- [x] actionlint added to linter image and `make lint`
+- **Phase 6 — Image Distribution**: B2+Cloudflare publish pipeline, fan-in manifest, autoindex HTML, staleness detection, parallel downloads (aria2c), SemVer versioning
+- **Phase 7 — CI/CD Pipeline**: GitHub Actions (ci, images, release, update-submodule), GPG tag verification, CF cache invalidation, Slack notifications, actionlint
 
 ## Phase 8 — Update Documentation: NOT STARTED
 

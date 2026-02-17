@@ -17,37 +17,21 @@ A blockchain software development company needs an internal tool to spin up isol
 
 ---
 
-## Completed Phases (1–5)
+## Completed Phases
 
-**Phase 1 — MVP Core**: Entry point (`bin/mps`), shared libraries (`lib/common.sh`, `lib/multipass.sh`), all core commands (create, up, down, destroy, shell, exec, list, status, ssh-config), config cascade system, resource profiles, cloud-init templates, mount behavior with path-preserving semantics, VM auto-naming.
+Phases 1–7 are complete. See `STATUS.md` for detailed checklists.
 
-**Phase 2 — Image System**: `mps image list/pull/import`, Packer build pipeline for base QCOW2 images, dual-arch builds (amd64+arm64 via QEMU TCG), Ubuntu 24.04, manifest with SemVer versioning, SHA256 verification, Backblaze B2 publishing.
+- **Phase 1** — MVP Core (entry point, commands, config cascade, profiles, mounts)
+- **Phase 2** — Image System (Packer pipeline, dual-arch builds, manifest)
+- **Phase 3** — Port Forwarding (SSH tunnels, auto-forward, cleanup)
+- **Phase 4** — Polish & Build System (Dockerized builds, secure deps, installers)
+- **Phase 5** — Core Changes (composable layers, chained builds, auto-scaling profiles)
+- **Phase 6** — Image Distribution (B2 + Cloudflare, publish scripts, staleness detection)
+- **Phase 7** — CI/CD Pipeline (GitHub Actions: lint, image builds, releases, GPG verification)
 
-**Phase 3 — Port Forwarding**: `mps port forward/list`, SSH local port forwarding with PID tracking, auto-forward from `MPS_PORTS` config, cleanup on stop/destroy.
-
-**Phase 4 — Polish & Build System**: Dockerized build system (builder + linter images), Makefile with stamp-based caching, secure dependency installation (GPG/SHA256 verification), SSH key refactor (user-provided keys, no sudo), repo restructure, image build improvements (15G disk, HWE kernel, qemu-img compaction), cloud-init hardening, installers, shellcheck clean.
-
-**Phase 5 — Core Changes**: Image flavors (composable layers in `images/layers/`, chained builds via `--base-image`, dynamic disk sizes from `x-mps` metadata). Auto-scaling resource profiles (micro/lite/standard/heavy with fraction/min/cap). Image metadata pipeline (layer YAMLs → manifest.json → .meta sidecar → runtime validation). Installer refinement (auto-install deps, `~/.local/bin`). Uninstaller (`uninstall.sh`).
+CI design doc: `.github/CI.md`
 
 ---
-
-## Phase 6 — Image Distribution
-
-- Backblaze B2 bucket + Cloudflare proxy setup (handled externally)
-- Publishing scripts, metadata handling and versioning
-- First publish to B2
-- End-to-end `mps image pull` flow (code complete, needs E2E testing against live infra)
-- Parallel image downloads via aria2c (optional, curl fallback)
-
-## Phase 7 — GH Actions CI/CD Pipeline
-
-- CI workflow (`ci.yml`): run `make lint` + `make test` on push/PR to `main`
-- Image build/publish workflow (`images.yml`): GPG-signed tag trigger + weekly cron + manual dispatch, WarpBuild native KVM runners (amd64+arm64), pipelined build+upload, fan-in manifest update, Cloudflare cache purge, Slack failure notifications
-- Tool release workflow (`release.yml`): GPG-signed tag trigger, lint+test, GitHub Release with install scripts
-- Submodule update workflow (`update-submodule.yml`): keep vendor submodule in sync
-- GPG tag verification: composite action (`.github/actions/verify-gpg-tag/`) shared by images and release workflows, validates signatures against `MAINTAINER_KEYS` repo variable
-- actionlint added to linter image for GitHub Actions workflow linting
-- Full CI design doc: `.planning/CI.md`
 
 ## Phase 8 — Update Documentation
 
