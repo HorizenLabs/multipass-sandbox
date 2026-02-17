@@ -35,12 +35,18 @@
 - [x] Slack failure notifications (per-job)
 - [x] actionlint added to linter image and `make lint`
 
-## Phase 8 — Testing: NOT STARTED
+## Phase 8 — Update Documentation: NOT STARTED
+
+- [ ] Update README.md (project overview, installation, usage, configuration, image system, contributing)
+- [ ] Review and update all `--help` messages across commands for accuracy and consistency
+- [ ] Add GitHub PR templates, issue templates, and CODEOWNERS
+
+## Phase 9 — Testing: NOT STARTED
 
 - [ ] BATS test suite for lib/common.sh, lib/multipass.sh, and command scripts
 - [ ] Wire tests into GitHub Actions CI (lint + test on push/PR)
 
-## Phase 9 — PowerShell Parity (Windows): NOT STARTED
+## Phase 10 — PowerShell Parity (Windows): NOT STARTED
 
 - [ ] `bin/mps.ps1`
 - [ ] `lib/common.ps1`

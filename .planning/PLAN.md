@@ -49,12 +49,18 @@ A blockchain software development company needs an internal tool to spin up isol
 - actionlint added to linter image for GitHub Actions workflow linting
 - Full CI design doc: `.planning/CI.md`
 
-## Phase 8 — Testing
+## Phase 8 — Update Documentation
+
+- Update README.md (project overview, installation, usage, configuration, image system, contributing)
+- Review and update all `--help` messages across commands for accuracy and consistency
+- Add GitHub PR templates, issue templates, and CODEOWNERS
+
+## Phase 9 — Testing
 
 - BATS test suite for `lib/common.sh`, `lib/multipass.sh`, and command scripts
 - Wire tests into GitHub Actions CI (lint + test on push/PR)
 
-## Phase 9 — PowerShell Parity (Windows)
+## Phase 10 — PowerShell Parity (Windows)
 
 - `bin/mps.ps1` + `commands/*.ps1` + `lib/*.ps1`
 - `ConvertFrom-Json` instead of `jq`
