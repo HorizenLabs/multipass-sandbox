@@ -278,7 +278,7 @@ Pre-built images come in four flavors. Each builds on the previous, adding speci
 | `base` | — | Ubuntu 24.04 + Docker + Node.js + Python + dev tools + AI assistants | micro |
 | `protocol-dev` | base | + C/C++ toolchain + Go + Rust | lite |
 | `smart-contract-dev` | protocol-dev | + Solana/Anchor (amd64) + Foundry + Hardhat | lite |
-| `smart-contract-audit` | smart-contract-dev | + Slither + Mythril + Echidna + Medusa + Halmos | standard |
+| `smart-contract-audit` | smart-contract-dev | + Slither + Mythril (amd64) + Echidna + Medusa + Halmos (amd64) | standard |
 
 <details>
 <summary>What's in each flavor</summary>
@@ -289,7 +289,7 @@ Pre-built images come in four flavors. Each builds on the previous, adding speci
 
 **smart-contract-dev** adds: Solana CLI + Anchor (amd64-only, via avm), Foundry (forge, cast, anvil, chisel), Hardhat, Solhint.
 
-**smart-contract-audit** adds: Slither, solc-select, Mythril, Halmos (via uv), Aderyn, Echidna (sigstore-verified), Medusa, cosign.
+**smart-contract-audit** adds: Slither, solc-select, Mythril + Halmos (amd64-only, via uv), Aderyn, Echidna (sigstore-verified), Medusa, cosign.
 
 </details>
 

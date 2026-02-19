@@ -27,7 +27,7 @@ Cloud-init layers in `images/layers/` are merged at build time to produce the to
 
 **smart-contract-audit layer** (smart-contract-audit only):
 - cosign (sigstore verification)
-- Slither, solc-select, Mythril, Halmos (via uv)
+- Slither, solc-select, Mythril + Halmos (amd64-only, via uv — z3-solver has no arm64 wheel)
 - Aderyn (Cyfrin installer), Echidna (sigstore-verified binary), Medusa (via go install)
 
 ## Image Flavors

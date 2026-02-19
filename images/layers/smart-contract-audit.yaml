@@ -3,7 +3,7 @@
 # Solidity security tools (on top of smart-contract-dev)
 
 x-mps:
-  description: "smart-contract-dev + Slither + Mythril + Echidna + Medusa + Halmos"
+  description: "smart-contract-dev + Slither + Mythril (amd64) + Echidna + Medusa + Halmos (amd64)"
   disk_size: 13G
   min_profile: standard
   min_disk: 15G
@@ -29,9 +29,20 @@ runcmd:
       export PATH="$HOME/.local/bin:$PATH"
       uv tool install slither-analyzer
       uv tool install solc-select
-      uv tool install mythril
-      uv tool install halmos
     '
+
+  # ---------- Mythril + Halmos (amd64 only — z3-solver has no arm64 wheel) ----------
+  - |
+    if [ "$(dpkg --print-architecture)" != "amd64" ]; then
+      echo "Skipping Mythril + Halmos (amd64-only, z3-solver requires source build on arm64)"
+    else
+      sudo -u ubuntu bash -c '
+        export HOME=/home/ubuntu
+        export PATH="$HOME/.local/bin:$PATH"
+        uv tool install mythril
+        uv tool install halmos
+      '
+    fi
 
   # ---------- Solidity security: Aderyn (Cyfrin installer) ----------
   - |
