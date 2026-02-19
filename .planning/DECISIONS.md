@@ -61,7 +61,7 @@ Each layer YAML contains an `x-mps:` top-level block (cloud-init silently ignore
 
 **Fields**: `disk_size`, `min_profile`, `min_disk`, `min_memory`, `min_cpus`
 
-**Data flow**: layer YAML → `build.sh` (disk_size for Packer) → `publish.sh` (inject into manifest) → `image.sh` (write to `.meta` sidecar) → `create.sh` (compare against resolved resources, warn only)
+**Data flow**: layer YAML → `build.sh` (disk_size for Packer) → `publish.sh` (generate `.meta.json` sidecar) → `update-manifest.sh` (read `.meta.json`, write manifest) → `image.sh` (fetch `.meta.json`, write local `.meta` sidecar) → `create.sh` (compare against resolved resources, warn only)
 
 | Flavor | Disk Size | Actual Usage |
 |---|---|---|

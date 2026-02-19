@@ -13,11 +13,7 @@
 - **Phase 6 — Image Distribution**: B2+Cloudflare publish pipeline, fan-in manifest, autoindex HTML, staleness detection, parallel downloads (aria2c), SemVer versioning
 - **Phase 7 — CI/CD Pipeline**: GitHub Actions (ci, images, release, update-submodule), GPG tag verification, CF cache invalidation, Slack notifications, actionlint
 
-## Phase 8 — Update Documentation: COMPLETE
-
-- [x] Update README.md (project overview, installation, usage, configuration, image system, contributing)
-- [x] Review and update all `--help` messages across commands for accuracy and consistency
-- [x] Add GitHub PR templates, issue templates, and CODEOWNERS
+- **Phase 8 — Update Documentation**: README, help messages, GitHub templates, CODEOWNERS
 
 ## Phase 9 — Testing: NOT STARTED
 
