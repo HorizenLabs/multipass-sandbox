@@ -1,22 +1,25 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC2154  # color vars defined in lib/common.sh
-# commands/exec.sh — mps exec [--name <name>] -- <command...>
+# commands/exec.sh — mps exec [--name <name>] [--workdir <path>] -- <command...>
 #
 # Execute a command inside a running sandbox. Everything after '--' is
 # passed as the command. The working directory is automatically set to
-# the mount target from instance metadata.
+# the mount target from instance metadata, or can be overridden with
+# --workdir.
 #
 # Usage:
 #   mps exec [--name <name>] -- <command...>
-#   mps exec --name dev -- docker ps
+#   mps exec --workdir /tmp --name dev -- docker ps
 #   mps exec -- ls -la
 #
 # Flags:
-#   --name, -n <name>   Sandbox name (default: auto-resolved from CWD)
-#   --help, -h          Show this help
+#   --name, -n <name>       Sandbox name (default: auto-resolved from CWD)
+#   --workdir, -w <path>    Working directory inside the VM
+#   --help, -h              Show this help
 
 cmd_exec() {
     local arg_name=""
+    local arg_workdir=""
     local -a user_cmd=()
 
     # ---- Parse arguments ----
@@ -24,6 +27,10 @@ cmd_exec() {
         case "$1" in
             --name|-n)
                 arg_name="${2:?--name requires a value}"
+                shift 2
+                ;;
+            --workdir|-w)
+                arg_workdir="${2:?--workdir requires a value}"
                 shift 2
                 ;;
             --)
@@ -56,9 +63,9 @@ cmd_exec() {
     # ---- Check instance is running ----
     mps_require_running "$instance_name"
 
-    # ---- Determine working directory from instance metadata ----
+    # ---- Determine working directory ----
     local workdir
-    workdir="$(mps_resolve_workdir "$instance_name")"
+    workdir="$(mps_resolve_workdir "$instance_name" "$arg_workdir")"
 
     # ---- Execute command ----
     mps_log_debug "Executing in '${instance_name}' (workdir: ${workdir:-<default>}): ${user_cmd[*]}"
@@ -76,13 +83,15 @@ ${_color_bold}Arguments:${_color_reset}
     command     Command to execute (everything after --)
 
 ${_color_bold}Flags:${_color_reset}
-    --name, -n <name>   Sandbox name (default: auto-resolved from CWD)
-    --help, -h          Show this help
+    --name, -n <name>       Sandbox name (default: auto-resolved from CWD)
+    --workdir, -w <path>    Working directory inside the VM
+                            (default: mount target from instance metadata)
+    --help, -h              Show this help
 
 ${_color_bold}Examples:${_color_reset}
     mps exec -- ls -la                      Run 'ls -la' in sandbox for current directory
     mps exec --name dev -- docker ps        Run 'docker ps' in 'dev' sandbox
-    mps exec --name dev -- bash -c "echo hi"   Run a shell command in 'dev'
+    mps exec -w /tmp -- bash -c "echo hi"   Run a shell command at /tmp
     mps exec --name myproject -- make build    Run make in 'myproject'
 
 EOF

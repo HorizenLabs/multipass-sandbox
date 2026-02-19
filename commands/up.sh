@@ -158,7 +158,7 @@ _up_restore_mounts() {
         else
             mps_log_info "Mounting project directory..."
             mp_mount "$MPS_MOUNT_SOURCE" "$instance_name" "$MPS_MOUNT_TARGET" || \
-                mps_log_warn "Could not mount '${MPS_MOUNT_SOURCE}'. You can mount manually with: mps mount ${instance_name}"
+                mps_log_warn "Could not mount '${MPS_MOUNT_SOURCE}'. You can mount manually with: multipass mount ${MPS_MOUNT_SOURCE} ${instance_name}:${MPS_MOUNT_TARGET}"
         fi
     fi
 }

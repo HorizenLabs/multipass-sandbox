@@ -156,11 +156,11 @@ _mps_parse_size_mb() {
     local size="$1"
     local num unit
     num="${size%%[GgMm]*}"
-    unit="${size##*[0-9]}"
+    unit="${size##*[0-9.]}"
     case "$unit" in
-        G|g) echo $(( num * 1024 )) ;;
-        M|m) echo "$num" ;;
-        *)   echo "$num" ;;
+        G|g) awk -v n="$num" 'BEGIN { printf "%d", n * 1024 }' ;;
+        M|m) awk -v n="$num" 'BEGIN { printf "%d", n }' ;;
+        *)   awk -v n="$num" 'BEGIN { printf "%d", n }' ;;
     esac
 }
 
@@ -437,9 +437,10 @@ mps_detect_arch() {
     local arch
     arch="$(dpkg --print-architecture 2>/dev/null || uname -m)"
     case "$arch" in
-        x86_64) echo "amd64" ;;
+        x86_64)  echo "amd64" ;;
         aarch64) echo "arm64" ;;
-        *) echo "$arch" ;;
+        arm64)   echo "arm64" ;;
+        *)       echo "$arch" ;;
     esac
 }
 
@@ -1130,13 +1131,16 @@ mps_inject_ssh_key() {
         fi
     fi
 
-    # Read public key content
-    local pubkey_content
-    pubkey_content="$(cat "$pubkey_path")"
-
     mps_log_info "Injecting SSH key into '${short_name}'..."
+
+    # Transfer public key file into the instance, then append to authorized_keys.
+    # Using multipass transfer avoids shell-interpolation risks with inline echo.
+    local tmp_dest="/tmp/mps_pubkey_$$.pub"
+    if ! multipass transfer "$pubkey_path" "${instance_name}:${tmp_dest}"; then
+        mps_die "Failed to transfer SSH public key to '${instance_name}'"
+    fi
     if ! multipass exec "$instance_name" -- bash -c \
-        "mkdir -p ~/.ssh && chmod 700 ~/.ssh && echo '${pubkey_content}' >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys"; then
+        "mkdir -p ~/.ssh && chmod 700 ~/.ssh && cat '${tmp_dest}' >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys && rm -f '${tmp_dest}'"; then
         mps_die "Failed to inject SSH key into '${instance_name}'"
     fi
 

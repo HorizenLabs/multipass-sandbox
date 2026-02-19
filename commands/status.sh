@@ -194,17 +194,17 @@ _status_human_bytes() {
     if [[ "$bytes" -ge 1073741824 ]]; then
         # GiB
         local gib
-        gib="$(awk "BEGIN { printf \"%.1f\", ${bytes} / 1073741824 }")"
+        gib="$(awk -v b="$bytes" 'BEGIN { printf "%.1f", b / 1073741824 }')"
         echo "${gib}GiB"
     elif [[ "$bytes" -ge 1048576 ]]; then
         # MiB
         local mib
-        mib="$(awk "BEGIN { printf \"%.1f\", ${bytes} / 1048576 }")"
+        mib="$(awk -v b="$bytes" 'BEGIN { printf "%.1f", b / 1048576 }')"
         echo "${mib}MiB"
     elif [[ "$bytes" -ge 1024 ]]; then
         # KiB
         local kib
-        kib="$(awk "BEGIN { printf \"%.1f\", ${bytes} / 1024 }")"
+        kib="$(awk -v b="$bytes" 'BEGIN { printf "%.1f", b / 1024 }')"
         echo "${kib}KiB"
     else
         echo "${bytes}B"
