@@ -128,6 +128,11 @@ mps_load_config() {
 
     # 5. Compute auto-scaled CPU/memory from profile fractions (if not already set)
     _mps_compute_resources
+
+    # 6. Validate security-sensitive config values
+    if [[ -n "${MPS_IMAGE_BASE_URL:-}" && ! "$MPS_IMAGE_BASE_URL" =~ ^https:// ]]; then
+        mps_die "MPS_IMAGE_BASE_URL must use https:// (got '${MPS_IMAGE_BASE_URL}')"
+    fi
 }
 
 _mps_apply_profile() {
@@ -381,6 +386,7 @@ mps_resolve_instance_name() {
     local arg_name="${1:-}"
     local instance_name
     if [[ -n "$arg_name" ]]; then
+        mps_validate_name "$arg_name"
         instance_name="$(mps_instance_name "$arg_name")"
     else
         instance_name="$(mps_resolve_name "" "$(pwd)" \
@@ -1289,6 +1295,11 @@ mps_forward_port() {
     fi
     if [[ ! "$host_port" =~ ^[0-9]+$ ]] || [[ ! "$guest_port" =~ ^[0-9]+$ ]]; then
         mps_log_warn "Ports must be numbers (got '${port_spec}') — skipping"
+        return 1
+    fi
+    if [[ "$host_port" -lt 1 || "$host_port" -gt 65535 ]] || \
+       [[ "$guest_port" -lt 1 || "$guest_port" -gt 65535 ]]; then
+        mps_log_warn "Ports must be 1-65535 (got '${port_spec}') — skipping"
         return 1
     fi
 

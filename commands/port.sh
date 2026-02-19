@@ -88,9 +88,8 @@ _port_forward() {
         mps_die "Ports must be numbers. Got: host=$host_port, guest=$guest_port"
     fi
 
-    mps_validate_name "$name"
     local instance_name
-    instance_name="$(mps_instance_name "$name")"
+    instance_name="$(mps_resolve_instance_name "$name")"
 
     # Check instance is running
     local state

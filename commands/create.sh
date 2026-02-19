@@ -127,7 +127,6 @@ cmd_create() {
     # Override: --name flag or MPS_NAME config
     local instance_name
     instance_name="$(mps_resolve_name "$arg_name" "${MPS_MOUNT_SOURCE:-}" "$effective_template" "$effective_profile")"
-    mps_validate_name "$(mps_short_name "$instance_name")"
     mps_log_debug "Resolved instance name: ${instance_name}"
 
     # ---- Check instance does not already exist ----

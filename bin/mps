@@ -138,6 +138,14 @@ main() {
         mps_check_deps
     fi
 
+    # Validate command name (prevent path traversal via ../ or special chars)
+    if [[ ! "$command" =~ ^[a-z][-a-z]*$ ]]; then
+        mps_log_error "Unknown command: '$command'"
+        echo ""
+        mps_usage
+        exit 1
+    fi
+
     # Dispatch to command script
     local cmd_script="${MPS_ROOT}/commands/${command}.sh"
     if [[ ! -f "$cmd_script" ]]; then
