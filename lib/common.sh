@@ -182,6 +182,10 @@ _mps_parse_size_mb() {
     local num unit
     num="${size%%[GgMm]*}"
     unit="${size##*[0-9.]}"
+    if [[ ! "$num" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
+        echo "0"
+        return 1
+    fi
     case "$unit" in
         G|g) awk -v n="$num" 'BEGIN { printf "%d", n * 1024 }' ;;
         M|m) awk -v n="$num" 'BEGIN { printf "%d", n }' ;;
@@ -1078,13 +1082,30 @@ mps_validate_resources() {
     if [[ -n "$cpus" && ! "$cpus" =~ ^[0-9]+$ ]]; then
         mps_die "Invalid CPU count: $cpus (must be a positive integer)"
     fi
+    if [[ -n "$cpus" && "$cpus" =~ ^[0-9]+$ && "$cpus" -lt 1 ]]; then
+        mps_die "CPU count must be at least 1 (got $cpus)"
+    fi
 
     if [[ -n "$memory" && ! "$memory" =~ ^[0-9]+[GgMm]?$ ]]; then
         mps_die "Invalid memory: $memory (e.g., 4G, 512M)"
     fi
+    if [[ -n "$memory" && "$memory" =~ ^[0-9]+[GgMm]?$ ]]; then
+        local mem_mb
+        mem_mb="$(_mps_parse_size_mb "$memory")"
+        if [[ "$mem_mb" -lt 512 ]]; then
+            mps_die "Memory must be at least 512M (got $memory)"
+        fi
+    fi
 
     if [[ -n "$disk" && ! "$disk" =~ ^[0-9]+[GgMm]?$ ]]; then
         mps_die "Invalid disk: $disk (e.g., 50G, 100G)"
+    fi
+    if [[ -n "$disk" && "$disk" =~ ^[0-9]+[GgMm]?$ ]]; then
+        local disk_mb
+        disk_mb="$(_mps_parse_size_mb "$disk")"
+        if [[ "$disk_mb" -lt 1024 ]]; then
+            mps_die "Disk must be at least 1G (got $disk)"
+        fi
     fi
 }
 
@@ -1396,7 +1417,7 @@ mps_forward_port() {
     # Build SSH tunnel command
     local -a ssh_cmd=(ssh -N -f
         -L "${host_port}:localhost:${guest_port}"
-        -o StrictHostKeyChecking=no
+        -o StrictHostKeyChecking=accept-new
         -o UserKnownHostsFile=/dev/null
         -o LogLevel=ERROR
     )

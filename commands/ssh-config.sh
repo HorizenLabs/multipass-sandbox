@@ -87,7 +87,7 @@ Host ${instance_name}
     HostName ${ssh_ip}
     User ${ssh_user}
     IdentityFile ${ssh_key}
-    StrictHostKeyChecking no
+    StrictHostKeyChecking accept-new
     UserKnownHostsFile /dev/null
 EOF
 )"
