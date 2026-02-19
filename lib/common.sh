@@ -1287,7 +1287,7 @@ mps_ports_file() {
 # Outputs newline-separated host:guest pairs.
 mps_collect_port_specs() {
     local short_name="$1"
-    local -A seen=()
+    local seen_ports=""
     local -a specs=()
 
     # Source 1: MPS_PORTS config (space-separated host:guest pairs)
@@ -1295,10 +1295,13 @@ mps_collect_port_specs() {
     if [[ -n "${MPS_PORTS:-}" ]]; then
         for port_spec in $MPS_PORTS; do
             local hp="${port_spec%%:*}"
-            if [[ -z "${seen[$hp]:-}" ]]; then
-                seen[$hp]=1
-                specs+=("$port_spec")
-            fi
+            case " $seen_ports " in
+                *" $hp "*) ;;  # already seen, skip
+                *)
+                    seen_ports="${seen_ports} ${hp}"
+                    specs+=("$port_spec")
+                    ;;
+            esac
         done
     fi
 
@@ -1309,10 +1312,13 @@ mps_collect_port_specs() {
         while IFS='=' read -r key val; do
             if [[ "$key" == "MPS_PORT_FORWARD+" ]]; then
                 local hp="${val%%:*}"
-                if [[ -z "${seen[$hp]:-}" ]]; then
-                    seen[$hp]=1
-                    specs+=("$val")
-                fi
+                case " $seen_ports " in
+                    *" $hp "*) ;;  # already seen, skip
+                    *)
+                        seen_ports="${seen_ports} ${hp}"
+                        specs+=("$val")
+                        ;;
+                esac
             fi
         done < "$meta_file"
     fi
