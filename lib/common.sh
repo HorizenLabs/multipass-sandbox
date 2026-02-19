@@ -555,17 +555,25 @@ _mps_pull_image() {
     fi
 
     # Write .meta sidecar with image metadata from .meta.json
+    # Strip newlines from jq output to prevent value injection
     local meta_file="${cache_dir}/${arch}.meta"
+    local _desc _disk_size _min_profile _min_disk _min_memory _min_cpus
+    _desc="$(echo "$meta_json" | jq -r '.description // empty' | tr -d '\n')"
+    _disk_size="$(echo "$meta_json" | jq -r '.disk_size // empty' | tr -d '\n')"
+    _min_profile="$(echo "$meta_json" | jq -r '.min_profile // empty' | tr -d '\n')"
+    _min_disk="$(echo "$meta_json" | jq -r '.min_disk // empty' | tr -d '\n')"
+    _min_memory="$(echo "$meta_json" | jq -r '.min_memory // empty' | tr -d '\n')"
+    _min_cpus="$(echo "$meta_json" | jq -r '.min_cpus // empty' | tr -d '\n')"
     cat > "$meta_file" <<EOF
 SOURCE=pulled
 PULLED=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 SHA256=${expected_sha256}
-DESCRIPTION=$(echo "$meta_json" | jq -r '.description // empty')
-IMAGE_DISK_SIZE=$(echo "$meta_json" | jq -r '.disk_size // empty')
-MIN_PROFILE=$(echo "$meta_json" | jq -r '.min_profile // empty')
-MIN_DISK=$(echo "$meta_json" | jq -r '.min_disk // empty')
-MIN_MEMORY=$(echo "$meta_json" | jq -r '.min_memory // empty')
-MIN_CPUS=$(echo "$meta_json" | jq -r '.min_cpus // empty')
+DESCRIPTION=${_desc}
+IMAGE_DISK_SIZE=${_disk_size}
+MIN_PROFILE=${_min_profile}
+MIN_DISK=${_min_disk}
+MIN_MEMORY=${_min_memory}
+MIN_CPUS=${_min_cpus}
 EOF
 
     mps_log_info "Image '${image_name}:${image_version}' cached successfully."
@@ -864,6 +872,7 @@ MPS_CLOUD_INIT=${MPS_CLOUD_INIT:-${MPS_DEFAULT_CLOUD_INIT:-default}}
 MPS_MOUNT_SOURCE=${MPS_MOUNT_SOURCE:-}
 MPS_MOUNT_TARGET=${MPS_MOUNT_TARGET:-}
 EOF
+    chmod 600 "$meta_file"
     mps_log_debug "Saved instance metadata to $meta_file"
 }
 
@@ -1160,7 +1169,9 @@ mps_inject_ssh_key() {
 
     # Transfer public key file into the instance, then append to authorized_keys.
     # Using multipass transfer avoids shell-interpolation risks with inline echo.
-    local tmp_dest="/tmp/mps_pubkey_$$.pub"
+    # Create temp file inside VM with mktemp (unpredictable name).
+    local tmp_dest
+    tmp_dest="$(multipass exec "$instance_name" -- mktemp /tmp/mps_pubkey_XXXXXXXX.pub)"
     if ! multipass transfer "$pubkey_path" "${instance_name}:${tmp_dest}"; then
         mps_die "Failed to transfer SSH public key to '${instance_name}'"
     fi
@@ -1177,6 +1188,7 @@ mps_inject_ssh_key() {
         # Create metadata file with SSH info
         printf "MPS_SSH_KEY=%s\nMPS_SSH_INJECTED=true\n" "$privkey_path" > "$meta_file"
     fi
+    chmod 600 "$meta_file"
 
     mps_log_info "SSH key injected."
 }
@@ -1228,6 +1240,18 @@ mps_require_ssh_key() {
 }
 
 # ---------- Port Forwarding Helpers ----------
+
+# Verify a PID belongs to an ssh process before signaling it.
+_mps_is_ssh_pid() {
+    local pid="$1" use_sudo="$2"
+    local pname
+    if [[ "$use_sudo" == "true" ]]; then
+        pname="$(sudo ps -o comm= -p "$pid" 2>/dev/null)" || return 1
+    else
+        pname="$(ps -o comm= -p "$pid" 2>/dev/null)" || return 1
+    fi
+    [[ "$pname" == "ssh" ]]
+}
 
 # Return the path to the .ports tracking file for an instance
 mps_ports_file() {
@@ -1351,6 +1375,10 @@ mps_forward_port() {
                 _fhp="${BASH_REMATCH[1]}"; _fpid="${BASH_REMATCH[2]}"
             fi
             if [[ "$_fhp" == "$host_port" && -n "$_fpid" ]]; then
+                # Verify PID is actually an SSH process before trusting it
+                if ! _mps_is_ssh_pid "$_fpid" "$_fsudo"; then
+                    continue
+                fi
                 local _alive=false
                 if [[ "$_fsudo" == "true" ]]; then
                     sudo kill -0 "$_fpid" 2>/dev/null && _alive=true
@@ -1400,6 +1428,7 @@ mps_forward_port() {
         local owner_prefix=""
         [[ "$_use_sudo" == "true" ]] && owner_prefix="s:"
         echo "${host_port}:${guest_port}:${owner_prefix}${pid}" >> "$ports_file"
+        chmod 600 "$ports_file"
         mps_log_debug "Port forward active (PID ${pid}): localhost:${host_port} → ${instance_name}:${guest_port}"
     else
         mps_log_warn "Port forward started but could not track PID for ${port_spec}"
@@ -1456,6 +1485,10 @@ mps_kill_port_forwards() {
             pid="${BASH_REMATCH[1]}"
         fi
         if [[ -z "$pid" ]]; then
+            continue
+        fi
+        # Verify PID is actually an SSH process before killing
+        if ! _mps_is_ssh_pid "$pid" "$use_sudo"; then
             continue
         fi
         if [[ "$use_sudo" == "true" ]]; then
