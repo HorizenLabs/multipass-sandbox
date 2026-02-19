@@ -107,8 +107,11 @@ mp_shell() {
 
     if [[ -n "$workdir" ]]; then
         # multipass shell doesn't support --working-directory,
-        # so we exec into bash with a cd
-        multipass exec "$instance_name" -- bash -c "cd '$workdir' && exec bash -l"
+        # so we exec into bash with a cd.
+        # Use printf '%q' to safely escape special characters in the path.
+        local escaped_workdir
+        escaped_workdir="$(printf '%q' "$workdir")"
+        multipass exec "$instance_name" -- bash -c "cd ${escaped_workdir} && exec bash -l"
     else
         multipass shell "$instance_name"
     fi

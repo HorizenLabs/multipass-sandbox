@@ -107,18 +107,16 @@ mps_load_config() {
         source "${MPS_ROOT}/config/defaults.env"
     fi
 
-    # 2. User global overrides
+    # 2. User global overrides (safe line-by-line parsing, no sourcing)
     if [[ -f "${HOME}/.mps/config" ]]; then
         mps_log_debug "Loading user config from ~/.mps/config"
-        # shellcheck disable=SC1091
-        source "${HOME}/.mps/config"
+        _mps_load_env_file "${HOME}/.mps/config"
     fi
 
-    # 3. Per-project overrides
+    # 3. Per-project overrides (safe line-by-line parsing, no sourcing)
     if [[ -f "${MPS_PROJECT_DIR:-.}/.mps.env" ]]; then
         mps_log_debug "Loading project config from .mps.env"
-        # shellcheck disable=SC1091
-        source "${MPS_PROJECT_DIR:-.}/.mps.env"
+        _mps_load_env_file "${MPS_PROJECT_DIR:-.}/.mps.env"
     fi
 
     # 4. Apply profile if set (profile values are defaults, explicit CLI/env wins)
@@ -139,14 +137,36 @@ _mps_apply_profile() {
         # Skip comments and blank lines
         [[ "$key" =~ ^[[:space:]]*# ]] && continue
         [[ -z "$key" ]] && continue
-        key=$(echo "$key" | xargs)
-        val=$(echo "$val" | xargs)
+        key="$(echo "$key" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+        val="$(echo "$val" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
         # Only apply profile value if not already overridden by project/user config
         local current_var="MPS_${key#MPS_PROFILE_}"
         if [[ -z "${!current_var:-}" ]]; then
             export "$current_var=$val"
         fi
     done < "$profile_file"
+}
+
+# Safe env file parser: reads KEY=VALUE lines without sourcing.
+# Only accepts MPS_* variables, strips comments/blanks/quotes.
+_mps_load_env_file() {
+    local env_file="$1"
+    local key val
+    while IFS='=' read -r key val; do
+        [[ "$key" =~ ^[[:space:]]*# ]] && continue
+        [[ -z "$key" ]] && continue
+        key="$(echo "$key" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+        val="$(echo "$val" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+        # Strip optional quotes from value
+        val="${val#\"}" ; val="${val%\"}"
+        val="${val#\'}" ; val="${val%\'}"
+        # Only accept MPS_* variables
+        if [[ "$key" == MPS_* ]]; then
+            export "$key=$val"
+        else
+            mps_log_warn "Ignoring non-MPS variable in ${env_file}: ${key}"
+        fi
+    done < "$env_file"
 }
 
 # ---------- Auto-Scaling Resources ----------
@@ -420,8 +440,7 @@ mps_resolve_workdir() {
     meta_file="$(mps_instance_meta "$(mps_short_name "$instance_name")")"
     if [[ -f "$meta_file" ]]; then
         local mount_target=""
-        # shellcheck disable=SC1090
-        mount_target="$(source "$meta_file" && echo "${MPS_MOUNT_TARGET:-}")"
+        mount_target="$(_mps_read_meta_key "$meta_file" "MPS_MOUNT_TARGET")"
         if [[ -n "$mount_target" ]]; then
             mps_log_debug "Using mount target as workdir: ${mount_target}"
             echo "$mount_target"
