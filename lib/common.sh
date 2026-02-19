@@ -346,12 +346,14 @@ mps_resolve_name() {
 
     # 1. Explicit --name flag
     if [[ -n "$explicit_name" ]]; then
+        mps_validate_name "$explicit_name"
         mps_instance_name "$explicit_name"
         return
     fi
 
     # 2. From project config MPS_NAME
     if [[ -n "${MPS_NAME:-}" ]]; then
+        mps_validate_name "$MPS_NAME"
         mps_instance_name "$MPS_NAME"
         return
     fi
