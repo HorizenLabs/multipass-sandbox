@@ -98,7 +98,7 @@ jobs:
           echo "Flavors: ${FLAVORS[*]}"
 
       - name: Notify Slack on failure
-        if: failure()
+        if: always() && !success()
         run: |
           if [[ -n "${{ secrets.SLACK_WEBHOOK_URL }}" ]]; then
             curl -sf -X POST -H 'Content-type: application/json' \
@@ -255,7 +255,7 @@ jobs:
           fi
 
       - name: Notify Slack on failure
-        if: failure()
+        if: always() && !success()
         run: |
           if [[ -n "${{ secrets.SLACK_WEBHOOK_URL }}" ]]; then
             curl -sf -X POST -H 'Content-type: application/json' \
@@ -270,7 +270,7 @@ jobs:
     needs: resolve
     runs-on: warp-ubuntu-latest-arm64-8x
     environment: build
-    timeout-minutes: 180
+    timeout-minutes: 300
     strategy:
       fail-fast: false
       matrix:
@@ -372,7 +372,7 @@ jobs:
           upload_with_retry "upload-${FLAVOR}-arm64" "$V"
 
       - name: Notify Slack on failure
-        if: failure()
+        if: always() && !success()
         run: |
           if [[ -n "${{ secrets.SLACK_WEBHOOK_URL }}" ]]; then
             curl -sf -X POST -H 'Content-type: application/json' \
@@ -385,8 +385,8 @@ jobs:
     needs: [resolve, build-amd64, build-arm64]
     if: >-
       always() && needs.resolve.result == 'success'
-      && needs.build-amd64.result != 'cancelled'
-      && needs.build-arm64.result != 'cancelled'
+      && !(needs.build-amd64.result == 'cancelled'
+        && needs.build-arm64.result == 'cancelled')
     runs-on: warp-ubuntu-latest-x64-2x
     environment: publish
     steps:
@@ -465,7 +465,7 @@ jobs:
           fi
 
       - name: Notify Slack on failure
-        if: failure()
+        if: always() && !success()
         run: |
           if [[ -n "${{ secrets.SLACK_WEBHOOK_URL }}" ]]; then
             curl -sf -X POST -H 'Content-type: application/json' \

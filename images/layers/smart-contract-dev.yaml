@@ -10,20 +10,24 @@ x-mps:
   min_cpus: 2
 
 runcmd:
-  # ---------- Solana CLI + Anchor ----------
+  # ---------- Solana CLI + Anchor (amd64 only — no arm64 binaries) ----------
   - |
-    sudo -u ubuntu bash -c '
-      export HOME=/home/ubuntu
-      source "$HOME/.cargo/env"
-      # Solana CLI
-      sh -c "$(curl -fsSL https://release.anza.xyz/stable/install)"
-      echo "export PATH=\"\$HOME/.local/share/solana/install/active_release/bin:\$PATH\"" >> "$HOME/.bashrc"
-      # Anchor
-      cargo install --git https://github.com/coral-xyz/anchor avm --force
-      source "$HOME/.cargo/env"
-      avm install latest
-      avm use latest
-    '
+    if [ "$(dpkg --print-architecture)" != "amd64" ]; then
+      echo "Skipping Solana CLI + Anchor (amd64-only)"
+    else
+      sudo -u ubuntu bash -c '
+        export HOME=/home/ubuntu
+        source "$HOME/.cargo/env"
+        # Solana CLI
+        sh -c "$(curl -fsSL https://release.anza.xyz/stable/install)"
+        echo "export PATH=\"\$HOME/.local/share/solana/install/active_release/bin:\$PATH\"" >> "$HOME/.bashrc"
+        # Anchor
+        cargo install --git https://github.com/coral-xyz/anchor avm --force
+        source "$HOME/.cargo/env"
+        avm install latest
+        avm use latest
+      '
+    fi
 
   # ---------- Foundry (forge, cast, anvil, chisel) ----------
   - |
