@@ -69,18 +69,18 @@ make uninstall
 |---------|-------------|
 | `mps create [path] [flags]` | Create a new sandbox |
 | `mps up [path] [flags]` | Create (if needed) and start a sandbox |
-| `mps down [--name <name>]` | Stop a sandbox |
-| `mps destroy [--name <name>]` | Remove a sandbox permanently |
-| `mps shell [--name <name>]` | Open an interactive shell |
-| `mps exec [--name <name>] -- <cmd>` | Execute a command in a sandbox |
+| `mps down [-f] [-n <name>]` | Stop a sandbox (`--force` for immediate shutdown) |
+| `mps destroy [-f] [-n <name>]` | Remove a sandbox permanently (`--force` skips confirmation) |
+| `mps shell [-n <name>] [-w <path>]` | Open an interactive shell |
+| `mps exec [-n <name>] [-w <path>] -- <cmd>` | Execute a command in a sandbox |
 | `mps transfer <src...> <dst>` | Transfer files between host and sandbox |
-| `mps list` | List all sandboxes |
-| `mps status [--name <name>]` | Show detailed sandbox status |
-| `mps ssh-config [--name <name>]` | Generate SSH config for VS Code |
+| `mps list [--json]` | List all sandboxes |
+| `mps status [-n <name>] [--json]` | Show detailed sandbox status |
+| `mps ssh-config [-n <name>]` | Generate SSH config for VS Code |
 | `mps image <list\|pull\|import\|remove>` | Manage sandbox images |
 | `mps port <forward\|list>` | Manage port forwarding |
 
-Run `mps <command> --help` for detailed usage on any command.
+Common flags across commands: `-n` (`--name`), `-f` (`--force`), `-w` (`--workdir`), `--mem` (`--memory`). `create`/`up` also accept `--transfer <host:guest>` (repeatable). Run `mps <command> --help` for detailed usage on any command.
 
 ## Auto-Naming
 
@@ -90,7 +90,7 @@ VMs are automatically named based on your project directory, cloud-init template
 mps-<folder>-<template>-<profile>
 ```
 
-For example, running `mps up` from `~/projects/myapp` produces `mps-myapp-base-lite`.
+For example, running `mps up` from `~/projects/myapp` produces `mps-myapp-default-lite`.
 
 - Override with `--name <name>` flag or `MPS_NAME` in `.mps.env`
 - Long names (>40 chars) are truncated with a short hash suffix for uniqueness
@@ -149,7 +149,9 @@ Configuration is loaded in cascade (later values win):
 1. `config/defaults.env` — shipped defaults
 2. `~/.mps/config` — user global overrides
 3. `.mps.env` — per-project (in your repo)
-4. CLI flags — highest priority
+4. Profile — resource fractions from `templates/profiles/<name>.env`
+5. Auto-scaling — CPU/memory computed from host hardware fractions
+6. CLI flags — highest priority
 
 ### Example `.mps.env`
 
@@ -169,8 +171,11 @@ MPS_NO_AUTOMOUNT=false
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `MPS_NAME` | (auto) | Override auto-generated sandbox name |
+| `MPS_IMAGE` | | Per-project image override (takes precedence over `MPS_DEFAULT_IMAGE`) |
 | `MPS_DEFAULT_IMAGE` | `base` | Default image (`base`, `base:1.0.0`, or Ubuntu version like `24.04`) |
+| `MPS_PROFILE` | | Per-project profile override (takes precedence over `MPS_DEFAULT_PROFILE`) |
 | `MPS_DEFAULT_PROFILE` | `lite` | Default resource profile (`micro`, `lite`, `standard`, `heavy`) |
+| `MPS_CLOUD_INIT` | | Per-project cloud-init override (takes precedence over `MPS_DEFAULT_CLOUD_INIT`) |
 | `MPS_DEFAULT_CLOUD_INIT` | `default` | Cloud-init template name or file path |
 | `MPS_CPUS` | (from profile) | vCPUs (host threads) |
 | `MPS_MEMORY` | (from profile) | Memory with unit (e.g., `4G`) |
@@ -182,6 +187,7 @@ MPS_NO_AUTOMOUNT=false
 | `MPS_IMAGE_BASE_URL` | `https://mpsandbox.horizenlabs.io` | Image registry URL |
 | `MPS_IMAGE_CHECK_UPDATES` | `true` | Check for image updates on create/up |
 | `MPS_INSTANCE_PREFIX` | `mps` | Prefix for auto-generated instance names |
+| `MPS_DEBUG` | `false` | Enable debug logging (`--debug` flag) |
 | `MPS_B2_BUCKET` | `mpsandbox` | Backblaze B2 bucket (build/publish only) |
 
 ## Profiles
