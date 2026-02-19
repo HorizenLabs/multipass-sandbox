@@ -601,8 +601,21 @@ mps_resolve_image() {
     cache_dir="$(mps_cache_dir)/images"
     local image_dir="${cache_dir}/${name}"
 
-    # If the image name directory doesn't exist, try auto-pull for mps images
-    if [[ ! -d "$image_dir" ]]; then
+    # If the image name directory doesn't exist or is empty, try auto-pull for mps images
+    local _has_images=false
+    if [[ -d "$image_dir" ]]; then
+        # Check if any .img files exist in any version subdirectory
+        for _vdir in "$image_dir"/*/; do
+            [[ -d "$_vdir" ]] || continue
+            for _img in "$_vdir"*.img; do
+                if [[ -f "$_img" ]]; then
+                    _has_images=true
+                    break 2
+                fi
+            done
+        done
+    fi
+    if [[ "$_has_images" == "false" ]]; then
         if _mps_is_mps_image "$name" && [[ -n "${MPS_IMAGE_BASE_URL:-}" ]]; then
             mps_log_info "Image '${name}' not found locally. Pulling..."
             if _mps_pull_image "$name" "$tag" && [[ -d "$image_dir" ]]; then
@@ -647,6 +660,25 @@ mps_resolve_image() {
 
     local img_file="${image_dir}/${tag}/${arch}.img"
     if [[ -f "$img_file" ]]; then
+        # Verify cached image integrity against .meta sidecar SHA256
+        local meta_file="${image_dir}/${tag}/${arch}.meta"
+        if [[ -f "$meta_file" ]]; then
+            local expected_sha256=""
+            expected_sha256="$(grep '^SHA256=' "$meta_file" | head -1 | cut -d= -f2-)"
+            if [[ -n "$expected_sha256" && ${#expected_sha256} -eq 64 ]]; then
+                local actual_sha256
+                actual_sha256="$(_mps_sha256 "$img_file" | cut -d' ' -f1)"
+                if [[ "$actual_sha256" != "$expected_sha256" ]]; then
+                    mps_log_warn "Cached image '${name}:${tag}' is corrupted (checksum mismatch). Re-pulling..."
+                    rm -f "$img_file"
+                    if _mps_is_mps_image "$name" && [[ -n "${MPS_IMAGE_BASE_URL:-}" ]]; then
+                        _mps_pull_image "$name" "$tag" || mps_die "Failed to re-pull corrupted image '${name}:${tag}'"
+                    else
+                        mps_die "Cached image corrupted and cannot auto-pull. Remove with 'mps image remove ${name}:${tag}' and pull again."
+                    fi
+                fi
+            fi
+        fi
         local abs_path
         abs_path="$(cd "$(dirname "$img_file")" && pwd)/$(basename "$img_file")"
         _mps_warn_image_staleness "file://${abs_path}"
