@@ -200,6 +200,7 @@ _b2_merge_manifest_entry() {
 # ---------- _cf_purge_urls ----------
 # Purge URLs from Cloudflare cache. No-op if CF_ZONE_ID/CF_API_TOKEN not set.
 # Automatically batches into chunks of 30 (CF API limit per request).
+# Returns non-zero if any batch fails.
 # Args: URLs to purge
 _cf_purge_urls() {
     local -a urls=("$@")
@@ -208,18 +209,33 @@ _cf_purge_urls() {
         echo "  CF vars not set, skipping purge."
         return 0
     fi
-    local -i i=0 batch_size=30
+    local -i i=0 batch_size=30 failures=0
     while [[ $i -lt ${#urls[@]} ]]; do
         local -a batch=("${urls[@]:$i:$batch_size}")
-        local files_json
+        local files_json response
         files_json="$(printf '%s\n' "${batch[@]}" | jq -R . | jq -sc .)"
-        curl -sf -o /dev/null -w '' \
+        if ! response="$(curl -sf \
             -X POST "https://api.cloudflare.com/client/v4/zones/${CF_ZONE_ID}/purge_cache" \
             -H "Authorization: Bearer ${CF_API_TOKEN}" \
             -H "Content-Type: application/json" \
-            --data "{\"files\":${files_json}}" || true
+            --data "{\"files\":${files_json}}")"; then
+            echo "  ERROR: CF cache purge request failed (curl error, batch at offset $i)."
+            failures+=1
+            i+=batch_size
+            continue
+        fi
+        if [[ "$(echo "$response" | jq -r '.success')" != "true" ]]; then
+            local errors
+            errors="$(echo "$response" | jq -c '.errors // []')"
+            echo "  ERROR: CF cache purge rejected (batch at offset $i): $errors"
+            failures+=1
+        fi
         i+=batch_size
     done
+    if [[ $failures -gt 0 ]]; then
+        echo "  WARNING: $failures cache purge batch(es) failed."
+        return 1
+    fi
 }
 
 # ---------- _format_size ----------
