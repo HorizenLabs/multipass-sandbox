@@ -56,10 +56,10 @@ cmd_image() {
     args=("$@")
 
     case "$subcmd" in
-        list)   _image_list "${args[@]}" ;;
-        pull)   _image_pull "${args[@]}" ;;
-        import) _image_import "${args[@]}" ;;
-        remove) _image_remove "${args[@]}" ;;
+        list)   _image_list ${args[@]+"${args[@]}"} ;;
+        pull)   _image_pull ${args[@]+"${args[@]}"} ;;
+        import) _image_import ${args[@]+"${args[@]}"} ;;
+        remove) _image_remove ${args[@]+"${args[@]}"} ;;
         --help|-h) _image_usage ;;
         *)
             mps_log_error "Unknown image subcommand: '$subcmd'"

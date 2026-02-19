@@ -29,7 +29,7 @@ mp_launch() {
         cmd+=(--cloud-init "$cloud_init")
     fi
 
-    cmd+=("${extra_args[@]}")
+    cmd+=(${extra_args[@]+"${extra_args[@]}"})
 
     mps_log_info "Launching instance '$instance_name' (image=$image, cpus=$cpus, mem=$memory, disk=$disk)..."
     mps_log_debug "Running: ${cmd[*]}"

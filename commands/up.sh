@@ -89,7 +89,7 @@ cmd_up() {
             # Delegate to cmd_create with all original arguments
             # shellcheck source=create.sh
             source "${MPS_ROOT}/commands/create.sh"
-            cmd_create "${original_args[@]}"
+            cmd_create ${original_args[@]+"${original_args[@]}"}
             ;;
 
         Stopped)

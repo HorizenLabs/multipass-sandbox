@@ -1318,7 +1318,7 @@ mps_collect_port_specs() {
     fi
 
     local s
-    for s in "${specs[@]}"; do
+    for s in ${specs[@]+"${specs[@]}"}; do
         echo "$s"
     done
 }
