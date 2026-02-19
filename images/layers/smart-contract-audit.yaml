@@ -3,6 +3,7 @@
 # Solidity security tools (on top of smart-contract-dev)
 
 x-mps:
+  description: "smart-contract-dev + Slither + Mythril + Echidna + Medusa + Halmos"
   disk_size: 13G
   min_profile: standard
   min_disk: 15G

@@ -3,6 +3,7 @@
 # Solana CLI + Anchor, Foundry, Hardhat, Solhint (on top of protocol-dev)
 
 x-mps:
+  description: "protocol-dev + Solana/Anchor (amd64) + Foundry + Hardhat"
   disk_size: 11G
   min_profile: lite
   min_disk: 15G

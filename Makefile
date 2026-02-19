@@ -299,6 +299,8 @@ docker run --rm \
 	-e HOST_GID=$(HOST_GID) \
 	-e B2_APPLICATION_KEY_ID \
 	-e B2_APPLICATION_KEY \
+	-e CF_ZONE_ID \
+	-e CF_API_TOKEN \
 	$(PUBLISHER_IMAGE):$(PUBLISHER_TAG)
 endef
 

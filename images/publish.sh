@@ -9,16 +9,19 @@ set -euo pipefail
 #   ./images/publish.sh base 1.0.0 images/artifacts/mps-base-amd64.qcow2.img
 #
 # Modes:
-#   --upload-only   Upload image + .sha256 sidecar to B2, skip manifest update.
-#                   Used by CI runners; manifest is updated separately by update-manifest.sh.
-#   (default)       Upload image + sidecar, then update manifest. For local dev.
+#   --upload-only   Upload image + .sha256 + .meta.json sidecars to B2, purge CF cache,
+#                   skip manifest update. Used by CI runners; manifest is updated
+#                   separately by update-manifest.sh.
+#   (default)       Upload image + sidecars, then update manifest. For local dev.
 #
-# Requires: b2 CLI v4, jq, yq (optional, for x-mps metadata in default mode)
+# Requires: b2 CLI v4, jq, yq (for x-mps metadata)
 #
 # Environment:
 #   B2_APPLICATION_KEY_ID — B2 application key ID (required, read by b2 CLI)
 #   B2_APPLICATION_KEY    — B2 application key (required, read by b2 CLI)
 #   MPS_B2_BUCKET         — B2 bucket name (default: from config/defaults.env)
+#   CF_ZONE_ID            — Cloudflare zone ID (optional, for cache purge)
+#   CF_API_TOKEN          — Cloudflare API token (optional, for cache purge)
 
 # shellcheck source=lib/publish-common.sh
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/publish-common.sh"
@@ -69,22 +72,39 @@ fi
 SHA256="$(awk '{print $1}' "$SHA256_FILE")"
 echo "SHA256: ${SHA256} (from ${SHA256_FILE})"
 
+# Compute build metadata (needed for .meta.json in both modes)
+BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+FILE_SIZE="$(stat -c '%s' "$IMAGE_FILE")"
+LAYER_FILE="${SCRIPT_DIR}/layers/${IMAGE_NAME}.yaml"
+_read_xmps_metadata "$LAYER_FILE"
+
 # ---------- Upload image to B2 ----------
 B2_PATH="${IMAGE_NAME}/${VERSION}/${ARCH}.img"
 echo "Uploading image to b2://${BUCKET}/${B2_PATH}..."
 b2 file upload "${BUCKET}" "$IMAGE_FILE" "$B2_PATH"
 echo "Image upload complete."
 
-# Upload .sha256 sidecar (used by update-manifest.sh in fan-in CI flow)
+# Upload .sha256 sidecar (kept for backward compatibility + direct verification)
 B2_SHA_PATH="${B2_PATH}.sha256"
 echo "Uploading sidecar to b2://${BUCKET}/${B2_SHA_PATH}..."
 b2 file upload "${BUCKET}" "$SHA256_FILE" "$B2_SHA_PATH"
 echo "Sidecar upload complete."
 
-# Clean up old versions of both files
+# Generate and upload .meta.json sidecar (authoritative verification source)
+META_JSON="$(mktemp)"
+trap 'rm -f "$META_JSON"' EXIT
+_generate_meta_json "$META_JSON" "$IMAGE_NAME" "$VERSION" "$ARCH" "$SHA256" "$BUILD_DATE" "$FILE_SIZE"
+
+B2_META_PATH="${B2_PATH}.meta.json"
+echo "Uploading .meta.json to b2://${BUCKET}/${B2_META_PATH}..."
+b2 file upload "${BUCKET}" "$META_JSON" "$B2_META_PATH"
+echo ".meta.json upload complete."
+
+# Clean up old versions of all files
 echo "Cleaning up old file versions..."
 _b2_cleanup_old_versions "$B2_PATH"
 _b2_cleanup_old_versions "$B2_SHA_PATH"
+_b2_cleanup_old_versions "$B2_META_PATH"
 
 # ---------- Cancel unfinished large file uploads ----------
 # Failed/interrupted uploads leave partial data that consumes storage.
@@ -97,54 +117,49 @@ else
     echo "No unfinished uploads found."
 fi
 
-# ---------- Upload-only mode: stop here ----------
+# ---------- Upload-only mode: purge CF cache and stop ----------
 if [[ "$UPLOAD_ONLY" == "true" ]]; then
+    CDN_BASE="${MPS_IMAGE_BASE_URL:-}"
+    if [[ -n "$CDN_BASE" ]]; then
+        echo "Purging CF cache for uploaded files..."
+        _cf_purge_urls "${CDN_BASE}/${B2_SHA_PATH}" "${CDN_BASE}/${B2_META_PATH}"
+    fi
+
     echo ""
     echo "=== Upload complete (manifest not updated) ==="
-    echo "  Image:    ${IMAGE_NAME}:${VERSION} (${ARCH})"
-    echo "  B2 path:  b2://${BUCKET}/${B2_PATH}"
-    echo "  Sidecar:  b2://${BUCKET}/${B2_SHA_PATH}"
-    echo "  SHA256:   ${SHA256}"
+    echo "  Image:      ${IMAGE_NAME}:${VERSION} (${ARCH})"
+    echo "  B2 path:    b2://${BUCKET}/${B2_PATH}"
+    echo "  Sidecar:    b2://${BUCKET}/${B2_SHA_PATH}"
+    echo "  Meta:       b2://${BUCKET}/${B2_META_PATH}"
+    echo "  SHA256:     ${SHA256}"
     echo ""
     echo "Run update-manifest.sh to update the manifest after all uploads finish."
     exit 0
 fi
 
 # ---------- Update manifest (default mode, for local dev) ----------
-BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-
-# Get file size for manifest
-FILE_SIZE="$(stat -c '%s' "$IMAGE_FILE")"
 
 # Download the remote manifest from B2 (source of truth for multi-arch publishing).
-# Falls back to the local skeleton manifest for the very first publish.
+# Falls back to an empty v2 manifest for the very first publish.
 echo "Fetching remote manifest..."
 REMOTE_MANIFEST="$(mktemp)"
 if b2 file download "b2://${BUCKET}/manifest.json" "$REMOTE_MANIFEST" 2>/dev/null; then
     echo "Using remote manifest from B2."
 else
-    echo "Remote manifest not found, using local skeleton."
-    if [[ ! -f "$MANIFEST_FILE" ]]; then
-        echo "ERROR: Local manifest not found at ${MANIFEST_FILE}"
-        rm -f "$REMOTE_MANIFEST"
-        exit 1
-    fi
-    cp "$MANIFEST_FILE" "$REMOTE_MANIFEST"
+    echo "Remote manifest not found, seeding empty v2 manifest."
+    echo '{"schema_version":2,"generated_at":"","images":{}}' > "$REMOTE_MANIFEST"
 fi
-
-# Extract x-mps metadata from the layer YAML for this flavor
-LAYER_FILE="${SCRIPT_DIR}/layers/${IMAGE_NAME}.yaml"
-_read_xmps_metadata "$LAYER_FILE"
 
 # Merge new entry into manifest
 echo "Updating manifest..."
-RELATIVE_URL="${IMAGE_NAME}/${VERSION}/${ARCH}.img"
 TMP_MANIFEST="$(mktemp)"
 
-_b2_merge_manifest_entry "$REMOTE_MANIFEST" "$TMP_MANIFEST" \
-    "$IMAGE_NAME" "$VERSION" "$ARCH" "$RELATIVE_URL" "$SHA256" "$BUILD_DATE" \
-    "$FILE_SIZE" "$META_DISK_SIZE" "$META_MIN_PROFILE" "$META_MIN_DISK" \
-    "$META_MIN_MEMORY" "$META_MIN_CPUS"
+_b2_merge_manifest_entry "$REMOTE_MANIFEST" "$TMP_MANIFEST" "$META_JSON"
+
+# Stamp schema version and generation timestamp
+TMP_STAMPED="$(mktemp)"
+jq --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" '.schema_version = 2 | .generated_at = $ts' \
+    "$TMP_MANIFEST" > "$TMP_STAMPED" && mv "$TMP_STAMPED" "$TMP_MANIFEST"
 
 # Upload updated manifest to B2 (old versions intentionally kept for audit/reconciliation)
 echo "Uploading manifest to b2://${BUCKET}/manifest.json..."

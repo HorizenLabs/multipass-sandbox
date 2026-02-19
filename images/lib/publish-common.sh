@@ -7,9 +7,12 @@
 # Provides:
 #   publish_init          — Set SCRIPT_DIR, MPS_ROOT, BUCKET from caller context
 #   _validate_semver      — Validate SemVer format
+#   _validate_required_vars — Check that named env vars are set
 #   _b2_cleanup_old_versions — Delete old B2 file versions (keep newest)
 #   _read_xmps_metadata   — Read x-mps metadata from a layer YAML
-#   _b2_merge_manifest_entry — Merge an arch entry into the manifest via jq
+#   _generate_meta_json   — Generate .meta.json sidecar from build metadata
+#   _b2_merge_manifest_entry — Merge an arch entry into the manifest via .meta.json
+#   _cf_purge_urls        — Purge URLs from Cloudflare cache
 #   _format_size          — Human-readable file size formatting
 
 # ---------- publish_init ----------
@@ -25,8 +28,6 @@ publish_init() {
     source "${MPS_ROOT}/config/defaults.env"
 
     BUCKET="${MPS_B2_BUCKET:-mpsandbox}"
-    # shellcheck disable=SC2034  # Used by callers
-    MANIFEST_FILE="${SCRIPT_DIR}/manifest.json"
 }
 
 # ---------- _validate_semver ----------
@@ -37,6 +38,22 @@ _validate_semver() {
     local version="$1"
     if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
         echo "ERROR: Version must be SemVer format (e.g., 1.0.0). Got: $version"
+        exit 1
+    fi
+}
+
+# ---------- _validate_required_vars ----------
+# Checks that all named environment variables are non-empty.
+# Args: variable names to check
+# Exits with error listing all missing vars.
+_validate_required_vars() {
+    local -a missing=()
+    local var
+    for var in "$@"; do
+        [[ -n "${!var:-}" ]] || missing+=("$var")
+    done
+    if [[ ${#missing[@]} -gt 0 ]]; then
+        echo "ERROR: Missing required variables: ${missing[*]}"
         exit 1
     fi
 }
@@ -80,12 +97,14 @@ _b2_cleanup_old_versions() {
 
 # ---------- _read_xmps_metadata ----------
 # Reads x-mps metadata from a layer YAML file.
-# Sets: META_DISK_SIZE, META_MIN_PROFILE, META_MIN_DISK, META_MIN_MEMORY, META_MIN_CPUS
+# Sets: META_DESCRIPTION, META_DISK_SIZE, META_MIN_PROFILE, META_MIN_DISK, META_MIN_MEMORY, META_MIN_CPUS
 # Args: $1 = layer YAML file path
 _read_xmps_metadata() {
     local layer_file="$1"
 
     # shellcheck disable=SC2034  # All META_* vars used by callers
+    META_DESCRIPTION=""
+    # shellcheck disable=SC2034
     META_DISK_SIZE=""
     # shellcheck disable=SC2034
     META_MIN_PROFILE=""
@@ -96,6 +115,8 @@ _read_xmps_metadata() {
     # shellcheck disable=SC2034
     META_MIN_CPUS=""
     if [[ -f "$layer_file" ]] && command -v yq &>/dev/null; then
+        # shellcheck disable=SC2034
+        META_DESCRIPTION="$(yq '.x-mps.description // ""' "$layer_file")"
         # shellcheck disable=SC2034
         META_DISK_SIZE="$(yq '.x-mps.disk_size // ""' "$layer_file")"
         # shellcheck disable=SC2034
@@ -109,73 +130,96 @@ _read_xmps_metadata() {
     fi
 }
 
+# ---------- _generate_meta_json ----------
+# Generates a .meta.json sidecar from META_* globals + per-build params.
+# Args: $1 = output file, $2 = image name, $3 = version, $4 = arch,
+#       $5 = sha256, $6 = build_date, $7 = file_size (optional)
+# Requires: META_DESCRIPTION, META_DISK_SIZE, META_MIN_PROFILE,
+#           META_MIN_DISK, META_MIN_MEMORY, META_MIN_CPUS (from _read_xmps_metadata)
+_generate_meta_json() {
+    local output_file="$1" name="$2" ver="$3" arch="$4"
+    local sha="$5" build_date="$6" file_size="${7:-}"
+
+    jq -n \
+        --arg image "$name" \
+        --arg version "$ver" \
+        --arg arch "$arch" \
+        --arg sha256 "$sha" \
+        --arg build_date "$build_date" \
+        --arg file_size "$file_size" \
+        --arg description "${META_DESCRIPTION:-}" \
+        --arg disk_size "${META_DISK_SIZE:-}" \
+        --arg min_profile "${META_MIN_PROFILE:-}" \
+        --arg min_disk "${META_MIN_DISK:-}" \
+        --arg min_memory "${META_MIN_MEMORY:-}" \
+        --arg min_cpus "${META_MIN_CPUS:-}" \
+        '{
+            image: $image, version: $version, arch: $arch,
+            sha256: $sha256, build_date: $build_date,
+            description: $description, disk_size: $disk_size,
+            min_profile: $min_profile, min_disk: $min_disk,
+            min_memory: $min_memory,
+            min_cpus: (if $min_cpus != "" then ($min_cpus | tonumber) else null end)
+        } + if $file_size != "" then {file_size: ($file_size | tonumber)} else {} end' \
+        > "$output_file"
+}
+
 # ---------- _b2_merge_manifest_entry ----------
-# Merges a single arch entry into the manifest JSON using jq.
-# Args: $1  = input manifest file
-#       $2  = output manifest file
-#       $3  = image name (flavor)
-#       $4  = version
-#       $5  = architecture
-#       $6  = relative URL
-#       $7  = sha256 hash
-#       $8  = build date (ISO 8601)
-#       $9  = file size in bytes (empty string if unknown)
-#       $10 = disk_size metadata (empty string if not set)
-#       $11 = min_profile metadata (empty string if not set)
-#       $12 = min_disk metadata (empty string if not set)
-#       $13 = min_memory metadata (empty string if not set)
-#       $14 = min_cpus metadata (empty string if not set)
+# Merges a single arch entry into the manifest JSON using a .meta.json sidecar.
+# Args: $1 = input manifest file
+#       $2 = output manifest file
+#       $3 = .meta.json sidecar file
 _b2_merge_manifest_entry() {
     local manifest_in="$1"
     local manifest_out="$2"
-    local name="$3"
-    local ver="$4"
-    local arch="$5"
-    local url="$6"
-    local sha="$7"
-    local build_date="$8"
-    local file_size="${9}"
-    local disk_size="${10}"
-    local min_profile="${11}"
-    local min_disk="${12}"
-    local min_memory="${13}"
-    local min_cpus="${14}"
+    local meta_json="$3"
 
-    jq \
-        --arg name "$name" \
-        --arg ver "$ver" \
-        --arg arch "$arch" \
-        --arg url "$url" \
-        --arg sha "$sha" \
-        --arg build_date "$build_date" \
-        --arg file_size "$file_size" \
-        --arg disk_size "$disk_size" \
-        --arg min_profile "$min_profile" \
-        --arg min_disk "$min_disk" \
-        --arg min_memory "$min_memory" \
-        --arg min_cpus "$min_cpus" \
-        '
+    jq --slurpfile meta "$meta_json" '
+        ($meta[0].image) as $name | ($meta[0].version) as $ver | ($meta[0].arch) as $arch |
         # Ensure image entry exists
         .images[$name] //= {"description": "", "versions": {}, "latest": null} |
-        # Inject x-mps metadata (overwrite if present)
-        (if $disk_size != "" then .images[$name].disk_size = $disk_size else . end) |
-        (if $min_profile != "" then .images[$name].min_profile = $min_profile else . end) |
-        (if $min_disk != "" then .images[$name].min_disk = $min_disk else . end) |
-        (if $min_memory != "" then .images[$name].min_memory = $min_memory else . end) |
-        (if $min_cpus != "" then .images[$name].min_cpus = ($min_cpus | tonumber) else . end) |
+        # Inject flavor-level metadata from sidecar
+        (if $meta[0].description != "" then .images[$name].description = $meta[0].description else . end) |
+        (if $meta[0].disk_size != "" then .images[$name].disk_size = $meta[0].disk_size else . end) |
+        (if $meta[0].min_profile != "" then .images[$name].min_profile = $meta[0].min_profile else . end) |
+        (if $meta[0].min_disk != "" then .images[$name].min_disk = $meta[0].min_disk else . end) |
+        (if $meta[0].min_memory != "" then .images[$name].min_memory = $meta[0].min_memory else . end) |
+        (if $meta[0].min_cpus != null then .images[$name].min_cpus = $meta[0].min_cpus else . end) |
         # Ensure version entry exists
         .images[$name].versions[$ver] //= {} |
-        # Set arch-specific data (include file_size if available)
+        # Set arch-specific data (no url field in v2)
         .images[$name].versions[$ver][$arch] = (
-            {
-                "url": $url,
-                "sha256": $sha,
-                "build_date": $build_date
-            } + if $file_size != "" then {"file_size": ($file_size | tonumber)} else {} end
+            {sha256: $meta[0].sha256, build_date: $meta[0].build_date}
+            + if $meta[0].file_size != null then {file_size: $meta[0].file_size} else {} end
         ) |
         # Update latest pointer
         .images[$name].latest = $ver
-        ' "$manifest_in" > "$manifest_out"
+    ' "$manifest_in" > "$manifest_out"
+}
+
+# ---------- _cf_purge_urls ----------
+# Purge URLs from Cloudflare cache. No-op if CF_ZONE_ID/CF_API_TOKEN not set.
+# Automatically batches into chunks of 30 (CF API limit per request).
+# Args: URLs to purge
+_cf_purge_urls() {
+    local -a urls=("$@")
+    [[ ${#urls[@]} -gt 0 ]] || return 0
+    if [[ -z "${CF_ZONE_ID:-}" || -z "${CF_API_TOKEN:-}" ]]; then
+        echo "  CF vars not set, skipping purge."
+        return 0
+    fi
+    local -i i=0 batch_size=30
+    while [[ $i -lt ${#urls[@]} ]]; do
+        local -a batch=("${urls[@]:$i:$batch_size}")
+        local files_json
+        files_json="$(printf '%s\n' "${batch[@]}" | jq -R . | jq -sc .)"
+        curl -sf -o /dev/null -w '' \
+            -X POST "https://api.cloudflare.com/client/v4/zones/${CF_ZONE_ID}/purge_cache" \
+            -H "Authorization: Bearer ${CF_API_TOKEN}" \
+            -H "Content-Type: application/json" \
+            --data "{\"files\":${files_json}}" || true
+        i+=batch_size
+    done
 }
 
 # ---------- _format_size ----------

@@ -62,10 +62,8 @@ jobs:
           TAG="images/v${VERSION}"
 
           # Validate SemVer
-          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "::error::Version must be SemVer (x.y.z). Got: $VERSION"
-            exit 1
-          fi
+          source images/lib/publish-common.sh
+          _validate_semver "$VERSION"
 
           # Verify the tag exists locally
           if ! git rev-parse "$TAG" &>/dev/null; then
@@ -140,16 +138,13 @@ jobs:
 
       - name: Validate required secrets
         run: |
-          MISSING=()
-          [[ -z "$B2_APPLICATION_KEY_ID" ]] && MISSING+=(B2_APPLICATION_KEY_ID)
-          [[ -z "$B2_APPLICATION_KEY" ]]    && MISSING+=(B2_APPLICATION_KEY)
-          if [[ ${#MISSING[@]} -gt 0 ]]; then
-            echo "::error::Missing required secrets: ${MISSING[*]}"
-            exit 1
-          fi
+          source images/lib/publish-common.sh
+          _validate_required_vars B2_APPLICATION_KEY_ID B2_APPLICATION_KEY CF_ZONE_ID CF_API_TOKEN
         env:
           B2_APPLICATION_KEY_ID: ${{ secrets.B2_APPLICATION_KEY_ID }}
           B2_APPLICATION_KEY: ${{ secrets.B2_APPLICATION_KEY }}
+          CF_ZONE_ID: ${{ secrets.CF_ZONE_ID }}
+          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
 
       - name: Verify submodule
         run: |
@@ -178,6 +173,8 @@ jobs:
         env:
           B2_APPLICATION_KEY_ID: ${{ secrets.B2_APPLICATION_KEY_ID }}
           B2_APPLICATION_KEY: ${{ secrets.B2_APPLICATION_KEY }}
+          CF_ZONE_ID: ${{ secrets.CF_ZONE_ID }}
+          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
         run: |
           set -euo pipefail
           V="${{ needs.resolve.outputs.version }}"
@@ -303,16 +300,13 @@ jobs:
 
       - name: Validate required secrets
         run: |
-          MISSING=()
-          [[ -z "$B2_APPLICATION_KEY_ID" ]] && MISSING+=(B2_APPLICATION_KEY_ID)
-          [[ -z "$B2_APPLICATION_KEY" ]]    && MISSING+=(B2_APPLICATION_KEY)
-          if [[ ${#MISSING[@]} -gt 0 ]]; then
-            echo "::error::Missing required secrets: ${MISSING[*]}"
-            exit 1
-          fi
+          source images/lib/publish-common.sh
+          _validate_required_vars B2_APPLICATION_KEY_ID B2_APPLICATION_KEY CF_ZONE_ID CF_API_TOKEN
         env:
           B2_APPLICATION_KEY_ID: ${{ secrets.B2_APPLICATION_KEY_ID }}
           B2_APPLICATION_KEY: ${{ secrets.B2_APPLICATION_KEY }}
+          CF_ZONE_ID: ${{ secrets.CF_ZONE_ID }}
+          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
 
       - name: Verify submodule
         run: |
@@ -341,6 +335,8 @@ jobs:
         env:
           B2_APPLICATION_KEY_ID: ${{ secrets.B2_APPLICATION_KEY_ID }}
           B2_APPLICATION_KEY: ${{ secrets.B2_APPLICATION_KEY }}
+          CF_ZONE_ID: ${{ secrets.CF_ZONE_ID }}
+          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
         run: |
           set -euo pipefail
           V="${{ needs.resolve.outputs.version }}"
@@ -397,15 +393,8 @@ jobs:
 
       - name: Validate required secrets
         run: |
-          MISSING=()
-          [[ -z "$B2_APPLICATION_KEY_ID" ]] && MISSING+=(B2_APPLICATION_KEY_ID)
-          [[ -z "$B2_APPLICATION_KEY" ]]    && MISSING+=(B2_APPLICATION_KEY)
-          [[ -z "$CF_ZONE_ID" ]]            && MISSING+=(CF_ZONE_ID)
-          [[ -z "$CF_API_TOKEN" ]]          && MISSING+=(CF_API_TOKEN)
-          if [[ ${#MISSING[@]} -gt 0 ]]; then
-            echo "::error::Missing required secrets: ${MISSING[*]}"
-            exit 1
-          fi
+          source images/lib/publish-common.sh
+          _validate_required_vars B2_APPLICATION_KEY_ID B2_APPLICATION_KEY CF_ZONE_ID CF_API_TOKEN
         env:
           B2_APPLICATION_KEY_ID: ${{ secrets.B2_APPLICATION_KEY_ID }}
           B2_APPLICATION_KEY: ${{ secrets.B2_APPLICATION_KEY }}
@@ -429,6 +418,8 @@ jobs:
           CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
         run: |
           set -euo pipefail
+          source images/lib/publish-common.sh
+
           V="${{ needs.resolve.outputs.version }}"
           BASE="${CDN_BASE}"
           FLAVORS_JSON='${{ needs.resolve.outputs.flavors_json }}'
@@ -443,26 +434,14 @@ jobs:
             URLS+=("${BASE}/${flavor}/${V}/index.html")
             for arch in amd64 arm64; do
               URLS+=("${BASE}/${flavor}/${V}/${arch}.img.sha256")
+              URLS+=("${BASE}/${flavor}/${V}/${arch}.img.meta.json")
             done
           done
 
           echo "Purging ${#URLS[@]} URLs from Cloudflare cache..."
           printf '  %s\n' "${URLS[@]}"
-
-          # Build JSON files array
-          FILES_JSON="$(printf '%s\n' "${URLS[@]}" | jq -R . | jq -sc .)"
-
-          HTTP_CODE="$(curl -sf -o /dev/null -w '%{http_code}' \
-            -X POST "https://api.cloudflare.com/client/v4/zones/${CF_ZONE_ID}/purge_cache" \
-            -H "Authorization: Bearer ${CF_API_TOKEN}" \
-            -H "Content-Type: application/json" \
-            --data "{\"files\":${FILES_JSON}}")" || true
-
-          if [[ "$HTTP_CODE" == "200" ]]; then
-            echo "Cache purge successful."
-          else
-            echo "::warning::Cache purge returned HTTP ${HTTP_CODE} (non-fatal, cache expires at edge TTL)"
-          fi
+          _cf_purge_urls "${URLS[@]}"
+          echo "Cache purge complete."
 
       - name: Notify Slack on failure
         if: always() && !success()

@@ -95,7 +95,7 @@ When only specific flavors are requested, the loop skips non-requested flavors (
 
 ### Job: `build-arm64` (matrix by flavor, parallel from-scratch)
 Runner: `warp-ubuntu-latest-arm64-8x` — one job per flavor
-Environment: `build` — Timeout: 180 min — `fail-fast: false`
+Environment: `build` — Timeout: 300 min — `fail-fast: false`
 Strategy: `matrix.flavor: ${{ fromJson(needs.resolve.outputs.flavors_json) }}`
 
 **Why parallel from-scratch instead of layered chain:**
@@ -107,17 +107,19 @@ ARM64 CI runners (GitHub/WarpBuild) lack KVM/nested virtualization, forcing TCG 
 
 ### Job: `publish` (needs: resolve, build-amd64, build-arm64)
 Runner: `warp-ubuntu-latest-x64-2x`
-Environment: `publish` — Condition: `always() && needs.resolve.result == 'success' && needs.build-amd64.result != 'cancelled' && needs.build-arm64.result != 'cancelled'`
+Environment: `publish` — Condition: `always() && needs.resolve.result == 'success' && !(both builds cancelled)`
 - `make build-docker-publisher`
-- `make update-manifest VERSION=...` (downloads sidecars from B2, skips missing archs gracefully; calls `generate-index.sh` automatically)
+- `make update-manifest VERSION=...` (downloads `.meta.json` sidecars from B2, skips missing archs gracefully; calls `generate-index.sh` automatically)
 - Cloudflare cache purge (same step, runs only if manifest update succeeded):
-  - Build URL list: `manifest.json`, root `index.html`, per-flavor indexes, per-version indexes, `.sha256` sidecars (max ~27 URLs, under CF's 30 limit)
+  - Build URL list: `manifest.json`, root `index.html`, per-flavor indexes, per-version indexes, `.sha256` + `.meta.json` sidecars (26 URLs at 4 flavors × 2 arches). Batched in chunks of 30 (CF API limit) for future-proofing.
   - `POST /zones/{zone_id}/purge_cache` with `files` array
   - Uses `CF_ZONE_ID` + `CF_API_TOKEN` secrets
   - Non-fatal on failure (cache expires naturally at 1d edge TTL)
 
+**Per-upload CF purge**: Build jobs also purge `.sha256` and `.meta.json` sidecar URLs immediately after upload via `_cf_purge_urls()` in `publish.sh --upload-only`. This ensures clients fetching `.meta.json` for SHA256 verification get the latest data without waiting for the fan-in manifest update. Requires `CF_ZONE_ID` + `CF_API_TOKEN` in the `build` environment.
+
 ### Slack Failure Notifications (per-job, not a separate job)
-Each job in `images.yml` has a final `if: failure()` step that posts to Slack via `SLACK_WEBHOOK_URL` (repo-level secret). This gives faster feedback (fires as soon as a job fails) and includes the specific job name in the notification. No separate `notify` job needed.
+Each job in `images.yml` has a final `if: always() && !success()` step that posts to Slack via `SLACK_WEBHOOK_URL` (repo-level secret). This catches both failures and cancellations. Fires as soon as a job fails and includes the specific job name in the notification. No separate `notify` job needed.
 
 ## Workflow 3: `release.yml` — Tool Release
 
@@ -178,6 +180,8 @@ Steps:
 | `SUBMODULE_DEPLOY_KEY` | SSH private key for `HorizenLabs/hl-claude-marketplace` |
 | `B2_APPLICATION_KEY_ID` | Backblaze B2 key ID (for uploading images) |
 | `B2_APPLICATION_KEY` | Backblaze B2 key secret |
+| `CF_ZONE_ID` | Cloudflare zone ID (for per-upload sidecar cache purge) |
+| `CF_API_TOKEN` | Cloudflare API token with Zone Cache Purge permission |
 
 ### Environment: `publish` (used by `publish` job in images.yml)
 
@@ -200,8 +204,8 @@ Steps:
 |---|---|---|---|
 | `ci.yml` | `lint-and-test` | *(none)* | SLACK_WEBHOOK_URL |
 | `images.yml` | `resolve` | *(none)* | SLACK_WEBHOOK_URL + MAINTAINER_KEYS var |
-| `images.yml` | `build-amd64` | `build` | B2, deploy key, SLACK_WEBHOOK_URL |
-| `images.yml` | `build-arm64` | `build` | B2, deploy key, SLACK_WEBHOOK_URL |
+| `images.yml` | `build-amd64` | `build` | B2, CF, deploy key, SLACK_WEBHOOK_URL |
+| `images.yml` | `build-arm64` | `build` | B2, CF, deploy key, SLACK_WEBHOOK_URL |
 | `images.yml` | `publish` | `publish` | B2, CF, SLACK_WEBHOOK_URL |
 | `release.yml` | `release` | *(none)* | SLACK_WEBHOOK_URL + MAINTAINER_KEYS var |
 | `update-submodule.yml` | `update-submodule` | `submodule` | deploy key, SLACK_WEBHOOK_URL |

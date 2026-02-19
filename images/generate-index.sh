@@ -172,6 +172,8 @@ _generate_version_index() {
             echo "<tr><td><a href=\"${arch}.img\">${arch}.img</a></td><td>${short_date}</td><td>${formatted_size}</td></tr>"
             # SHA256 sidecar
             echo "<tr><td><a href=\"${arch}.img.sha256\">${arch}.img.sha256</a></td><td>${short_date}</td><td>-</td></tr>"
+            # .meta.json sidecar
+            echo "<tr><td><a href=\"${arch}.img.meta.json\">${arch}.img.meta.json</a></td><td>${short_date}</td><td>-</td></tr>"
         done
 
         echo '</table>'

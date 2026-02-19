@@ -19,7 +19,7 @@ A blockchain software development company needs an internal tool to spin up isol
 
 ## Completed Phases
 
-Phases 1–7 are complete. See `STATUS.md` for detailed checklists.
+Phases 1–8 are complete. See `STATUS.md` for detailed checklists.
 
 - **Phase 1** — MVP Core (entry point, commands, config cascade, profiles, mounts)
 - **Phase 2** — Image System (Packer pipeline, dual-arch builds, manifest)
@@ -28,16 +28,11 @@ Phases 1–7 are complete. See `STATUS.md` for detailed checklists.
 - **Phase 5** — Core Changes (composable layers, chained builds, auto-scaling profiles)
 - **Phase 6** — Image Distribution (B2 + Cloudflare, publish scripts, staleness detection)
 - **Phase 7** — CI/CD Pipeline (GitHub Actions: lint, image builds, releases, GPG verification)
+- **Phase 8** — Update Documentation (README, help messages, GitHub templates, CODEOWNERS)
 
 CI design doc: `.github/CI.md`
 
 ---
-
-## Phase 8 — Update Documentation
-
-- Update README.md (project overview, installation, usage, configuration, image system, contributing)
-- Review and update all `--help` messages across commands for accuracy and consistency
-- Add GitHub PR templates, issue templates, and CODEOWNERS
 
 ## Phase 9 — Testing
 

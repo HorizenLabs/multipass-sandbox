@@ -27,10 +27,9 @@ Internal CLI tool for spinning up isolated VM-based development environments usi
 - `images/arch-config.sh` — Per-arch Packer variable resolution (KVM vs TCG, EFI firmware, CPU/memory auto-detect)
 - `images/artifacts/` — Built QCOW2 images (gitignored)
 - `images/scripts/post-provision.sh` — Post-build cleanup (runs after cloud-init)
-- `images/manifest.json` — Local skeleton manifest (image descriptions + metadata); live manifest lives in B2
 - `images/lib/publish-common.sh` — Shared helpers for publish, update-manifest, and generate-index scripts
-- `images/publish.sh` — Upload images to B2 (`--upload-only` for CI, default includes manifest update for local dev)
-- `images/update-manifest.sh` — Fan-in manifest update: downloads .sha256 sidecars from B2, single manifest write
+- `images/publish.sh` — Upload images + `.meta.json` sidecars to B2 (`--upload-only` for CI, default includes manifest update)
+- `images/update-manifest.sh` — Fan-in manifest update: downloads `.meta.json` sidecars from B2, single manifest write
 - `images/generate-index.sh` — Generate autoindex HTML pages from manifest and upload to B2
 - `templates/profiles/` — Resource profiles (micro, lite, standard, heavy) with auto-scaling CPU/memory
 - `VERSION` — Tool version (SemVer), read by `bin/mps` at startup
@@ -91,7 +90,7 @@ make image-base       # Build base VM image (both archs in parallel via sub-make
 make image-base-amd64 # Build base VM image (amd64 only)
 make image-base-arm64 # Build base VM image (arm64 only)
 make image-protocol-dev           # Build protocol-dev image (base + C/C++/Go/Rust)
-make image-smart-contract-dev     # Build smart-contract-dev image (+ Solana/Foundry/Hardhat)
+make image-smart-contract-dev     # Build smart-contract-dev image (+ Solana[amd64]/Foundry/Hardhat)
 make image-smart-contract-audit   # Build smart-contract-audit image (+ Slither/Echidna/Medusa)
 make import-base                       # Import host-arch base image into mps cache
 make upload-base-amd64 VERSION=1.0.0   # CI: upload image+sidecar to B2 (no manifest)
@@ -116,8 +115,10 @@ The Makefile detects host uid:gid and the entrypoint uses setpriv to step down f
   - **Minor** (`1.0.0` → `1.1.0`): New tool added to a layer
   - **Major** (`1.0.0` → `2.0.0`): Breaking changes (Ubuntu version bump, tool removed, major restructure)
 - **Publishing** uses a fan-in pattern for CI, with a dedicated publisher container (credential-isolated from the builder). B2 credentials (`B2_APPLICATION_KEY_ID`, `B2_APPLICATION_KEY`) are passed as env vars at runtime. Old image file versions in B2 are cleaned up; manifest versions are kept for audit trail.
-  - **CI flow**: Runners call `publish.sh --upload-only` to upload images + `.sha256` sidecars to B2 (no manifest touch). A fan-in job then runs `update-manifest.sh` which downloads sidecars from B2 and performs a single manifest read-modify-write. Zero race window.
+  - Each image upload produces a `.meta.json` sidecar (sha256, build_date, file_size, x-mps metadata) uploaded atomically alongside the image. Clients fetch `.meta.json` for immediate SHA256 verification without waiting for manifest.
+  - **CI flow**: Runners call `publish.sh --upload-only` to upload images + `.sha256` + `.meta.json` sidecars to B2, then purge CF cache for those files. A fan-in job runs `update-manifest.sh` which downloads `.meta.json` sidecars from B2 and performs a single manifest read-modify-write. Zero race window.
   - **Local flow**: `publish.sh` (no flag) does upload + manifest update in one shot, same as before.
+  - **Manifest v2**: `schema_version: 2`, `generated_at` timestamp. No `url` field in arch entries (URLs are deterministic: `<name>/<version>/<arch>.img`). Empty v2 manifest is seeded automatically on first publish.
 
 ## Workflow
 

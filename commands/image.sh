@@ -272,16 +272,16 @@ ORIGINAL_PATH=${file}
 SHA256=${actual_sha256}
 EOF
 
-    # Append image metadata from local manifest if name matches a known flavor
-    local local_manifest="${MPS_ROOT}/images/manifest.json"
-    if [[ -f "$local_manifest" ]]; then
+    # Append image metadata from cached remote manifest if name matches a known flavor
+    local manifest
+    if manifest="$(_mps_fetch_manifest 2>/dev/null)" && [[ -n "$manifest" ]]; then
         local meta_disk_size meta_min_profile meta_min_disk meta_min_memory meta_min_cpus
-        meta_disk_size="$(jq -r ".images[\"${name}\"].disk_size // empty" "$local_manifest")"
+        meta_disk_size="$(echo "$manifest" | jq -r ".images[\"${name}\"].disk_size // empty")"
         if [[ -n "$meta_disk_size" ]]; then
-            meta_min_profile="$(jq -r ".images[\"${name}\"].min_profile // empty" "$local_manifest")"
-            meta_min_disk="$(jq -r ".images[\"${name}\"].min_disk // empty" "$local_manifest")"
-            meta_min_memory="$(jq -r ".images[\"${name}\"].min_memory // empty" "$local_manifest")"
-            meta_min_cpus="$(jq -r ".images[\"${name}\"].min_cpus // empty" "$local_manifest")"
+            meta_min_profile="$(echo "$manifest" | jq -r ".images[\"${name}\"].min_profile // empty")"
+            meta_min_disk="$(echo "$manifest" | jq -r ".images[\"${name}\"].min_disk // empty")"
+            meta_min_memory="$(echo "$manifest" | jq -r ".images[\"${name}\"].min_memory // empty")"
+            meta_min_cpus="$(echo "$manifest" | jq -r ".images[\"${name}\"].min_cpus // empty")"
             cat >> "$meta_file" <<EOF
 IMAGE_DISK_SIZE=${meta_disk_size}
 MIN_PROFILE=${meta_min_profile}

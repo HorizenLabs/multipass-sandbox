@@ -489,18 +489,20 @@ _mps_pull_image() {
         mps_log_info "Resolved 'latest' to version ${image_version}"
     fi
 
-    # Extract image info from manifest
-    local image_url expected_sha256
-    image_url="$(echo "$manifest" | jq -r ".images[\"${image_name}\"].versions[\"${image_version}\"][\"${arch}\"].url // empty")"
-    expected_sha256="$(echo "$manifest" | jq -r ".images[\"${image_name}\"].versions[\"${image_version}\"][\"${arch}\"].sha256 // empty")"
+    # Construct deterministic URL (no url field in manifest v2)
+    local relative_path="${image_name}/${image_version}/${arch}.img"
+    local full_url="${base_url}/${relative_path}"
 
-    if [[ -z "$image_url" ]]; then
-        mps_log_error "Image '${image_name}:${image_version}' not found for architecture '${arch}'"
+    # Fetch .meta.json sidecar (authoritative SHA256 source)
+    local meta_json_url="${full_url}.meta.json"
+    local meta_json expected_sha256
+    meta_json="$(curl --connect-timeout 5 --max-time 10 -fsSL "$meta_json_url" 2>/dev/null)" || {
+        mps_log_error "Image '${image_name}:${image_version}' not found for arch '${arch}'"
         return 1
-    fi
+    }
+    expected_sha256="$(echo "$meta_json" | jq -r '.sha256 // empty')"
 
     # Download
-    local full_url="${base_url}/${image_url}"
     local cache_dir
     cache_dir="$(mps_cache_dir)/images/${image_name}/${image_version}"
     mkdir -p "$cache_dir"
@@ -526,24 +528,18 @@ _mps_pull_image() {
         mps_log_info "Checksum verified."
     fi
 
-    # Write .meta sidecar with image metadata from manifest
+    # Write .meta sidecar with image metadata from .meta.json
     local meta_file="${cache_dir}/${arch}.meta"
-    local meta_disk_size meta_min_profile meta_min_disk meta_min_memory meta_min_cpus
-    meta_disk_size="$(echo "$manifest" | jq -r ".images[\"${image_name}\"].disk_size // empty")"
-    meta_min_profile="$(echo "$manifest" | jq -r ".images[\"${image_name}\"].min_profile // empty")"
-    meta_min_disk="$(echo "$manifest" | jq -r ".images[\"${image_name}\"].min_disk // empty")"
-    meta_min_memory="$(echo "$manifest" | jq -r ".images[\"${image_name}\"].min_memory // empty")"
-    meta_min_cpus="$(echo "$manifest" | jq -r ".images[\"${image_name}\"].min_cpus // empty")"
-
     cat > "$meta_file" <<EOF
 SOURCE=pulled
 PULLED=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 SHA256=${expected_sha256}
-IMAGE_DISK_SIZE=${meta_disk_size}
-MIN_PROFILE=${meta_min_profile}
-MIN_DISK=${meta_min_disk}
-MIN_MEMORY=${meta_min_memory}
-MIN_CPUS=${meta_min_cpus}
+DESCRIPTION=$(echo "$meta_json" | jq -r '.description // empty')
+IMAGE_DISK_SIZE=$(echo "$meta_json" | jq -r '.disk_size // empty')
+MIN_PROFILE=$(echo "$meta_json" | jq -r '.min_profile // empty')
+MIN_DISK=$(echo "$meta_json" | jq -r '.min_disk // empty')
+MIN_MEMORY=$(echo "$meta_json" | jq -r '.min_memory // empty')
+MIN_CPUS=$(echo "$meta_json" | jq -r '.min_cpus // empty')
 EOF
 
     mps_log_info "Image '${image_name}:${image_version}' cached successfully."

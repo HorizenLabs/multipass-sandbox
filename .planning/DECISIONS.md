@@ -21,7 +21,7 @@ Cloud-init layers in `images/layers/` are merged at build time to produce the to
 - Rust: Via `rustup`, per-user (`~ubuntu/.cargo`), plus `cargo-audit`
 
 **smart-contract-dev layer** (smart-contract-dev and above):
-- Solana CLI + Anchor (via cargo/avm)
+- Solana CLI + Anchor (amd64-only, via cargo/avm)
 - Foundry (forge, cast, anvil, chisel)
 - Hardhat + Solhint (via bun)
 
@@ -38,7 +38,7 @@ Composable cloud-init layers merged at build time with `yq eval-all '. as $item 
 |---|---|---|
 | `base` | base | General dev (Docker, Node.js, Python, AI tools) |
 | `protocol-dev` | base + protocol-dev | Systems/protocol dev (+ C/C++, Go, Rust) |
-| `smart-contract-dev` | base + protocol-dev + smart-contract-dev | Smart contract dev (+ Solana, Foundry, Hardhat) |
+| `smart-contract-dev` | base + protocol-dev + smart-contract-dev | Smart contract dev (+ Solana[amd64], Foundry, Hardhat) |
 | `smart-contract-audit` | all four layers | Full auditing toolkit (+ Slither, Echidna, Medusa) |
 
 Build artifacts: `images/artifacts/mps-<flavor>-<arch>.qcow2.img` (`.qcow2.img` = format info + Multipass-compatible `.img`).
@@ -49,7 +49,7 @@ Backblaze B2 for storage, Cloudflare proxy for public serving. Files at bucket r
 
 - `MPS_IMAGE_BASE_URL` — public Cloudflare-proxied URL (maps 1:1 to bucket root)
 - `MPS_B2_BUCKET` — B2 bucket name (for publish scripts)
-- Manifest: `images/manifest.json` with SemVer versions + `latest` pointer per image
+- Manifest: stored in B2 (seeded inline on first publish), SemVer versions + `latest` pointer per image
 - Architecture-aware: separate `amd64`/`arm64` images per version
 - SHA256 checksums verified on pull; local cache at `~/.mps/cache/images/`
 - `file_size` (bytes) stored in manifest arch entries for autoindex display

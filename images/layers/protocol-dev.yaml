@@ -3,6 +3,7 @@
 # C/C++ build toolchain + Go + Rust (on top of base)
 
 x-mps:
+  description: "base + C/C++ toolchain + Go + Rust"
   disk_size: 10G
   min_profile: lite
   min_disk: 15G
