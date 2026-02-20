@@ -40,7 +40,7 @@ First round of alpha-tester feedback across macOS and Linux.
 - [ ] Verify README.md example commands work end-to-end and fix any that don't
 - [ ] Re-publish corrected sidecars/manifest for affected images on B2
 - [x] Remove references to Windows support from docs (README, STATUS context, CLAUDE.md) — deferred to Phase 11
-- [ ] Audit and remove dead code paths (unused functions, unreferenced variables, dead metadata writes)
+- [x] Audit and remove dead code paths (unused functions, unreferenced variables, dead metadata writes)
 - [ ] Triage and fix additional alpha-tester findings
 
 ## Phase 10 — Testing: NOT STARTED

@@ -1186,20 +1186,6 @@ mps_resolve_ssh_pubkey() {
     mps_die "No SSH key found. Provide one with --ssh-key <path>, set MPS_SSH_KEY in config, or generate a key with: ssh-keygen -t ed25519"
 }
 
-# Derive SSH private key path from public key path (strip .pub).
-# Verifies the private key file exists.
-mps_resolve_ssh_privkey() {
-    local explicit_path="${1:-}"
-    local pubkey_path
-    pubkey_path="$(mps_resolve_ssh_pubkey "$explicit_path")"
-
-    local privkey_path="${pubkey_path%.pub}"
-    if [[ ! -f "$privkey_path" ]]; then
-        mps_die "SSH private key not found: ${privkey_path} (derived from ${pubkey_path})"
-    fi
-    echo "$privkey_path"
-}
-
 # Inject SSH public key into a running instance.
 # Checks instance metadata to avoid re-injection.
 # Writes MPS_SSH_KEY and MPS_SSH_INJECTED=true to metadata.
@@ -1267,32 +1253,6 @@ mps_ensure_ssh_key() {
     mps_inject_ssh_key "$instance_name" "$short_name" "$pubkey_path" "$privkey_path"
 
     echo "$privkey_path"
-}
-
-# Check that SSH has been configured for an instance (via mps ssh-config).
-# Returns private key path from metadata.
-# If not configured, errors with instructions.
-mps_require_ssh_key() {
-    local instance_name="$1"
-    local short_name="$2"
-
-    local meta_file
-    meta_file="$(mps_instance_meta "$short_name")"
-
-    if [[ -f "$meta_file" ]]; then
-        local injected=""
-        injected="$(_mps_read_meta_key "$meta_file" "MPS_SSH_INJECTED")"
-        if [[ "$injected" == "true" ]]; then
-            local ssh_key=""
-            ssh_key="$(_mps_read_meta_key "$meta_file" "MPS_SSH_KEY")"
-            if [[ -n "$ssh_key" && -f "$ssh_key" ]]; then
-                echo "$ssh_key"
-                return 0
-            fi
-        fi
-    fi
-
-    mps_die "SSH not configured for '${short_name}'. Run: mps ssh-config --name ${short_name}"
 }
 
 # ---------- Port Forwarding Helpers ----------

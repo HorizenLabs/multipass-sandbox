@@ -8,8 +8,6 @@
 
 FROM ubuntu:25.10
 
-ARG TARGETARCH
-
 ENV DEBIAN_FRONTEND=noninteractive
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
