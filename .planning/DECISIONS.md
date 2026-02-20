@@ -61,7 +61,7 @@ Each layer YAML contains an `x-mps:` top-level block (cloud-init silently ignore
 
 **Fields**: `disk_size`, `min_profile`, `min_disk`, `min_memory`, `min_cpus`
 
-**Data flow**: layer YAML → `build.sh` (disk_size for Packer) → `publish.sh` (generate `.meta.json` sidecar) → `update-manifest.sh` (read `.meta.json`, write manifest) → `image.sh` (fetch `.meta.json`, write local `.meta` sidecar) → `create.sh` (compare against resolved resources, warn only)
+**Data flow**: layer YAML → `build.sh` (disk_size for Packer) → `publish.sh` (generate `.meta.json` sidecar) → `update-manifest.sh` (read `.meta.json`, write manifest) → `image.sh` (fetch `.meta.json`, save verbatim as local `.meta.json`) → `create.sh` (compare against resolved resources, warn only)
 
 | Flavor | Disk Size | Actual Usage |
 |---|---|---|
@@ -108,7 +108,7 @@ Colon-prefix convention for guest paths in `mps transfer` (`:` prefix = guest pa
 
 ## Local Image Support
 
-Explicit import via `mps image import <file>`. Cache at `~/.mps/cache/images/<name>/<tag>/<arch>.img` with `.meta` sidecar (KEY=VALUE, read via `grep`/`cut`, never `source`d). Name/arch auto-detected from filename. `mps_resolve_image()` checks cache first, falls through to `multipass launch` for Ubuntu versions.
+Explicit import via `mps image import <file>`. Cache at `~/.mps/cache/images/<name>/<tag>/<arch>.img` with `.meta.json` sidecar (JSON, read via `jq`). Pulled images save the remote `.meta.json` verbatim; imported images generate minimal JSON (`sha256` + manifest metadata if name matches a known flavor). Source is inferred from `build_date` presence (pulled has it, imported doesn't). File mtime of local `.meta.json` enables HEAD `If-Modified-Since` staleness checks against the remote sidecar. Name/arch auto-detected from filename. `mps_resolve_image()` checks cache first, falls through to `multipass launch` for Ubuntu versions.
 
 ## SSH Key Management
 

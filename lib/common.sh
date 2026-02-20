@@ -560,27 +560,9 @@ _mps_pull_image() {
         mps_log_info "Checksum verified."
     fi
 
-    # Write .meta sidecar with image metadata from .meta.json
-    # Strip newlines from jq output to prevent value injection
-    local meta_file="${cache_dir}/${arch}.meta"
-    local _desc _disk_size _min_profile _min_disk _min_memory _min_cpus
-    _desc="$(echo "$meta_json" | jq -r '.description // empty' | tr -d '\n')"
-    _disk_size="$(echo "$meta_json" | jq -r '.disk_size // empty' | tr -d '\n')"
-    _min_profile="$(echo "$meta_json" | jq -r '.min_profile // empty' | tr -d '\n')"
-    _min_disk="$(echo "$meta_json" | jq -r '.min_disk // empty' | tr -d '\n')"
-    _min_memory="$(echo "$meta_json" | jq -r '.min_memory // empty' | tr -d '\n')"
-    _min_cpus="$(echo "$meta_json" | jq -r '.min_cpus // empty' | tr -d '\n')"
-    cat > "$meta_file" <<EOF
-SOURCE=pulled
-PULLED=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-SHA256=${expected_sha256}
-DESCRIPTION=${_desc}
-IMAGE_DISK_SIZE=${_disk_size}
-MIN_PROFILE=${_min_profile}
-MIN_DISK=${_min_disk}
-MIN_MEMORY=${_min_memory}
-MIN_CPUS=${_min_cpus}
-EOF
+    # Save remote .meta.json verbatim — enables HEAD -z staleness checks.
+    # File mtime (set to "now" by this write) is the reference for subsequent checks.
+    echo "$meta_json" > "${cache_dir}/${arch}.meta.json"
 
     mps_log_info "Image '${image_name}:${image_version}' cached successfully."
     return 0
@@ -728,36 +710,57 @@ _mps_semver_gt() {
     return 1
 }
 
-# ---------- Image Staleness Detection ----------
+# ---------- Remote Fetch Primitives ----------
 
-# Fetch remote manifest.json to stdout. Caches locally at ~/.mps/cache/manifest.json.
-# Uses conditional GET (If-Modified-Since via curl -z) to avoid re-downloading
-# when the remote hasn't changed. Falls back to cached copy when offline.
-# Returns 1 only if no manifest is available (neither remote nor cached).
-_mps_fetch_manifest() {
-    local base_url="${MPS_IMAGE_BASE_URL:-}"
-    [[ -z "$base_url" ]] && return 1
+# HEAD check: has a remote URL been modified since a local reference file?
+# Uses If-Modified-Since via curl -z against local file mtime.
+# Returns 0 if NOT modified (304 — fresh), 1 if modified or unavailable.
+_mps_remote_is_fresh() {
+    local url="$1" reference_file="$2"
+    [[ -f "$reference_file" ]] || return 1
 
-    local cache_file
-    cache_file="$(mps_cache_dir)/manifest.json"
-    local manifest_url="${base_url}/manifest.json"
+    local http_code
+    http_code="$(curl -s --head --connect-timeout 1 --max-time 3 \
+        -z "$reference_file" -o /dev/null -w '%{http_code}' \
+        "$url" 2>/dev/null)" || return 1
+
+    [[ "$http_code" == "304" ]]
+}
+
+# Conditional GET: fetch a remote URL with If-Modified-Since caching.
+# If cache_file exists and remote unchanged (304): outputs cached content.
+# If cache_file exists and remote updated (200): updates file, outputs new content.
+# If no cache_file: full download (returns 1 if unavailable).
+# Outputs content to stdout.
+_mps_remote_fetch() {
+    local url="$1" cache_file="$2"
 
     if [[ -f "$cache_file" ]]; then
-        # Conditional GET: -z sends If-Modified-Since, server returns 304 if unchanged
         curl --connect-timeout 1 --max-time 3 -fsSL \
             -z "$cache_file" -o "$cache_file" \
-            "$manifest_url" 2>/dev/null || true
+            "$url" 2>/dev/null || true
     else
-        # No cache — full download (fail if offline)
+        mkdir -p "$(dirname "$cache_file")"
         curl --connect-timeout 1 --max-time 3 -fsSL \
-            -o "$cache_file" "$manifest_url" 2>/dev/null || return 1
+            -o "$cache_file" "$url" 2>/dev/null || return 1
     fi
 
     [[ -f "$cache_file" ]] || return 1
     cat "$cache_file"
 }
 
-# Compare local .meta SHA256 vs remote manifest.
+# ---------- Image Staleness Detection ----------
+
+# Fetch remote manifest.json to stdout. Thin wrapper around _mps_remote_fetch.
+# Caches locally at ~/.mps/cache/manifest.json with conditional GET.
+# Returns 1 only if no manifest is available (neither remote nor cached).
+_mps_fetch_manifest() {
+    local base_url="${MPS_IMAGE_BASE_URL:-}"
+    [[ -z "$base_url" ]] && return 1
+    _mps_remote_fetch "${base_url}/manifest.json" "$(mps_cache_dir)/manifest.json"
+}
+
+# Compare local .meta.json SHA256 vs remote .meta.json sidecar (HEAD + body fallback).
 # Prints one of: up-to-date, stale, update:<ver>, unknown.
 _mps_check_image_staleness() {
     local manifest="$1" name="$2" version="$3" arch="$4"
@@ -768,9 +771,9 @@ _mps_check_image_staleness() {
         return
     fi
 
-    # Get local SHA256 from .meta
+    # Get local SHA256 from .meta.json
     local local_sha256
-    local_sha256="$(mps_image_meta "$name" "$version" "$arch" "SHA256")"
+    local_sha256="$(mps_image_meta "$name" "$version" "$arch" "sha256")"
     if [[ -z "$local_sha256" ]]; then
         echo "unknown"
         return
@@ -784,9 +787,38 @@ _mps_check_image_staleness() {
         return
     fi
 
-    # Compare SHA256 for same version (rebuild detection)
-    local remote_sha256
-    remote_sha256="$(echo "$manifest" | jq -r ".images[\"${name}\"].versions[\"${version}\"][\"${arch}\"].sha256 // empty")"
+    # Rebuild detection via remote .meta.json sidecar
+    # (uploaded atomically with image — always current, unlike manifest during CI fan-in)
+    local base_url="${MPS_IMAGE_BASE_URL:-}"
+    local meta_url="${base_url}/${name}/${version}/${arch}.img.meta.json"
+    local local_meta
+    local_meta="$(mps_cache_dir)/images/${name}/${version}/${arch}.meta.json"
+
+    # Fast path: HEAD check — 304 means remote .meta.json unchanged since pull
+    if [[ -n "$base_url" ]] && _mps_remote_is_fresh "$meta_url" "$local_meta"; then
+        echo "up-to-date"
+        return
+    fi
+
+    # HEAD said modified or unavailable — confirm with SHA256 comparison.
+    # Fetch body to memory only (must NOT overwrite local .meta.json — it records
+    # our pulled image's hash; overwriting would corrupt staleness state).
+    local remote_sha256=""
+    if [[ -n "$base_url" ]]; then
+        local remote_meta
+        remote_meta="$(curl --connect-timeout 1 --max-time 3 -fsSL \
+            "$meta_url" 2>/dev/null)" || true
+        if [[ -n "$remote_meta" ]]; then
+            remote_sha256="$(echo "$remote_meta" | jq -r '.sha256 // empty')"
+        fi
+    fi
+
+    # Fallback: manifest SHA256 (may lag behind during CI fan-in window)
+    if [[ -z "$remote_sha256" ]]; then
+        remote_sha256="$(echo "$manifest" | jq -r \
+            ".images[\"${name}\"].versions[\"${version}\"][\"${arch}\"].sha256 // empty")"
+    fi
+
     if [[ -n "$remote_sha256" ]]; then
         if [[ "$local_sha256" == "$remote_sha256" ]]; then
             echo "up-to-date"
@@ -853,14 +885,15 @@ mps_instance_meta() {
     echo "$(mps_state_dir)/${name}.env"
 }
 
-# Read a key from an image's .meta sidecar file.
+# Read a key from an image's .meta.json sidecar file.
 # Usage: mps_image_meta <name> <tag> <arch> <key>
 # Returns empty string if not found.
 mps_image_meta() {
     local name="$1" tag="$2" arch="$3" key="$4"
     local meta_file
-    meta_file="$(mps_cache_dir)/images/${name}/${tag}/${arch}.meta"
-    _mps_read_meta_key "$meta_file" "$key"
+    meta_file="$(mps_cache_dir)/images/${name}/${tag}/${arch}.meta.json"
+    [[ -f "$meta_file" ]] || return 0
+    jq -r ".${key} // empty" "$meta_file"
 }
 
 mps_save_instance_meta() {
@@ -1023,14 +1056,14 @@ mps_check_image_requirements() {
 
     # Derive meta file path from image file path
     local img_path="${image_url#file://}"
-    local meta_file="${img_path%.img}.meta"
+    local meta_file="${img_path%.img}.meta.json"
     [[ -f "$meta_file" ]] || return 0
 
     local warned=false
 
     # Check CPUs
     local min_cpus=""
-    min_cpus="$(_mps_read_meta_key "$meta_file" "MIN_CPUS")"
+    min_cpus="$(jq -r '.min_cpus // empty' "$meta_file")"
     if [[ -n "$min_cpus" && "$cpus" =~ ^[0-9]+$ && "$min_cpus" =~ ^[0-9]+$ ]]; then
         if [[ "$cpus" -lt "$min_cpus" ]]; then
             mps_log_warn "CPUs ($cpus) below image minimum ($min_cpus)"
@@ -1040,7 +1073,7 @@ mps_check_image_requirements() {
 
     # Check memory
     local min_memory=""
-    min_memory="$(_mps_read_meta_key "$meta_file" "MIN_MEMORY")"
+    min_memory="$(jq -r '.min_memory // empty' "$meta_file")"
     if [[ -n "$min_memory" && -n "$memory" ]]; then
         local mem_mb min_mem_mb
         mem_mb="$(_mps_parse_size_mb "$memory")"
@@ -1053,7 +1086,7 @@ mps_check_image_requirements() {
 
     # Check disk
     local min_disk=""
-    min_disk="$(_mps_read_meta_key "$meta_file" "MIN_DISK")"
+    min_disk="$(jq -r '.min_disk // empty' "$meta_file")"
     if [[ -n "$min_disk" && -n "$disk" ]]; then
         local disk_mb min_disk_mb
         disk_mb="$(_mps_parse_size_mb "$disk")"
@@ -1067,7 +1100,7 @@ mps_check_image_requirements() {
     # Suggest recommended profile if any warnings
     if [[ "$warned" == "true" ]]; then
         local min_profile=""
-        min_profile="$(_mps_read_meta_key "$meta_file" "MIN_PROFILE")"
+        min_profile="$(jq -r '.min_profile // empty' "$meta_file")"
         if [[ -n "$min_profile" ]]; then
             mps_log_warn "Recommended minimum profile: $min_profile"
         fi

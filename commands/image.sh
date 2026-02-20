@@ -114,10 +114,11 @@ _image_list() {
                     local size
                     size="$(du -sh "$img_file" 2>/dev/null | cut -f1)"
                     local source="pulled"
-                    local meta_file="${img_file%.img}.meta"
+                    local meta_file="${img_file%.img}.meta.json"
                     if [[ -f "$meta_file" ]]; then
-                        source="$(_mps_read_meta_key "$meta_file" "SOURCE")"
-                        source="${source:-pulled}"
+                        local _bd
+                        _bd="$(jq -r '.build_date // empty' "$meta_file")"
+                        [[ -n "$_bd" ]] && source="pulled" || source="imported"
                     fi
                     if [[ "$have_manifest" == "true" ]]; then
                         local status_raw status_display
@@ -263,34 +264,22 @@ _image_import() {
     mps_log_info "Importing '${filename}' as ${name}:${tag} (${arch})..."
     cp "$file" "$dest_file"
 
-    # Write .meta sidecar (KEY=VALUE, never sourced — read via grep/cut only)
-    local meta_file="${cache_dir}/${arch}.meta"
-    cat > "$meta_file" <<EOF
-SOURCE=imported
-IMPORTED=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-ORIGINAL_PATH=${file}
-SHA256=${actual_sha256}
-EOF
+    # Build .meta.json for imported image (no build_date → inferred as imported)
+    local meta_file="${cache_dir}/${arch}.meta.json"
+    local meta_json='{"sha256":"'"${actual_sha256}"'"}'
 
-    # Append image metadata from cached remote manifest if name matches a known flavor
+    # Merge image metadata from manifest if name matches a known flavor
     local manifest
     if manifest="$(_mps_fetch_manifest 2>/dev/null)" && [[ -n "$manifest" ]]; then
-        local meta_disk_size meta_min_profile meta_min_disk meta_min_memory meta_min_cpus
-        meta_disk_size="$(echo "$manifest" | jq -r ".images[\"${name}\"].disk_size // empty")"
-        if [[ -n "$meta_disk_size" ]]; then
-            meta_min_profile="$(echo "$manifest" | jq -r ".images[\"${name}\"].min_profile // empty")"
-            meta_min_disk="$(echo "$manifest" | jq -r ".images[\"${name}\"].min_disk // empty")"
-            meta_min_memory="$(echo "$manifest" | jq -r ".images[\"${name}\"].min_memory // empty")"
-            meta_min_cpus="$(echo "$manifest" | jq -r ".images[\"${name}\"].min_cpus // empty")"
-            cat >> "$meta_file" <<EOF
-IMAGE_DISK_SIZE=${meta_disk_size}
-MIN_PROFILE=${meta_min_profile}
-MIN_DISK=${meta_min_disk}
-MIN_MEMORY=${meta_min_memory}
-MIN_CPUS=${meta_min_cpus}
-EOF
+        local flavor_meta
+        flavor_meta="$(echo "$manifest" | jq \
+            ".images[\"${name}\"] // empty | {disk_size, min_profile, min_disk, min_memory, min_cpus}")"
+        if [[ -n "$flavor_meta" && "$flavor_meta" != "null" ]]; then
+            meta_json="$(echo "$meta_json" | jq --argjson fm "$flavor_meta" '. + $fm')"
         fi
     fi
+
+    echo "$meta_json" > "$meta_file"
 
     local size
     size="$(du -sh "$dest_file" 2>/dev/null | cut -f1)"
@@ -400,7 +389,7 @@ _image_pull() {
             old_size="$(du -sh "${tag_dir}/${arch}.img" 2>/dev/null | cut -f1)"
             mps_log_info "Old version '${image_name}:${tag}' (${arch}, ${old_size}) is still cached."
             if mps_confirm "Remove it?"; then
-                rm -f "${tag_dir}/${arch}.img" "${tag_dir}/${arch}.meta"
+                rm -f "${tag_dir}/${arch}.img" "${tag_dir}/${arch}.meta" "${tag_dir}/${arch}.meta.json"
                 # Remove tag dir if empty
                 if [[ -d "$tag_dir" ]] && [[ -z "$(ls -A "$tag_dir" 2>/dev/null)" ]]; then
                     rmdir "$tag_dir"
@@ -506,11 +495,13 @@ _image_remove() {
             fi
             local img_file="${tag_dir}/${arch}.img"
             local meta_file="${tag_dir}/${arch}.meta"
+            local meta_json_file="${tag_dir}/${arch}.meta.json"
             if [[ ! -f "$img_file" ]]; then
                 mps_die "Architecture '${arch}' not found for '${image_name}:${image_version}'"
             fi
             [[ -f "$img_file" ]] && targets+=("$img_file")
             [[ -f "$meta_file" ]] && targets+=("$meta_file")
+            [[ -f "$meta_json_file" ]] && targets+=("$meta_json_file")
         else
             # Remove specific version directory
             local tag_dir="${cache_dir}/${image_name}/${image_version}"

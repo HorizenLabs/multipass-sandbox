@@ -35,10 +35,12 @@ A blockchain software development company needs an internal tool to spin up isol
 First round of alpha-tester feedback across macOS and Linux.
 
 - [x] Fix arm64 `.sha256` sidecar containing `efivars.fd` (breaks image validation on macOS)
-- [ ] Fix staleness detection race condition during image publishing window
+- [x] Fix staleness detection race condition during image publishing window
 - [ ] Audit and fix Bash 3.2 incompatibilities in client-side scripts (macOS default shell)
 - [ ] Verify README.md example commands work end-to-end and fix any that don't
 - [ ] Re-publish corrected sidecars/manifest for affected images on B2
+- [ ] Remove references to Windows support from docs (README, STATUS context, CLAUDE.md) — deferred to Phase 11
+- [ ] Audit and remove dead code paths (unused functions, unreferenced variables, dead metadata writes)
 - [ ] Triage and fix additional alpha-tester findings
 
 ## Phase 10 — Testing: NOT STARTED
