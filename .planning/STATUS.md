@@ -2,14 +2,14 @@
 
 ## Context
 
-A blockchain software development company needs an internal tool to spin up isolated sandbox development environments for developers and AI agents. Docker containers alone don't provide strong enough isolation, so the tool uses Multipass (Canonical) to create full VMs with Docker daemons running inside. The tool must work across Linux, macOS, and Windows, support pre-built distributable images, allow customization, and provide shell + SSH access for VS Code integration.
+A blockchain software development company needs an internal tool to spin up isolated sandbox development environments for developers and AI agents. Docker containers alone don't provide strong enough isolation, so the tool uses Multipass (Canonical) to create full VMs with Docker daemons running inside. The tool must work on Linux and macOS, support pre-built distributable images, allow customization, and provide shell + SSH access for VS Code integration. Windows/PowerShell support is planned as future work (Phase 11).
 
 **Key decisions:**
 - **VM Engine**: Canonical Multipass
-- **CLI**: Bash (macOS/Linux), PowerShell (Windows)
+- **CLI**: Bash (macOS/Linux); PowerShell planned (Phase 11)
 - **Command name**: `mps` (short form), project name "Multi Pass Sandbox"
 - **Image distribution**: Backblaze B2 + Cloudflare proxy
-- **Only external dependency**: `jq` (JSON parsing of `multipass` output; PowerShell has `ConvertFrom-Json` built-in)
+- **Only external dependency**: `jq` (JSON parsing of `multipass` output)
 
 > Project structure and conventions: see `CLAUDE.md`
 > Architecture decisions and rationale: see `DECISIONS.md`
@@ -39,7 +39,7 @@ First round of alpha-tester feedback across macOS and Linux.
 - [ ] Audit and fix Bash 3.2 incompatibilities in client-side scripts (macOS default shell)
 - [ ] Verify README.md example commands work end-to-end and fix any that don't
 - [ ] Re-publish corrected sidecars/manifest for affected images on B2
-- [ ] Remove references to Windows support from docs (README, STATUS context, CLAUDE.md) — deferred to Phase 11
+- [x] Remove references to Windows support from docs (README, STATUS context, CLAUDE.md) — deferred to Phase 11
 - [ ] Audit and remove dead code paths (unused functions, unreferenced variables, dead metadata writes)
 - [ ] Triage and fix additional alpha-tester findings
 

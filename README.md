@@ -38,8 +38,8 @@ mps destroy --force
 
 ## Requirements
 
-- [Multipass](https://multipass.run/) — VM engine (snap, brew, or Windows installer)
-- [jq](https://jqlang.github.io/jq/) — JSON processing (Linux/macOS only; Windows uses `ConvertFrom-Json`)
+- [Multipass](https://multipass.run/) — VM engine (snap or brew)
+- [jq](https://jqlang.github.io/jq/) — JSON processing
 
 ## Installation
 
@@ -112,8 +112,6 @@ By default, `mps` mounts your current working directory into the VM at the **sam
 mps up
 # Inside VM: cd /home/user/projects/myapp — same files!
 ```
-
-On Windows, drive letters are converted: `C:\Users\dev\project` -> `/c/Users/dev/project`.
 
 ```bash
 mps up ~/code/project           # Mount specific directory instead of CWD

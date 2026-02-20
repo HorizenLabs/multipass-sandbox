@@ -4,7 +4,7 @@ Internal CLI tool for spinning up isolated VM-based development environments usi
 
 ## Tech Stack
 
-- **CLI**: Bash (macOS/Linux), PowerShell planned (Windows)
+- **CLI**: Bash (macOS/Linux)
 - **VM Engine**: Canonical Multipass
 - **Config**: KEY=VALUE .env files (no YAML parsing in Bash)
 - **Dependencies**: `multipass`, `jq`
@@ -38,7 +38,7 @@ Internal CLI tool for spinning up isolated VM-based development environments usi
 - `Dockerfile.linter` — Linter/test image (shellcheck, hadolint, BATS, PSScriptAnalyzer, yamllint, etc.)
 - `Dockerfile.publisher` — Publisher image (b2, jq, yq — credential-isolated from builder)
 - `Makefile` — All targets run inside Docker containers via `docker run`
-- `install.sh` / `install.ps1` — Installer scripts
+- `install.sh` — Installer script (macOS/Linux)
 - `uninstall.sh` — Uninstaller (removes symlink, VMs, caches, configs)
 - `checkmake.ini`, `.yamllint`, `.github/actionlint.yaml` — Linter configuration files
 - `CODEOWNERS` — GitHub code ownership for PR review routing
@@ -69,12 +69,12 @@ Internal CLI tool for spinning up isolated VM-based development environments usi
 - **Image metadata**: `x-mps:` blocks in layer YAMLs define disk_size, min_profile, min_disk/memory/cpus
 - `mps create` warns when resolved resources are below image minimums (never blocks)
 - Default mount: host CWD → guest at same absolute path (read-write)
-- Windows path conversion: `C:\foo\bar` → `/c/foo/bar`
 - `MPS_MOUNTS` is additive (on top of auto-mount), `MPS_NO_AUTOMOUNT=true` to opt out
 - `mps shell`/`mps exec` auto-set workdir to the mounted project path
 - Commands use `while/case/shift` arg parsing, private `_<cmd>_usage()` helpers
 - Color output uses `$'\033[...]'` ANSI-C quoting (not double-quoted `\033`)
 - **Cross-platform**: Scripts in `bin/`, `commands/`, `lib/`, `config/`, and `install.sh` must work on both GNU/Linux and BSD/macOS, targeting Bash 3.2+ (macOS default). Avoid: `${var,,}` (use `tr`), `readlink -f` (use loop), `md5sum`/`sha256sum` (use `_mps_md5`/`_mps_sha256` from `lib/common.sh`). Scripts in `images/` run inside Docker and may use GNU-only tools.
+- **Windows/PowerShell**: Deferred to a future phase. `install.ps1` exists as a placeholder.
 
 ## Build System
 
@@ -127,7 +127,7 @@ The Makefile detects host uid:gid and the entrypoint uses setpriv to step down f
   - **PowerShell**: `*.ps1`
   - **Dockerfile**: `Dockerfile.builder`, `Dockerfile.linter`, `Dockerfile.publisher`
   - **Makefile**: `Makefile`
-  - **YAML**: `templates/**/*.yaml`, `images/layers/*.yaml`
+  - **YAML**: `templates/**/*.yaml`, `images/layers/*.yaml`, `.github/ISSUE_TEMPLATE/*.yml`
   - **HCL**: `images/**/*.pkr.hcl`
   - **GitHub Actions**: `.github/workflows/*.yml`
 - Linting requires Docker. The linter image is built automatically if missing (`make lint` depends on the stamp file).
