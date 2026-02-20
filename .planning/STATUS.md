@@ -36,7 +36,8 @@ First round of alpha-tester feedback across macOS and Linux.
 
 - [x] Fix arm64 `.sha256` sidecar containing `efivars.fd` (breaks image validation on macOS)
 - [x] Fix staleness detection race condition during image publishing window
-- [ ] Audit and fix Bash 3.2 incompatibilities in client-side scripts (macOS default shell)
+- [x] Add automated Bash 3.2 compatibility linting (`make lint-bash32`)
+- [ ] Fix Bash 3.2 incompatibilities flagged by lint-bash32 (1 `local -A`, 32 unguarded `${arr[@]}`)
 - [ ] Verify README.md example commands work end-to-end and fix any that don't
 - [ ] Re-publish corrected sidecars/manifest for affected images on B2
 - [x] Remove references to Windows support from docs (README, STATUS context, CLAUDE.md) — deferred to Phase 11

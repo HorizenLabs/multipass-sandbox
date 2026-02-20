@@ -73,7 +73,7 @@ Internal CLI tool for spinning up isolated VM-based development environments usi
 - `mps shell`/`mps exec` auto-set workdir to the mounted project path
 - Commands use `while/case/shift` arg parsing, private `_<cmd>_usage()` helpers
 - Color output uses `$'\033[...]'` ANSI-C quoting (not double-quoted `\033`)
-- **Cross-platform**: Scripts in `bin/`, `commands/`, `lib/`, `config/`, and `install.sh` must work on both GNU/Linux and BSD/macOS, targeting Bash 3.2+ (macOS default). Avoid: `${var,,}` (use `tr`), `readlink -f` (use loop), `md5sum`/`sha256sum` (use `_mps_md5`/`_mps_sha256` from `lib/common.sh`). Scripts in `images/` run inside Docker and may use GNU-only tools.
+- **Cross-platform**: Scripts in `bin/`, `commands/`, `lib/`, `config/`, and `install.sh` must work on both GNU/Linux and BSD/macOS, targeting Bash 3.2+ (macOS default). Avoid: `${var,,}` (use `tr`), `readlink -f` (use loop), `md5sum`/`sha256sum` (use `_mps_md5`/`_mps_sha256` from `lib/common.sh`), `"${arr[@]}"` (use `${arr[@]+"${arr[@]}"}` — empty arrays crash under `set -u` in Bash 3.2). Scripts in `images/` run inside Docker and may use GNU-only tools.
 - **Windows/PowerShell**: Deferred to a future phase. `install.ps1` exists as a placeholder.
 
 ## Build System
@@ -97,6 +97,8 @@ make upload-base-amd64 VERSION=1.0.0   # CI: upload image+sidecar to B2 (no mani
 make update-manifest VERSION=1.0.0     # CI fan-in: single manifest write (downloads sidecars from B2)
 make publish-base-amd64 VERSION=1.0.0  # Local: upload + manifest (single arch)
 make publish-base VERSION=1.0.0        # Local: upload + manifest (both archs)
+make build-bash32                      # Build Bash 3.2.57 binary for compat linting
+make lint-bash32                       # Check client scripts for Bash 3.2 compatibility
 make install                           # Install mps (symlink to PATH, runs on host)
 make uninstall        # Uninstall mps (remove symlink, cleanup artifacts, runs on host)
 ```
@@ -124,8 +126,9 @@ The Makefile detects host uid:gid and the entrypoint uses setpriv to step down f
 
 - After modifying any linted file, run `make lint` before committing. Linted files:
   - **Bash**: `bin/mps`, `lib/*.sh`, `commands/*.sh`, `images/**/*.sh`, `install.sh`, `uninstall.sh`
+  - **Bash 3.2 compat**: `bin/mps`, `lib/*.sh`, `commands/*.sh`, `install.sh`, `uninstall.sh` (client scripts only — no `images/`)
   - **PowerShell**: `*.ps1`
-  - **Dockerfile**: `Dockerfile.builder`, `Dockerfile.linter`, `Dockerfile.publisher`
+  - **Dockerfile**: `Dockerfile.builder`, `Dockerfile.linter`, `Dockerfile.publisher`, `Dockerfile.bash32`
   - **Makefile**: `Makefile`
   - **YAML**: `templates/**/*.yaml`, `images/layers/*.yaml`, `.github/ISSUE_TEMPLATE/*.yml`
   - **HCL**: `images/**/*.pkr.hcl`

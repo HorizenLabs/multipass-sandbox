@@ -1,0 +1,35 @@
+# Bash 3.2.57 — minimal build for syntax-checking macOS-compatible scripts.
+# Produces a statically-usable (dynamically linked) bash binary.
+#
+# Build:  docker build -f Dockerfile.bash32 -t bash-3.2-build .
+# Extract: docker cp $(docker create bash-3.2-build):/bash-3.2 ./bash-3.2
+
+FROM ubuntu:25.10 AS build
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
+# hadolint ignore=DL3008
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        bison \
+        build-essential \
+        ca-certificates \
+        curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# hadolint ignore=DL3003
+RUN set -eux; \
+    curl -fsSL "https://ftpmirror.gnu.org/bash/bash-3.2.57.tar.gz" \
+        -o /tmp/bash-3.2.57.tar.gz; \
+    tar -xzf /tmp/bash-3.2.57.tar.gz -C /tmp; \
+    cd /tmp/bash-3.2.57; \
+    CC="gcc -std=gnu89" CFLAGS="-O2 -w" ./configure --prefix=/opt/bash32; \
+    make -j"$(nproc)"; \
+    make install; \
+    strip /opt/bash32/bin/bash; \
+    rm -rf /tmp/bash-3.2.57 /tmp/bash-3.2.57.tar.gz
+
+FROM scratch
+COPY --from=build /opt/bash32/bin/bash /bash-3.2
+CMD ["/bash-3.2"]

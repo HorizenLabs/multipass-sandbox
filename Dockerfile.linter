@@ -138,6 +138,23 @@ RUN pip3 install --no-cache-dir --break-system-packages \
     && yamllint --version \
     && py-psscriptanalyzer --help >/dev/null 2>&1
 
+# ---------- Bash 3.2 compat checker ----------
+# Pre-built binary (host-arch only); warn if missing for current arch.
+COPY docker/bash-3.2/ /tmp/bash-3.2/
+RUN set -eux; \
+    ARCH="$(dpkg --print-architecture)"; \
+    BIN="/tmp/bash-3.2/bash-3.2.57-linux-${ARCH}"; \
+    if [ -f "$BIN" ]; then \
+        install -m 755 "$BIN" /usr/local/bin/bash-3.2; \
+        echo "bash-3.2 installed for $ARCH"; \
+    else \
+        echo "WARN: bash-3.2 binary not available for $ARCH (run make build-bash32 on $ARCH host)" >&2; \
+    fi; \
+    rm -rf /tmp/bash-3.2
+
+COPY docker/lint-bash32-compat.sh /usr/local/bin/lint-bash32-compat.sh
+RUN chmod +x /usr/local/bin/lint-bash32-compat.sh
+
 # ---------- Entrypoint ----------
 COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
