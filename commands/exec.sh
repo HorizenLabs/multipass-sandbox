@@ -69,7 +69,7 @@ cmd_exec() {
 
     # ---- Execute command ----
     mps_log_debug "Executing in '${instance_name}' (workdir: ${workdir:-<default>}): ${user_cmd[*]}"
-    mp_exec "$instance_name" "$workdir" "${user_cmd[@]}"
+    mp_exec "$instance_name" "$workdir" ${user_cmd[@]+"${user_cmd[@]}"}
 }
 
 _exec_usage() {

@@ -89,7 +89,7 @@ if [[ -d "$ssh_config_dir" ]]; then
         ssh_configs+=("$f")
     done < <(find "$ssh_config_dir" -maxdepth 1 -name 'mps-*' -print0 2>/dev/null || true)
     if [[ ${#ssh_configs[@]} -gt 0 ]]; then
-        for f in "${ssh_configs[@]}"; do
+        for f in ${ssh_configs[@]+"${ssh_configs[@]}"}; do
             rm -f "$f"
             removed+=("SSH config: ${f}")
         done
@@ -106,7 +106,7 @@ if [[ -d "$instances_dir" ]]; then
         instance_files+=("$f")
     done < <(find "$instances_dir" -maxdepth 1 \( -name '*.env' -o -name '*.ports' \) -print0 2>/dev/null || true)
     if [[ ${#instance_files[@]} -gt 0 ]]; then
-        for f in "${instance_files[@]}"; do
+        for f in ${instance_files[@]+"${instance_files[@]}"}; do
             rm -f "$f"
             removed+=("Instance metadata: ${f##*/}")
         done
@@ -153,7 +153,7 @@ fi
 echo ""
 if [[ ${#removed[@]} -gt 0 ]]; then
     info "${_color_bold}Removed:${_color_reset}"
-    for item in "${removed[@]}"; do
+    for item in ${removed[@]+"${removed[@]}"}; do
         info "  - ${item}"
     done
 else

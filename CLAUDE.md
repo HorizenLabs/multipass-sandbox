@@ -73,7 +73,25 @@ Internal CLI tool for spinning up isolated VM-based development environments usi
 - `mps shell`/`mps exec` auto-set workdir to the mounted project path
 - Commands use `while/case/shift` arg parsing, private `_<cmd>_usage()` helpers
 - Color output uses `$'\033[...]'` ANSI-C quoting (not double-quoted `\033`)
-- **Cross-platform**: Scripts in `bin/`, `commands/`, `lib/`, `config/`, and `install.sh` must work on both GNU/Linux and BSD/macOS, targeting Bash 3.2+ (macOS default). Avoid: `${var,,}` (use `tr`), `readlink -f` (use loop), `md5sum`/`sha256sum` (use `_mps_md5`/`_mps_sha256` from `lib/common.sh`), `"${arr[@]}"` (use `${arr[@]+"${arr[@]}"}` — empty arrays crash under `set -u` in Bash 3.2). Scripts in `images/` run inside Docker and may use GNU-only tools.
+- **Cross-platform**: Scripts in `bin/`, `commands/`, `lib/`, `config/`, `install.sh`, and `uninstall.sh` must work on both GNU/Linux and BSD/macOS, targeting Bash 3.2+ (macOS default). Scripts in `images/` run inside Docker and may use GNU-only tools. Banned Bash 4+ features in client scripts:
+  - `${var,,}` / `${var^^}` / `${var,}` / `${var^}` — use `tr '[:upper:]' '[:lower:]'` or `tr '[:lower:]' '[:upper:]'`
+  - `declare -A` / `local -A` (associative arrays) — use delimited strings with `case` pattern matching
+  - `declare -n` / `local -n` (namerefs) — use `echo`-based returns or positional params
+  - `declare -g` (global from function) — use `export` or avoid `local` for the variable
+  - `declare -l` / `declare -u` (auto-case attributes) — use `tr`
+  - `mapfile` / `readarray` — use `while IFS= read -r` loops
+  - `coproc` — use explicit FD redirections or temp files
+  - `|&` (pipe stderr) — use `2>&1 |`
+  - `&>>` (append both streams) — use `>> file 2>&1`
+  - `[[ -v var ]]` (variable-existence test) — use `[[ -n "${var:-}" ]]` or `[[ -z "${var+x}" ]]` (**silent wrong behavior on 3.2** — parsed as non-empty string test, always true)
+  - `${arr[-1]}` (negative array index) — use `${arr[${#arr[@]}-1]}` (**silent wrong behavior on 3.2** — evaluates as arithmetic, wrong index)
+  - `"${arr[@]}"` (unguarded empty array) — use `${arr[@]+"${arr[@]}"}` (crashes under `set -u` in Bash 3.2)
+  - `readlink -f` (GNU-only) — use a loop or `_mps_readlink` helper
+  - `md5sum` / `sha256sum` (GNU-only) — use `_mps_md5` / `_mps_sha256` from `lib/common.sh`
+  - `shopt -s globstar` / `**` recursive glob — use `find`
+  - `shopt -s lastpipe` — use process substitution `< <(...)` instead of piped `while read`
+  - `${var@operator}` (parameter transforms) — use `printf '%q'` or equivalent
+  - `wait -n` — use explicit PID tracking with `wait $pid`
 - **Windows/PowerShell**: Deferred to a future phase. `install.ps1` exists as a placeholder.
 
 ## Build System

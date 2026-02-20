@@ -69,7 +69,7 @@ cmd_transfer() {
     local guest_dst=false
     local src
 
-    for src in "${sources[@]}"; do
+    for src in ${sources[@]+"${sources[@]}"}; do
         if [[ "$src" == :* ]]; then
             has_guest_src=true
         else
@@ -101,7 +101,7 @@ cmd_transfer() {
     # ---- Resolve paths and build transfer args ----
     local -a resolved_args=()
 
-    for src in "${sources[@]}"; do
+    for src in ${sources[@]+"${sources[@]}"}; do
         resolved_args+=("$(_transfer_resolve_path "$src" "$instance_name")")
     done
     resolved_args+=("$(_transfer_resolve_path "$destination" "$instance_name")")
@@ -114,7 +114,7 @@ cmd_transfer() {
         mps_log_info "Transferring file from ${instance_name} -> host..."
     fi
 
-    mp_transfer "${resolved_args[@]}"
+    mp_transfer ${resolved_args[@]+"${resolved_args[@]}"}
 
     mps_log_info "Transfer complete."
 }

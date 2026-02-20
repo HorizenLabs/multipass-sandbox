@@ -169,7 +169,7 @@ cmd_create() {
 
     # Extra mounts from --mount flags
     local extra_mount
-    for extra_mount in "${arg_extra_mounts[@]}"; do
+    for extra_mount in ${arg_extra_mounts[@]+"${arg_extra_mounts[@]}"}; do
         local mount_src="${extra_mount%%:*}"
         local mount_dst="${extra_mount#*:}"
         # Resolve relative source paths
@@ -192,7 +192,7 @@ cmd_create() {
     fi
 
     # ---- Launch ----
-    mp_launch "$instance_name" "$image" "$cpus" "$memory" "$disk" "$cloud_init_path" "${extra_args[@]}"
+    mp_launch "$instance_name" "$image" "$cpus" "$memory" "$disk" "$cloud_init_path" ${extra_args[@]+"${extra_args[@]}"}
 
     # ---- Wait for cloud-init ----
     mp_wait_cloud_init "$instance_name"
@@ -207,7 +207,7 @@ cmd_create() {
         local meta_file
         meta_file="$(mps_instance_meta "$short_name")"
         local port_rule
-        for port_rule in "${arg_ports[@]}"; do
+        for port_rule in ${arg_ports[@]+"${arg_ports[@]}"}; do
             echo "MPS_PORT_FORWARD+=${port_rule}" >> "$meta_file"
         done
         mps_log_debug "Stored ${#arg_ports[@]} port forwarding rule(s)"
@@ -220,7 +220,7 @@ cmd_create() {
     local transfer_count=0
     if [[ ${#arg_transfers[@]} -gt 0 ]]; then
         local transfer_spec
-        for transfer_spec in "${arg_transfers[@]}"; do
+        for transfer_spec in ${arg_transfers[@]+"${arg_transfers[@]}"}; do
             # Format: <host-path>:<guest-path> (split on first colon)
             local host_src="${transfer_spec%%:*}"
             local guest_dst="${transfer_spec#*:}"
@@ -246,7 +246,7 @@ cmd_create() {
         # Store in metadata
         local transfer_meta_file
         transfer_meta_file="$(mps_instance_meta "$short_name")"
-        for transfer_spec in "${arg_transfers[@]}"; do
+        for transfer_spec in ${arg_transfers[@]+"${arg_transfers[@]}"}; do
             echo "MPS_TRANSFER+=${transfer_spec}" >> "$transfer_meta_file"
         done
         mps_log_debug "Stored ${#arg_transfers[@]} transfer rule(s)"

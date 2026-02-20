@@ -1280,7 +1280,7 @@ mps_ports_file() {
 # Outputs newline-separated host:guest pairs.
 mps_collect_port_specs() {
     local short_name="$1"
-    local -A seen=()
+    local seen=" "
     local -a specs=()
 
     # Source 1: MPS_PORTS config (space-separated host:guest pairs)
@@ -1288,10 +1288,10 @@ mps_collect_port_specs() {
     if [[ -n "${MPS_PORTS:-}" ]]; then
         for port_spec in $MPS_PORTS; do
             local hp="${port_spec%%:*}"
-            if [[ -z "${seen[$hp]:-}" ]]; then
-                seen[$hp]=1
+            case "$seen" in *" $hp "*) ;; *)
+                seen="$seen$hp "
                 specs+=("$port_spec")
-            fi
+            ;; esac
         done
     fi
 
@@ -1302,16 +1302,16 @@ mps_collect_port_specs() {
         while IFS='=' read -r key val; do
             if [[ "$key" == "MPS_PORT_FORWARD+" ]]; then
                 local hp="${val%%:*}"
-                if [[ -z "${seen[$hp]:-}" ]]; then
-                    seen[$hp]=1
+                case "$seen" in *" $hp "*) ;; *)
+                    seen="$seen$hp "
                     specs+=("$val")
-                fi
+                ;; esac
             fi
         done < "$meta_file"
     fi
 
     local s
-    for s in "${specs[@]}"; do
+    for s in ${specs[@]+"${specs[@]}"}; do
         echo "$s"
     done
 }
@@ -1423,11 +1423,11 @@ mps_forward_port() {
 
     # Elevate with sudo for privileged ports
     if [[ "$_use_sudo" == "true" ]]; then
-        if ! sudo "${ssh_cmd[@]}"; then
+        if ! sudo ${ssh_cmd[@]+"${ssh_cmd[@]}"}; then
             mps_log_warn "Failed to forward privileged port ${host_port}:${guest_port} (sudo may have been denied)"
             return 1
         fi
-    elif ! "${ssh_cmd[@]}"; then
+    elif ! ${ssh_cmd[@]+"${ssh_cmd[@]}"}; then
         mps_log_warn "Failed to forward port ${host_port}:${guest_port}"
         return 1
     fi

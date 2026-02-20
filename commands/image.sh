@@ -56,10 +56,10 @@ cmd_image() {
     args=("$@")
 
     case "$subcmd" in
-        list)   _image_list "${args[@]}" ;;
-        pull)   _image_pull "${args[@]}" ;;
-        import) _image_import "${args[@]}" ;;
-        remove) _image_remove "${args[@]}" ;;
+        list)   _image_list ${args[@]+"${args[@]}"} ;;
+        pull)   _image_pull ${args[@]+"${args[@]}"} ;;
+        import) _image_import ${args[@]+"${args[@]}"} ;;
+        remove) _image_remove ${args[@]+"${args[@]}"} ;;
         --help|-h) _image_usage ;;
         *)
             mps_log_error "Unknown image subcommand: '$subcmd'"
@@ -514,10 +514,10 @@ _image_remove() {
 
     # Preview what will be removed
     local total_size
-    total_size="$(du -shc "${targets[@]}" 2>/dev/null | tail -1 | cut -f1)"
+    total_size="$(du -shc ${targets[@]+"${targets[@]}"} 2>/dev/null | tail -1 | cut -f1)"
 
     mps_log_info "The following will be removed:"
-    for t in "${targets[@]}"; do
+    for t in ${targets[@]+"${targets[@]}"}; do
         local entry_size
         entry_size="$(du -sh "$t" 2>/dev/null | cut -f1)"
         echo "  ${t}  (${entry_size})"
@@ -535,7 +535,7 @@ _image_remove() {
 
     # Delete targets
     local removed=0
-    for t in "${targets[@]}"; do
+    for t in ${targets[@]+"${targets[@]}"}; do
         if [[ -d "$t" ]]; then
             rm -rf "$t"
         else

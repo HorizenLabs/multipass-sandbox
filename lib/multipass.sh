@@ -29,12 +29,12 @@ mp_launch() {
         cmd+=(--cloud-init "$cloud_init")
     fi
 
-    cmd+=("${extra_args[@]}")
+    cmd+=(${extra_args[@]+"${extra_args[@]}"})
 
     mps_log_info "Launching instance '$instance_name' (image=$image, cpus=$cpus, mem=$memory, disk=$disk)..."
     mps_log_debug "Running: ${cmd[*]}"
 
-    if ! "${cmd[@]}"; then
+    if ! ${cmd[@]+"${cmd[@]}"}; then
         mps_die "Failed to launch instance '$instance_name'"
     fi
 
@@ -60,7 +60,7 @@ mp_stop() {
     fi
 
     mps_log_info "Stopping instance '$instance_name'..."
-    if ! "${cmd[@]}"; then
+    if ! ${cmd[@]+"${cmd[@]}"}; then
         mps_die "Failed to stop instance '$instance_name'"
     fi
     mps_log_info "Instance '$instance_name' stopped."
@@ -76,7 +76,7 @@ mp_delete() {
     fi
 
     mps_log_info "Deleting instance '$instance_name'..."
-    if ! "${cmd[@]}"; then
+    if ! ${cmd[@]+"${cmd[@]}"}; then
         mps_die "Failed to delete instance '$instance_name'"
     fi
     mps_log_info "Instance '$instance_name' deleted."
@@ -95,10 +95,10 @@ mp_exec() {
         cmd+=(--working-directory "$workdir")
     fi
     cmd+=(--)
-    cmd+=("${user_cmd[@]}")
+    cmd+=(${user_cmd[@]+"${user_cmd[@]}"})
 
     mps_log_debug "Running: ${cmd[*]}"
-    "${cmd[@]}"
+    ${cmd[@]+"${cmd[@]}"}
 }
 
 mp_shell() {
