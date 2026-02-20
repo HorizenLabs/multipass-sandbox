@@ -135,7 +135,6 @@ The Makefile detects host uid:gid and the entrypoint uses setpriv to step down f
 
 ## Planning & Status
 
-- Full implementation plan: `.planning/PLAN.md`
+- Implementation plan and status: `.planning/STATUS.md`
 - Architecture decisions: `.planning/DECISIONS.md`
-- Implementation status: `.planning/STATUS.md`
 - CI/CD pipeline design: `.github/CI.md`
