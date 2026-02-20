@@ -564,6 +564,20 @@ _mps_pull_image() {
     # File mtime (set to "now" by this write) is the reference for subsequent checks.
     echo "$meta_json" > "${cache_dir}/${arch}.meta.json"
 
+    # Post-pull integrity check: verify written file against .meta.json SHA256.
+    # Catches disk corruption or partial writes that the in-flight check may miss.
+    local meta_sha256=""
+    meta_sha256="$(echo "$meta_json" | jq -r '.sha256 // empty')"
+    if [[ -n "$meta_sha256" && ${#meta_sha256} -eq 64 ]]; then
+        local ondisk_sha256
+        ondisk_sha256="$(_mps_sha256 "$dest_file" | cut -d' ' -f1)"
+        if [[ "$ondisk_sha256" != "$meta_sha256" ]]; then
+            rm -f "$dest_file" "${cache_dir}/${arch}.meta.json"
+            mps_log_error "Post-pull integrity check failed (expected: ${meta_sha256}, got: ${ondisk_sha256})"
+            return 1
+        fi
+    fi
+
     mps_log_info "Image '${image_name}:${image_version}' cached successfully."
     return 0
 }
@@ -583,8 +597,21 @@ mps_resolve_image() {
     cache_dir="$(mps_cache_dir)/images"
     local image_dir="${cache_dir}/${name}"
 
-    # If the image name directory doesn't exist, try auto-pull for mps images
-    if [[ ! -d "$image_dir" ]]; then
+    # If the image name directory doesn't exist or contains no .img files, try auto-pull
+    local _has_images=false
+    if [[ -d "$image_dir" ]]; then
+        local _vdir _img
+        for _vdir in "$image_dir"/*/; do
+            [[ -d "$_vdir" ]] || continue
+            for _img in "$_vdir"*.img; do
+                if [[ -f "$_img" ]]; then
+                    _has_images=true
+                    break 2
+                fi
+            done
+        done
+    fi
+    if [[ "$_has_images" == "false" ]]; then
         if _mps_is_mps_image "$name" && [[ -n "${MPS_IMAGE_BASE_URL:-}" ]]; then
             mps_log_info "Image '${name}' not found locally. Pulling..."
             if _mps_pull_image "$name" "$tag" && [[ -d "$image_dir" ]]; then
