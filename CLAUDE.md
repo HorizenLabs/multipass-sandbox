@@ -95,6 +95,7 @@ Internal CLI tool for spinning up isolated VM-based development environments usi
   - `shopt -s lastpipe` — use process substitution `< <(...)` instead of piped `while read`
   - `${var@operator}` (parameter transforms) — use `printf '%q'` or equivalent
   - `wait -n` — use explicit PID tracking with `wait $pid`
+- **Safe `rm -rf`**: Any `rm -rf` (or `rm -r`) that uses a variable **must** guard with `${var:?}` — e.g., `rm -rf "${dir:?}"`. Prevents catastrophic deletion if the variable is unexpectedly empty. Literal paths (e.g., `rm -rf /tmp/*`) do not need the guard.
 - **Windows/PowerShell**: Deferred to a future phase. `install.ps1` exists as a placeholder.
 
 ## Build System

@@ -44,7 +44,7 @@ First round of alpha-tester feedback across macOS and Linux.
 - [x] Audit and remove dead code paths (unused functions, unreferenced variables, dead metadata writes)
 - [x] Add GPG signature verification for Bash 3.2.57 tarball in Dockerfile.bash32
 - [x] Move Dockerfiles from project root into `docker/` directory (reduce root clutter)
-- [ ] Audit and test install/uninstall scripts for dead code paths and stale paths after metadata refactor
+- [x] Audit and test install/uninstall scripts for dead code paths and stale paths after metadata refactor
 - [ ] Triage and fix additional alpha-tester findings
 
 ## Phase 10 — Testing: NOT STARTED

@@ -537,7 +537,7 @@ _image_remove() {
     local removed=0
     for t in ${targets[@]+"${targets[@]}"}; do
         if [[ -d "$t" ]]; then
-            rm -rf "$t"
+            rm -rf "${t:?}"
         else
             rm -f "$t"
         fi

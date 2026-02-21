@@ -29,7 +29,7 @@ if [[ ! -f "$MANIFEST" ]]; then
 fi
 
 TMPDIR="$(mktemp -d)"
-trap 'rm -rf "$TMPDIR"' EXIT
+trap 'rm -rf "${TMPDIR:?}"' EXIT
 
 # ---------- CSS (shared across all pages) ----------
 CSS='

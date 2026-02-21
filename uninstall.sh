@@ -121,7 +121,7 @@ if [[ -d "$cache_dir" ]]; then
     cache_size="$(du -sh "$cache_dir" 2>/dev/null | cut -f1 || echo "unknown")"
     echo ""
     if confirm "Remove cached images (${cache_size} in ${cache_dir})?"; then
-        rm -rf "$cache_dir"
+        rm -rf "${cache_dir:?}"
         removed+=("Image cache: ${cache_dir}")
         info "Removed image cache."
     fi
