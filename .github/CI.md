@@ -127,12 +127,29 @@ Each job in `images.yml` has a final `if: always() && !success()` step that post
 **Runner**: `warp-ubuntu-latest-x64-2x`
 **Permissions**: `contents: write`
 
+### Job: `release`
+Runner: `warp-ubuntu-latest-x64-2x`
+Environment: `publish`
+
 Steps:
 1. Checkout (no submodules)
 2. **Verify GPG-signed tag** (same logic as images.yml — uses `MAINTAINER_KEYS` variable, keyserver fallback chain)
 3. Validate tag version matches `VERSION` file
-4. `make lint` + `make test` (skip if no tests)
-5. Create GitHub Release via `softprops/action-gh-release@v2` with `install.sh`, `install.ps1`, `VERSION`
+4. Validate required secrets (B2 + CF via `_validate_required_vars`)
+5. `make lint` + `make test` (skip if no tests)
+6. Create GitHub Release via `softprops/action-gh-release@v2` with `install.sh`, `install.ps1`, `VERSION`
+7. `make publish-release-meta VERSION=<version>` — resolves `git rev-parse mps/v<version>^0` on host, runs `images/publish-release-meta.sh` inside publisher container (generates `mps-release.json`, uploads to B2, cleans old versions, purges CF cache)
+
+**`mps-release.json` format:**
+```json
+{
+  "version": "0.3.0",
+  "tag": "mps/v0.3.0",
+  "commit_sha": "9220b15a..."
+}
+```
+
+Clients fetch this file (at most once per 24h) to compare against the local `VERSION` file. If the remote version is newer, or the `commit_sha` doesn't match (force-pushed tag), a one-line warning is printed to stderr with update instructions.
 
 ## Pipeline Architecture
 
@@ -183,11 +200,11 @@ Steps:
 | `CF_ZONE_ID` | Cloudflare zone ID (for per-upload sidecar cache purge) |
 | `CF_API_TOKEN` | Cloudflare API token with Zone Cache Purge permission |
 
-### Environment: `publish` (used by `publish` job in images.yml)
+### Environment: `publish` (used by `publish` in images.yml + `publish-release-json` in release.yml)
 
 | Secret | Purpose |
 |---|---|
-| `B2_APPLICATION_KEY_ID` | Backblaze B2 key ID (for manifest update) |
+| `B2_APPLICATION_KEY_ID` | Backblaze B2 key ID (manifest update, mps-release.json upload) |
 | `B2_APPLICATION_KEY` | Backblaze B2 key secret |
 | `CF_ZONE_ID` | Cloudflare zone ID for `horizenlabs.io` |
 | `CF_API_TOKEN` | Cloudflare API token with Zone Cache Purge permission |
@@ -207,7 +224,7 @@ Steps:
 | `images.yml` | `build-amd64` | `build` | B2, CF, deploy key, SLACK_WEBHOOK_URL |
 | `images.yml` | `build-arm64` | `build` | B2, CF, deploy key, SLACK_WEBHOOK_URL |
 | `images.yml` | `publish` | `publish` | B2, CF, SLACK_WEBHOOK_URL |
-| `release.yml` | `release` | *(none)* | SLACK_WEBHOOK_URL + MAINTAINER_KEYS var |
+| `release.yml` | `release` | `publish` | B2, CF, SLACK_WEBHOOK_URL + MAINTAINER_KEYS var |
 | `update-submodule.yml` | `update-submodule` | `submodule` | deploy key, SLACK_WEBHOOK_URL |
 
 ## Deploy Key Setup

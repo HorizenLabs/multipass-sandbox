@@ -95,7 +95,7 @@ CLEAN_IMAGE_PHONY := $(foreach f,$(FLAVORS),clean-image-$(f) $(foreach a,$(ARCHS
 	build-docker-builder build-docker-linter build-docker-publisher build-bash32 \
 	lint lint-bash lint-bash32 lint-powershell lint-dockerfile lint-makefile lint-yaml lint-hcl lint-actions \
 	clean-docker-builder clean-docker-linter clean-docker-publisher clean-images \
-	update-manifest \
+	update-manifest publish-release-meta \
 	$(IMAGE_PHONY) $(IMPORT_PHONY) $(UPLOAD_PHONY) $(PUBLISH_PHONY) $(CLEAN_IMAGE_PHONY)
 
 # ---------- All ----------
@@ -366,6 +366,19 @@ define publish_both_rule
 publish-$(1): $(foreach a,$(ARCHS),publish-$(1)-$(a))
 endef
 $(foreach f,$(FLAVORS),$(eval $(call publish_both_rule,$(f))))
+
+# ---------- CLI release metadata ----------
+# Publishes mps-release.json to B2 so clients can check for newer CLI versions.
+# Resolves commit SHA on the host (git not available in publisher container).
+publish-release-meta: $(PUBLISHER_STAMP)
+	$(check_publish_env)
+	@COMMIT_SHA=$$(git rev-parse "mps/v$(VERSION)^0" 2>/dev/null || echo ""); \
+	if [ -z "$$COMMIT_SHA" ]; then \
+		echo "ERROR: Tag mps/v$(VERSION) not found. Tag the release first."; exit 1; \
+	fi; \
+	echo "Resolved commit SHA: $$COMMIT_SHA"; \
+	$(docker_run_publisher) \
+		bash images/publish-release-meta.sh $(VERSION) "$$COMMIT_SHA"
 
 # ---------- Clean ----------
 # ---------- Stamp directory ----------

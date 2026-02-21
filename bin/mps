@@ -3,7 +3,7 @@
 set -euo pipefail
 
 # Multi Pass Sandbox (mps) — Main entry point
-# https://github.com/your-org/mps
+# https://github.com/HorizenLabs/multipass-sandbox
 
 # Resolve install directory
 # Portable canonical path resolution (BSD readlink lacks -f)
@@ -125,6 +125,9 @@ main() {
 
     # Load config cascade
     mps_load_config
+
+    # Background update check (silent, non-blocking)
+    _mps_check_cli_update
 
     # Skip dependency check if subcommand is --help
     local needs_deps=true
