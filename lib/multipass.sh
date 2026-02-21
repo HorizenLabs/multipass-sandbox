@@ -31,7 +31,7 @@ mp_launch() {
 
     cmd+=(${extra_args[@]+"${extra_args[@]}"})
 
-    mps_log_info "Launching instance '$instance_name' (image=$image, cpus=$cpus, mem=$memory, disk=$disk)..."
+    mps_log_info "Launching instance '$instance_name' (image=$image, vcpus=$cpus, mem=$memory, disk=$disk)..."
     mps_log_debug "Running: ${cmd[*]}"
 
     if ! ${cmd[@]+"${cmd[@]}"}; then

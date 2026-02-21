@@ -45,7 +45,7 @@ First round of alpha-tester feedback across macOS and Linux.
 - [x] Add GPG signature verification for Bash 3.2.57 tarball in Dockerfile.bash32
 - [x] Move Dockerfiles from project root into `docker/` directory (reduce root clutter)
 - [x] Audit and test install/uninstall scripts for dead code paths and stale paths after metadata refactor
-- [ ] Ensure consistent naming of vCPU/CPU in README and help output
+- [x] Ensure consistent naming of vCPU/CPU in README and help output
 - [x] Fix `--transfer` and `mps transfer` to support directories (auto-detect, pass `-r -p` to multipass)
 - [ ] Triage and fix additional alpha-tester findings
 

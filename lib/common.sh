@@ -126,7 +126,7 @@ mps_load_config() {
         _mps_apply_profile "${MPS_ROOT}/templates/profiles/${profile}.env"
     fi
 
-    # 5. Compute auto-scaled CPU/memory from profile fractions (if not already set)
+    # 5. Compute auto-scaled vCPU/memory from profile fractions (if not already set)
     _mps_compute_resources
 
     # 6. Validate security-sensitive config values
@@ -201,7 +201,7 @@ _mps_compute_resources() {
         return 0
     fi
 
-    # Detect host CPUs
+    # Detect host vCPUs
     local host_cpus
     if command -v nproc &>/dev/null; then
         host_cpus="$(nproc)"
@@ -225,7 +225,7 @@ _mps_compute_resources() {
         host_memory_mb=4096
     fi
 
-    # Compute CPUs from fraction/min if not already set
+    # Compute vCPUs from fraction/min if not already set
     if [[ -z "${MPS_CPUS:-}" ]]; then
         local frac_num="${MPS_CPUS_FRACTION_NUM:-}"
         local frac_den="${MPS_CPUS_FRACTION_DEN:-}"
@@ -240,7 +240,7 @@ _mps_compute_resources() {
                 computed_cpus=1
             fi
             export MPS_CPUS="$computed_cpus"
-            mps_log_debug "Auto-scaled CPUs: ${computed_cpus} (host=${host_cpus}, fraction=${frac_num}/${frac_den}, min=${cpu_min:-none})"
+            mps_log_debug "Auto-scaled vCPUs: ${computed_cpus} (host=${host_cpus}, fraction=${frac_num}/${frac_den}, min=${cpu_min:-none})"
         fi
     fi
 
@@ -1088,12 +1088,12 @@ mps_check_image_requirements() {
 
     local warned=false
 
-    # Check CPUs
+    # Check vCPUs
     local min_cpus=""
     min_cpus="$(jq -r '.min_cpus // empty' "$meta_file")"
     if [[ -n "$min_cpus" && "$cpus" =~ ^[0-9]+$ && "$min_cpus" =~ ^[0-9]+$ ]]; then
         if [[ "$cpus" -lt "$min_cpus" ]]; then
-            mps_log_warn "CPUs ($cpus) below image minimum ($min_cpus)"
+            mps_log_warn "vCPUs ($cpus) below image minimum ($min_cpus)"
             warned=true
         fi
     fi
@@ -1142,10 +1142,10 @@ mps_validate_resources() {
     local disk="${3:-}"
 
     if [[ -n "$cpus" && ! "$cpus" =~ ^[0-9]+$ ]]; then
-        mps_die "Invalid CPU count: $cpus (must be a positive integer)"
+        mps_die "Invalid vCPU count: $cpus (must be a positive integer)"
     fi
     if [[ -n "$cpus" && "$cpus" =~ ^[0-9]+$ && "$cpus" -lt 1 ]]; then
-        mps_die "CPU count must be at least 1 (got $cpus)"
+        mps_die "vCPU count must be at least 1 (got $cpus)"
     fi
 
     if [[ -n "$memory" && ! "$memory" =~ ^[0-9]+[GgMm]?$ ]]; then

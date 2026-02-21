@@ -148,7 +148,7 @@ Configuration is loaded in cascade (later values win):
 2. `~/.mps/config` — user global overrides
 3. `.mps.env` — per-project (in your repo)
 4. Profile — resource fractions from `templates/profiles/<name>.env`
-5. Auto-scaling — CPU/memory computed from host hardware fractions
+5. Auto-scaling — vCPU/memory computed from host hardware fractions
 6. CLI flags — highest priority
 
 ### Example `.mps.env`
@@ -201,7 +201,7 @@ Profiles define resource allocation as **fractions of host hardware**, with mini
 
 Example resolved values on a 16-thread / 64GB host:
 
-| Profile | CPUs | Memory | Disk |
+| Profile | vCPUs | Memory | Disk |
 |---------|------|--------|------|
 | `micro` | 2 | 4G | 10G |
 | `lite` | 4 | 8G | 20G |

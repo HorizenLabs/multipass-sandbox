@@ -264,7 +264,7 @@ cmd_create() {
     printf "  %-14s %s\n" "Instance:" "$instance_name"
     printf "  %-14s %s\n" "Image:" "$image_spec"
     printf "  %-14s %s\n" "Profile:" "$effective_profile"
-    printf "  %-14s %s\n" "CPUs:" "$cpus"
+    printf "  %-14s %s\n" "vCPUs:" "$cpus"
     printf "  %-14s %s\n" "Memory:" "$memory"
     printf "  %-14s %s\n" "Disk:" "$disk"
     if [[ -n "${MPS_MOUNT_SOURCE:-}" ]]; then
