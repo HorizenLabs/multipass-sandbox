@@ -1378,7 +1378,7 @@ mps_ensure_ssh_key() {
     local ssh_key_arg="${3:-}"
 
     local pubkey_path privkey_path
-    pubkey_path="$(mps_resolve_ssh_pubkey "$ssh_key_arg")"
+    pubkey_path="$(mps_resolve_ssh_pubkey "$ssh_key_arg")" || exit 1
     privkey_path="${pubkey_path%.pub}"
 
     if [[ ! -f "$privkey_path" ]]; then
