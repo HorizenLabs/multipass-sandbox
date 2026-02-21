@@ -73,7 +73,7 @@ make uninstall
 | `mps destroy [-f] [-n <name>]` | Remove a sandbox permanently (`--force` skips confirmation) |
 | `mps shell [-n <name>] [-w <path>]` | Open an interactive shell |
 | `mps exec [-n <name>] [-w <path>] -- <cmd>` | Execute a command in a sandbox |
-| `mps transfer <src...> <dst>` | Transfer files between host and sandbox |
+| `mps transfer <src...> <dst>` | Transfer files or directories between host and sandbox |
 | `mps list [--json]` | List all sandboxes |
 | `mps status [-n <name>] [--json]` | Show detailed sandbox status |
 | `mps ssh-config [-n <name>]` | Generate SSH config for VS Code |
@@ -123,7 +123,7 @@ Extra mounts from `MPS_MOUNTS` in `.mps.env` are additive (on top of the auto-mo
 
 ## File Transfer
 
-Transfer files between host and sandbox using the `:` prefix convention for guest paths:
+Transfer files or directories between host and sandbox using the `:` prefix convention for guest paths:
 
 ```bash
 # Host -> guest

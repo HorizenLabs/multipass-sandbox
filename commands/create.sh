@@ -234,12 +234,15 @@ cmd_create() {
                 host_src="${MPS_PROJECT_DIR:-$(pwd)}/${host_src}"
             fi
 
-            if [[ ! -f "$host_src" ]]; then
+            if [[ ! -e "$host_src" ]]; then
                 mps_die "Transfer source not found: ${host_src}"
+            fi
+            if [[ ! -f "$host_src" && ! -d "$host_src" ]]; then
+                mps_die "Transfer source is not a file or directory: ${host_src}"
             fi
 
             mps_log_info "Transferring '${host_src}' -> '${instance_name}:${guest_dst}'..."
-            mp_transfer "$host_src" "${instance_name}:${guest_dst}"
+            mp_transfer -r -p "$host_src" "${instance_name}:${guest_dst}"
             transfer_count=$((transfer_count + 1))
         done
 
@@ -277,7 +280,7 @@ cmd_create() {
         printf "  %-14s %s\n" "Ports:" "${port_fwd_count} forwarded"
     fi
     if [[ $transfer_count -gt 0 ]]; then
-        printf "  %-14s %s\n" "Transferred:" "${transfer_count} file(s)"
+        printf "  %-14s %s\n" "Transferred:" "${transfer_count} path(s)"
     fi
     if [[ -n "$ip" ]]; then
         printf "  %-14s %s\n" "IP:" "$ip"
@@ -310,7 +313,7 @@ ${_color_bold}Flags:${_color_reset}
     --profile <name>        Resource profile: micro, lite, standard, heavy
     --mount <src:dst>       Additional mount point (can be repeated)
     --port <host:guest>     Port forwarding rule (can be repeated)
-    --transfer <src:dst>    Transfer file from host to guest after creation (can be repeated)
+    --transfer <src:dst>    Transfer file or directory from host to guest after creation (can be repeated)
     --no-mount              Do not auto-mount (requires --name)
     --help, -h              Show this help
 

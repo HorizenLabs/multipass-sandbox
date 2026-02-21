@@ -38,13 +38,15 @@ First round of alpha-tester feedback across macOS and Linux.
 - [x] Fix staleness detection race condition during image publishing window
 - [x] Add automated Bash 3.2 compatibility linting (`make lint-bash32`)
 - [x] Fix Bash 3.2 incompatibilities flagged by lint-bash32 (1 `local -A`, 32 unguarded `${arr[@]}`)
-- [ ] Verify README.md example commands work end-to-end and fix any that don't
+- [x] Verify README.md example commands work end-to-end and fix any that don't
 - [ ] Re-publish corrected sidecars/manifest for affected images on B2
 - [x] Remove references to Windows support from docs (README, STATUS context, CLAUDE.md) — deferred to Phase 11
 - [x] Audit and remove dead code paths (unused functions, unreferenced variables, dead metadata writes)
 - [x] Add GPG signature verification for Bash 3.2.57 tarball in Dockerfile.bash32
 - [x] Move Dockerfiles from project root into `docker/` directory (reduce root clutter)
 - [x] Audit and test install/uninstall scripts for dead code paths and stale paths after metadata refactor
+- [ ] Ensure consistent naming of vCPU/CPU in README and help output
+- [x] Fix `--transfer` and `mps transfer` to support directories (auto-detect, pass `-r -p` to multipass)
 - [ ] Triage and fix additional alpha-tester findings
 
 ## Phase 10 — Testing: NOT STARTED
