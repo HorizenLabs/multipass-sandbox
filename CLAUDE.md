@@ -96,6 +96,7 @@ Internal CLI tool for spinning up isolated VM-based development environments usi
   - `${var@operator}` (parameter transforms) — use `printf '%q'` or equivalent
   - `wait -n` — use explicit PID tracking with `wait $pid`
 - **Safe `rm -rf`**: Any `rm -rf` (or `rm -r`) that uses a variable **must** guard with `${var:?}` — e.g., `rm -rf "${dir:?}"`. Prevents catastrophic deletion if the variable is unexpectedly empty. Literal paths (e.g., `rm -rf /tmp/*`) do not need the guard.
+- **SHA256 sidecar parsing**: Packer generates `.sha256` files with **tab** delimiters (not spaces). Always use `awk '{print $1}'` instead of `cut -d' ' -f1` when reading the hash — `awk` splits on any whitespace.
 - **Windows/PowerShell**: Deferred to a future phase. `install.ps1` exists as a placeholder.
 
 ## Build System
@@ -157,6 +158,7 @@ The Makefile detects host uid:gid and the entrypoint uses setpriv to step down f
   - **GitHub Actions**: `.github/workflows/*.yml`
 - Linting requires Docker. The linter image is built automatically if missing (`make lint` depends on the stamp file).
 - Fix all lint errors before committing — do not bypass with `--no-verify` or inline disables unless there is a documented reason.
+- **checkmake quirks**: `minphony` only parses the first line of `.PHONY` declarations — keep `test` and `clean` on the first line. `maxbodylength` default max is 15 lines per target body (configured in `checkmake.ini`).
 
 ## Planning & Status
 
