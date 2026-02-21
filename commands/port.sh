@@ -37,8 +37,8 @@ cmd_port() {
     args=("$@")
 
     case "$subcmd" in
-        forward) _port_forward "${args[@]}" ;;
-        list)    _port_list "${args[@]}" ;;
+        forward) _port_forward ${args[@]+"${args[@]}"} ;;
+        list)    _port_list ${args[@]+"${args[@]}"} ;;
         --help|-h) _port_usage ;;
         *)
             mps_log_error "Unknown port subcommand: '$subcmd'"

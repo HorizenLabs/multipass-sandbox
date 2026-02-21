@@ -200,6 +200,10 @@ for arch in "${ARCHITECTURES[@]}"; do
     # Copy arch-specific artifacts to output
     cp -a "${PACKER_OUTPUT_DIR}/${VM_NAME}" "artifacts/"
     cp -a "${PACKER_OUTPUT_DIR}/${VM_NAME}.sha256" "artifacts/"
+    # Packer checksums all output files; on arm64 this includes efivars.fd.
+    # Keep only the .img entry so downstream consumers get a single hash.
+    grep '\.img$' "artifacts/${VM_NAME}.sha256" > "artifacts/${VM_NAME}.sha256.tmp" \
+        && mv "artifacts/${VM_NAME}.sha256.tmp" "artifacts/${VM_NAME}.sha256"
     rm -rf "${PACKER_OUTPUT_DIR:?err_unset}"
 
     echo "=== ${FLAVOR} ${arch} build complete ==="

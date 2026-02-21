@@ -14,8 +14,7 @@ Audit documentation for staleness, missing entries, and context window bloat. Re
 |---|---|---|
 | `CLAUDE.md` | Project structure, commands, conventions, build system | Yes (auto) |
 | `.planning/DECISIONS.md` | Architecture decisions, reference tables | Yes (manual) |
-| `.planning/STATUS.md` | Phase completion status | Yes (manual) |
-| `.planning/PLAN.md` | Phase descriptions (brief summaries + future phases) | Yes (manual) |
+| `.planning/STATUS.md` | Implementation plan, context, phase status and checklists | Yes (manual) |
 | `.github/CI.md` | CI/CD pipeline design (code reviewer reference) | No (skip — audit only when CI changes) |
 
 ## Audit Steps
@@ -95,11 +94,10 @@ Extract `MPS_*` variable names from DECISIONS.md and CLAUDE.md. Verify each exis
 
 Three sources of truth: `commands/*.sh` (exported `cmd_*` functions), `bin/mps` (usage text), CLAUDE.md "Commands" section. All three must agree.
 
-### 11. Phase Status (STATUS.md + PLAN.md)
+### 11. Phase Status (STATUS.md)
 
 - Flag STATUS.md completed items that reference stale file paths
 - Check if "NOT STARTED" phases have had work done (check git log for relevant files)
-- Verify STATUS.md phase list matches PLAN.md phase list
 
 ### 12. Context Optimization
 
@@ -126,9 +124,6 @@ This step monitors doc health for context window efficiency. The session-start d
 - [Section] Issue description
 
 ## STATUS.md
-- Issue description
-
-## PLAN.md
 - Issue description
 
 ## Context Optimization

@@ -126,7 +126,7 @@ cmd_status() {
     echo ""
 
     if [[ -n "$cpus" ]]; then
-        printf "  ${_color_bold}%-16s${_color_reset} %s\n" "CPUs:" "$cpus"
+        printf "  ${_color_bold}%-16s${_color_reset} %s\n" "vCPUs:" "$cpus"
     fi
 
     if [[ -n "$memory_display" ]]; then

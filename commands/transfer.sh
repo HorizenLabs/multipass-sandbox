@@ -69,7 +69,7 @@ cmd_transfer() {
     local guest_dst=false
     local src
 
-    for src in "${sources[@]}"; do
+    for src in ${sources[@]+"${sources[@]}"}; do
         if [[ "$src" == :* ]]; then
             has_guest_src=true
         else
@@ -101,7 +101,7 @@ cmd_transfer() {
     # ---- Resolve paths and build transfer args ----
     local -a resolved_args=()
 
-    for src in "${sources[@]}"; do
+    for src in ${sources[@]+"${sources[@]}"}; do
         resolved_args+=("$(_transfer_resolve_path "$src" "$instance_name")")
     done
     resolved_args+=("$(_transfer_resolve_path "$destination" "$instance_name")")
@@ -109,12 +109,12 @@ cmd_transfer() {
     # ---- Execute transfer ----
     local src_count=${#sources[@]}
     if [[ "$guest_dst" == "true" ]]; then
-        mps_log_info "Transferring ${src_count} file(s) host -> ${instance_name}..."
+        mps_log_info "Transferring ${src_count} path(s) host -> ${instance_name}..."
     else
-        mps_log_info "Transferring file from ${instance_name} -> host..."
+        mps_log_info "Transferring from ${instance_name} -> host..."
     fi
 
-    mp_transfer "${resolved_args[@]}"
+    mp_transfer -r -p ${resolved_args[@]+"${resolved_args[@]}"}
 
     mps_log_info "Transfer complete."
 }
@@ -164,7 +164,7 @@ ${_color_bold}Examples:${_color_reset}
 ${_color_bold}Notes:${_color_reset}
     - One side must always be a host path and the other a guest path
     - Multiple sources are only supported for host -> guest transfers
-    - Guest -> host transfers support only a single source file
+    - Guest -> host transfers support only a single source (file or directory)
 
 EOF
 }

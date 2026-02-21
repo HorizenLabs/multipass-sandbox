@@ -1,0 +1,2 @@
+# Pre-built Bash 3.2 binaries — prevent LF normalization
+docker/bash-3.2/* binary

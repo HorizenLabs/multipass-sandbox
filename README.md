@@ -38,8 +38,8 @@ mps destroy --force
 
 ## Requirements
 
-- [Multipass](https://multipass.run/) — VM engine (snap, brew, or Windows installer)
-- [jq](https://jqlang.github.io/jq/) — JSON processing (Linux/macOS only; Windows uses `ConvertFrom-Json`)
+- [Multipass](https://multipass.run/) — VM engine (snap or brew)
+- [jq](https://jqlang.github.io/jq/) — JSON processing
 
 ## Installation
 
@@ -73,7 +73,7 @@ make uninstall
 | `mps destroy [-f] [-n <name>]` | Remove a sandbox permanently (`--force` skips confirmation) |
 | `mps shell [-n <name>] [-w <path>]` | Open an interactive shell |
 | `mps exec [-n <name>] [-w <path>] -- <cmd>` | Execute a command in a sandbox |
-| `mps transfer <src...> <dst>` | Transfer files between host and sandbox |
+| `mps transfer <src...> <dst>` | Transfer files or directories between host and sandbox |
 | `mps list [--json]` | List all sandboxes |
 | `mps status [-n <name>] [--json]` | Show detailed sandbox status |
 | `mps ssh-config [-n <name>]` | Generate SSH config for VS Code |
@@ -113,8 +113,6 @@ mps up
 # Inside VM: cd /home/user/projects/myapp — same files!
 ```
 
-On Windows, drive letters are converted: `C:\Users\dev\project` -> `/c/Users/dev/project`.
-
 ```bash
 mps up ~/code/project           # Mount specific directory instead of CWD
 mps create --no-mount --name scratch   # No automatic mount (requires --name)
@@ -125,7 +123,7 @@ Extra mounts from `MPS_MOUNTS` in `.mps.env` are additive (on top of the auto-mo
 
 ## File Transfer
 
-Transfer files between host and sandbox using the `:` prefix convention for guest paths:
+Transfer files or directories between host and sandbox using the `:` prefix convention for guest paths:
 
 ```bash
 # Host -> guest
@@ -150,7 +148,7 @@ Configuration is loaded in cascade (later values win):
 2. `~/.mps/config` — user global overrides
 3. `.mps.env` — per-project (in your repo)
 4. Profile — resource fractions from `templates/profiles/<name>.env`
-5. Auto-scaling — CPU/memory computed from host hardware fractions
+5. Auto-scaling — vCPU/memory computed from host hardware fractions
 6. CLI flags — highest priority
 
 ### Example `.mps.env`
@@ -203,7 +201,7 @@ Profiles define resource allocation as **fractions of host hardware**, with mini
 
 Example resolved values on a 16-thread / 64GB host:
 
-| Profile | CPUs | Memory | Disk |
+| Profile | vCPUs | Memory | Disk |
 |---------|------|--------|------|
 | `micro` | 2 | 4G | 10G |
 | `lite` | 4 | 8G | 20G |
@@ -440,6 +438,7 @@ make help                     # Show all targets
 | File type | Linter |
 |-----------|--------|
 | Bash | shellcheck |
+| Bash 3.2 compat | lint-bash32-compat.sh |
 | PowerShell | py-psscriptanalyzer |
 | Dockerfile | hadolint |
 | Makefile | checkmake |

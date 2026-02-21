@@ -3,12 +3,10 @@
 # Publishing uses the separate mps-publisher image for credential isolation.
 # For lint/test tools, see Dockerfile.linter.
 #
-# Build:  docker build -f Dockerfile.builder -t mps-builder .
+# Build:  docker build -f docker/Dockerfile.builder -t mps-builder .
 # Usage:  docker run --rm -v "$PWD:/workdir" -e HOST_UID=$(id -u) -e HOST_GID=$(id -g) mps-builder <command>
 
 FROM ubuntu:25.10
-
-ARG TARGETARCH
 
 ENV DEBIAN_FRONTEND=noninteractive
 

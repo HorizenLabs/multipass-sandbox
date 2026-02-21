@@ -126,7 +126,7 @@ mps_load_config() {
         _mps_apply_profile "${MPS_ROOT}/templates/profiles/${profile}.env"
     fi
 
-    # 5. Compute auto-scaled CPU/memory from profile fractions (if not already set)
+    # 5. Compute auto-scaled vCPU/memory from profile fractions (if not already set)
     _mps_compute_resources
 
     # 6. Validate security-sensitive config values
@@ -201,7 +201,7 @@ _mps_compute_resources() {
         return 0
     fi
 
-    # Detect host CPUs
+    # Detect host vCPUs
     local host_cpus
     if command -v nproc &>/dev/null; then
         host_cpus="$(nproc)"
@@ -225,7 +225,7 @@ _mps_compute_resources() {
         host_memory_mb=4096
     fi
 
-    # Compute CPUs from fraction/min if not already set
+    # Compute vCPUs from fraction/min if not already set
     if [[ -z "${MPS_CPUS:-}" ]]; then
         local frac_num="${MPS_CPUS_FRACTION_NUM:-}"
         local frac_den="${MPS_CPUS_FRACTION_DEN:-}"
@@ -240,7 +240,7 @@ _mps_compute_resources() {
                 computed_cpus=1
             fi
             export MPS_CPUS="$computed_cpus"
-            mps_log_debug "Auto-scaled CPUs: ${computed_cpus} (host=${host_cpus}, fraction=${frac_num}/${frac_den}, min=${cpu_min:-none})"
+            mps_log_debug "Auto-scaled vCPUs: ${computed_cpus} (host=${host_cpus}, fraction=${frac_num}/${frac_den}, min=${cpu_min:-none})"
         fi
     fi
 
@@ -560,27 +560,23 @@ _mps_pull_image() {
         mps_log_info "Checksum verified."
     fi
 
-    # Write .meta sidecar with image metadata from .meta.json
-    # Strip newlines from jq output to prevent value injection
-    local meta_file="${cache_dir}/${arch}.meta"
-    local _desc _disk_size _min_profile _min_disk _min_memory _min_cpus
-    _desc="$(echo "$meta_json" | jq -r '.description // empty' | tr -d '\n')"
-    _disk_size="$(echo "$meta_json" | jq -r '.disk_size // empty' | tr -d '\n')"
-    _min_profile="$(echo "$meta_json" | jq -r '.min_profile // empty' | tr -d '\n')"
-    _min_disk="$(echo "$meta_json" | jq -r '.min_disk // empty' | tr -d '\n')"
-    _min_memory="$(echo "$meta_json" | jq -r '.min_memory // empty' | tr -d '\n')"
-    _min_cpus="$(echo "$meta_json" | jq -r '.min_cpus // empty' | tr -d '\n')"
-    cat > "$meta_file" <<EOF
-SOURCE=pulled
-PULLED=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-SHA256=${expected_sha256}
-DESCRIPTION=${_desc}
-IMAGE_DISK_SIZE=${_disk_size}
-MIN_PROFILE=${_min_profile}
-MIN_DISK=${_min_disk}
-MIN_MEMORY=${_min_memory}
-MIN_CPUS=${_min_cpus}
-EOF
+    # Save remote .meta.json verbatim — enables HEAD -z staleness checks.
+    # File mtime (set to "now" by this write) is the reference for subsequent checks.
+    echo "$meta_json" > "${cache_dir}/${arch}.meta.json"
+
+    # Post-pull integrity check: verify written file against .meta.json SHA256.
+    # Catches disk corruption or partial writes that the in-flight check may miss.
+    local meta_sha256=""
+    meta_sha256="$(echo "$meta_json" | jq -r '.sha256 // empty')"
+    if [[ -n "$meta_sha256" && ${#meta_sha256} -eq 64 ]]; then
+        local ondisk_sha256
+        ondisk_sha256="$(_mps_sha256 "$dest_file" | cut -d' ' -f1)"
+        if [[ "$ondisk_sha256" != "$meta_sha256" ]]; then
+            rm -f "$dest_file" "${cache_dir}/${arch}.meta.json"
+            mps_log_error "Post-pull integrity check failed (expected: ${meta_sha256}, got: ${ondisk_sha256})"
+            return 1
+        fi
+    fi
 
     mps_log_info "Image '${image_name}:${image_version}' cached successfully."
     return 0
@@ -601,8 +597,21 @@ mps_resolve_image() {
     cache_dir="$(mps_cache_dir)/images"
     local image_dir="${cache_dir}/${name}"
 
-    # If the image name directory doesn't exist, try auto-pull for mps images
-    if [[ ! -d "$image_dir" ]]; then
+    # If the image name directory doesn't exist or contains no .img files, try auto-pull
+    local _has_images=false
+    if [[ -d "$image_dir" ]]; then
+        local _vdir _img
+        for _vdir in "$image_dir"/*/; do
+            [[ -d "$_vdir" ]] || continue
+            for _img in "$_vdir"*.img; do
+                if [[ -f "$_img" ]]; then
+                    _has_images=true
+                    break 2
+                fi
+            done
+        done
+    fi
+    if [[ "$_has_images" == "false" ]]; then
         if _mps_is_mps_image "$name" && [[ -n "${MPS_IMAGE_BASE_URL:-}" ]]; then
             mps_log_info "Image '${name}' not found locally. Pulling..."
             if _mps_pull_image "$name" "$tag" && [[ -d "$image_dir" ]]; then
@@ -728,36 +737,57 @@ _mps_semver_gt() {
     return 1
 }
 
-# ---------- Image Staleness Detection ----------
+# ---------- Remote Fetch Primitives ----------
 
-# Fetch remote manifest.json to stdout. Caches locally at ~/.mps/cache/manifest.json.
-# Uses conditional GET (If-Modified-Since via curl -z) to avoid re-downloading
-# when the remote hasn't changed. Falls back to cached copy when offline.
-# Returns 1 only if no manifest is available (neither remote nor cached).
-_mps_fetch_manifest() {
-    local base_url="${MPS_IMAGE_BASE_URL:-}"
-    [[ -z "$base_url" ]] && return 1
+# HEAD check: has a remote URL been modified since a local reference file?
+# Uses If-Modified-Since via curl -z against local file mtime.
+# Returns 0 if NOT modified (304 — fresh), 1 if modified or unavailable.
+_mps_remote_is_fresh() {
+    local url="$1" reference_file="$2"
+    [[ -f "$reference_file" ]] || return 1
 
-    local cache_file
-    cache_file="$(mps_cache_dir)/manifest.json"
-    local manifest_url="${base_url}/manifest.json"
+    local http_code
+    http_code="$(curl -s --head --connect-timeout 1 --max-time 3 \
+        -z "$reference_file" -o /dev/null -w '%{http_code}' \
+        "$url" 2>/dev/null)" || return 1
+
+    [[ "$http_code" == "304" ]]
+}
+
+# Conditional GET: fetch a remote URL with If-Modified-Since caching.
+# If cache_file exists and remote unchanged (304): outputs cached content.
+# If cache_file exists and remote updated (200): updates file, outputs new content.
+# If no cache_file: full download (returns 1 if unavailable).
+# Outputs content to stdout.
+_mps_remote_fetch() {
+    local url="$1" cache_file="$2"
 
     if [[ -f "$cache_file" ]]; then
-        # Conditional GET: -z sends If-Modified-Since, server returns 304 if unchanged
         curl --connect-timeout 1 --max-time 3 -fsSL \
             -z "$cache_file" -o "$cache_file" \
-            "$manifest_url" 2>/dev/null || true
+            "$url" 2>/dev/null || true
     else
-        # No cache — full download (fail if offline)
+        mkdir -p "$(dirname "$cache_file")"
         curl --connect-timeout 1 --max-time 3 -fsSL \
-            -o "$cache_file" "$manifest_url" 2>/dev/null || return 1
+            -o "$cache_file" "$url" 2>/dev/null || return 1
     fi
 
     [[ -f "$cache_file" ]] || return 1
     cat "$cache_file"
 }
 
-# Compare local .meta SHA256 vs remote manifest.
+# ---------- Image Staleness Detection ----------
+
+# Fetch remote manifest.json to stdout. Thin wrapper around _mps_remote_fetch.
+# Caches locally at ~/.mps/cache/manifest.json with conditional GET.
+# Returns 1 only if no manifest is available (neither remote nor cached).
+_mps_fetch_manifest() {
+    local base_url="${MPS_IMAGE_BASE_URL:-}"
+    [[ -z "$base_url" ]] && return 1
+    _mps_remote_fetch "${base_url}/manifest.json" "$(mps_cache_dir)/manifest.json"
+}
+
+# Compare local .meta.json SHA256 vs remote .meta.json sidecar (HEAD + body fallback).
 # Prints one of: up-to-date, stale, update:<ver>, unknown.
 _mps_check_image_staleness() {
     local manifest="$1" name="$2" version="$3" arch="$4"
@@ -768,9 +798,9 @@ _mps_check_image_staleness() {
         return
     fi
 
-    # Get local SHA256 from .meta
+    # Get local SHA256 from .meta.json
     local local_sha256
-    local_sha256="$(mps_image_meta "$name" "$version" "$arch" "SHA256")"
+    local_sha256="$(mps_image_meta "$name" "$version" "$arch" "sha256")"
     if [[ -z "$local_sha256" ]]; then
         echo "unknown"
         return
@@ -784,9 +814,38 @@ _mps_check_image_staleness() {
         return
     fi
 
-    # Compare SHA256 for same version (rebuild detection)
-    local remote_sha256
-    remote_sha256="$(echo "$manifest" | jq -r ".images[\"${name}\"].versions[\"${version}\"][\"${arch}\"].sha256 // empty")"
+    # Rebuild detection via remote .meta.json sidecar
+    # (uploaded atomically with image — always current, unlike manifest during CI fan-in)
+    local base_url="${MPS_IMAGE_BASE_URL:-}"
+    local meta_url="${base_url}/${name}/${version}/${arch}.img.meta.json"
+    local local_meta
+    local_meta="$(mps_cache_dir)/images/${name}/${version}/${arch}.meta.json"
+
+    # Fast path: HEAD check — 304 means remote .meta.json unchanged since pull
+    if [[ -n "$base_url" ]] && _mps_remote_is_fresh "$meta_url" "$local_meta"; then
+        echo "up-to-date"
+        return
+    fi
+
+    # HEAD said modified or unavailable — confirm with SHA256 comparison.
+    # Fetch body to memory only (must NOT overwrite local .meta.json — it records
+    # our pulled image's hash; overwriting would corrupt staleness state).
+    local remote_sha256=""
+    if [[ -n "$base_url" ]]; then
+        local remote_meta
+        remote_meta="$(curl --connect-timeout 1 --max-time 3 -fsSL \
+            "$meta_url" 2>/dev/null)" || true
+        if [[ -n "$remote_meta" ]]; then
+            remote_sha256="$(echo "$remote_meta" | jq -r '.sha256 // empty')"
+        fi
+    fi
+
+    # Fallback: manifest SHA256 (may lag behind during CI fan-in window)
+    if [[ -z "$remote_sha256" ]]; then
+        remote_sha256="$(echo "$manifest" | jq -r \
+            ".images[\"${name}\"].versions[\"${version}\"][\"${arch}\"].sha256 // empty")"
+    fi
+
     if [[ -n "$remote_sha256" ]]; then
         if [[ "$local_sha256" == "$remote_sha256" ]]; then
             echo "up-to-date"
@@ -853,14 +912,15 @@ mps_instance_meta() {
     echo "$(mps_state_dir)/${name}.env"
 }
 
-# Read a key from an image's .meta sidecar file.
+# Read a key from an image's .meta.json sidecar file.
 # Usage: mps_image_meta <name> <tag> <arch> <key>
 # Returns empty string if not found.
 mps_image_meta() {
     local name="$1" tag="$2" arch="$3" key="$4"
     local meta_file
-    meta_file="$(mps_cache_dir)/images/${name}/${tag}/${arch}.meta"
-    _mps_read_meta_key "$meta_file" "$key"
+    meta_file="$(mps_cache_dir)/images/${name}/${tag}/${arch}.meta.json"
+    [[ -f "$meta_file" ]] || return 0
+    jq -r ".${key} // empty" "$meta_file"
 }
 
 mps_save_instance_meta() {
@@ -1023,24 +1083,24 @@ mps_check_image_requirements() {
 
     # Derive meta file path from image file path
     local img_path="${image_url#file://}"
-    local meta_file="${img_path%.img}.meta"
+    local meta_file="${img_path%.img}.meta.json"
     [[ -f "$meta_file" ]] || return 0
 
     local warned=false
 
-    # Check CPUs
+    # Check vCPUs
     local min_cpus=""
-    min_cpus="$(_mps_read_meta_key "$meta_file" "MIN_CPUS")"
+    min_cpus="$(jq -r '.min_cpus // empty' "$meta_file")"
     if [[ -n "$min_cpus" && "$cpus" =~ ^[0-9]+$ && "$min_cpus" =~ ^[0-9]+$ ]]; then
         if [[ "$cpus" -lt "$min_cpus" ]]; then
-            mps_log_warn "CPUs ($cpus) below image minimum ($min_cpus)"
+            mps_log_warn "vCPUs ($cpus) below image minimum ($min_cpus)"
             warned=true
         fi
     fi
 
     # Check memory
     local min_memory=""
-    min_memory="$(_mps_read_meta_key "$meta_file" "MIN_MEMORY")"
+    min_memory="$(jq -r '.min_memory // empty' "$meta_file")"
     if [[ -n "$min_memory" && -n "$memory" ]]; then
         local mem_mb min_mem_mb
         mem_mb="$(_mps_parse_size_mb "$memory")"
@@ -1053,7 +1113,7 @@ mps_check_image_requirements() {
 
     # Check disk
     local min_disk=""
-    min_disk="$(_mps_read_meta_key "$meta_file" "MIN_DISK")"
+    min_disk="$(jq -r '.min_disk // empty' "$meta_file")"
     if [[ -n "$min_disk" && -n "$disk" ]]; then
         local disk_mb min_disk_mb
         disk_mb="$(_mps_parse_size_mb "$disk")"
@@ -1067,7 +1127,7 @@ mps_check_image_requirements() {
     # Suggest recommended profile if any warnings
     if [[ "$warned" == "true" ]]; then
         local min_profile=""
-        min_profile="$(_mps_read_meta_key "$meta_file" "MIN_PROFILE")"
+        min_profile="$(jq -r '.min_profile // empty' "$meta_file")"
         if [[ -n "$min_profile" ]]; then
             mps_log_warn "Recommended minimum profile: $min_profile"
         fi
@@ -1082,10 +1142,10 @@ mps_validate_resources() {
     local disk="${3:-}"
 
     if [[ -n "$cpus" && ! "$cpus" =~ ^[0-9]+$ ]]; then
-        mps_die "Invalid CPU count: $cpus (must be a positive integer)"
+        mps_die "Invalid vCPU count: $cpus (must be a positive integer)"
     fi
     if [[ -n "$cpus" && "$cpus" =~ ^[0-9]+$ && "$cpus" -lt 1 ]]; then
-        mps_die "CPU count must be at least 1 (got $cpus)"
+        mps_die "vCPU count must be at least 1 (got $cpus)"
     fi
 
     if [[ -n "$memory" && ! "$memory" =~ ^[0-9]+[GgMm]?$ ]]; then
@@ -1151,20 +1211,6 @@ mps_resolve_ssh_pubkey() {
     done
 
     mps_die "No SSH key found. Provide one with --ssh-key <path>, set MPS_SSH_KEY in config, or generate a key with: ssh-keygen -t ed25519"
-}
-
-# Derive SSH private key path from public key path (strip .pub).
-# Verifies the private key file exists.
-mps_resolve_ssh_privkey() {
-    local explicit_path="${1:-}"
-    local pubkey_path
-    pubkey_path="$(mps_resolve_ssh_pubkey "$explicit_path")"
-
-    local privkey_path="${pubkey_path%.pub}"
-    if [[ ! -f "$privkey_path" ]]; then
-        mps_die "SSH private key not found: ${privkey_path} (derived from ${pubkey_path})"
-    fi
-    echo "$privkey_path"
 }
 
 # Inject SSH public key into a running instance.
@@ -1236,32 +1282,6 @@ mps_ensure_ssh_key() {
     echo "$privkey_path"
 }
 
-# Check that SSH has been configured for an instance (via mps ssh-config).
-# Returns private key path from metadata.
-# If not configured, errors with instructions.
-mps_require_ssh_key() {
-    local instance_name="$1"
-    local short_name="$2"
-
-    local meta_file
-    meta_file="$(mps_instance_meta "$short_name")"
-
-    if [[ -f "$meta_file" ]]; then
-        local injected=""
-        injected="$(_mps_read_meta_key "$meta_file" "MPS_SSH_INJECTED")"
-        if [[ "$injected" == "true" ]]; then
-            local ssh_key=""
-            ssh_key="$(_mps_read_meta_key "$meta_file" "MPS_SSH_KEY")"
-            if [[ -n "$ssh_key" && -f "$ssh_key" ]]; then
-                echo "$ssh_key"
-                return 0
-            fi
-        fi
-    fi
-
-    mps_die "SSH not configured for '${short_name}'. Run: mps ssh-config --name ${short_name}"
-}
-
 # ---------- Port Forwarding Helpers ----------
 
 # Verify a PID belongs to an ssh process before signaling it.
@@ -1287,7 +1307,7 @@ mps_ports_file() {
 # Outputs newline-separated host:guest pairs.
 mps_collect_port_specs() {
     local short_name="$1"
-    local -A seen=()
+    local seen=" "
     local -a specs=()
 
     # Source 1: MPS_PORTS config (space-separated host:guest pairs)
@@ -1295,10 +1315,10 @@ mps_collect_port_specs() {
     if [[ -n "${MPS_PORTS:-}" ]]; then
         for port_spec in $MPS_PORTS; do
             local hp="${port_spec%%:*}"
-            if [[ -z "${seen[$hp]:-}" ]]; then
-                seen[$hp]=1
+            case "$seen" in *" $hp "*) ;; *)
+                seen="$seen$hp "
                 specs+=("$port_spec")
-            fi
+            ;; esac
         done
     fi
 
@@ -1309,16 +1329,16 @@ mps_collect_port_specs() {
         while IFS='=' read -r key val; do
             if [[ "$key" == "MPS_PORT_FORWARD+" ]]; then
                 local hp="${val%%:*}"
-                if [[ -z "${seen[$hp]:-}" ]]; then
-                    seen[$hp]=1
+                case "$seen" in *" $hp "*) ;; *)
+                    seen="$seen$hp "
                     specs+=("$val")
-                fi
+                ;; esac
             fi
         done < "$meta_file"
     fi
 
     local s
-    for s in "${specs[@]}"; do
+    for s in ${specs[@]+"${specs[@]}"}; do
         echo "$s"
     done
 }
@@ -1430,11 +1450,11 @@ mps_forward_port() {
 
     # Elevate with sudo for privileged ports
     if [[ "$_use_sudo" == "true" ]]; then
-        if ! sudo "${ssh_cmd[@]}"; then
+        if ! sudo ${ssh_cmd[@]+"${ssh_cmd[@]}"}; then
             mps_log_warn "Failed to forward privileged port ${host_port}:${guest_port} (sudo may have been denied)"
             return 1
         fi
-    elif ! "${ssh_cmd[@]}"; then
+    elif ! ${ssh_cmd[@]+"${ssh_cmd[@]}"}; then
         mps_log_warn "Failed to forward port ${host_port}:${guest_port}"
         return 1
     fi

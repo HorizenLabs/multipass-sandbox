@@ -8,8 +8,6 @@ _color_reset=$'\033[0m'
 _color_red=$'\033[0;31m'
 _color_green=$'\033[0;32m'
 _color_yellow=$'\033[0;33m'
-_color_bold=$'\033[1m'
-
 info()  { printf "${_color_green}[mps installer]${_color_reset} %s\n" "$*"; }
 warn()  { printf "${_color_yellow}[mps installer]${_color_reset} %s\n" "$*"; }
 error() { printf "${_color_red}[mps installer]${_color_reset} %s\n" "$*"; }
@@ -170,7 +168,7 @@ case ":${PATH}:" in
             zsh)  rc_file="${HOME}/.zshrc" ;;
             *)    rc_file="${HOME}/.bashrc" ;;
         esac
-        path_line="export PATH=\"\$HOME/.local/bin:\$PATH\""
+        path_line="export PATH=\"${INSTALL_DIR}:\$PATH\""
         if confirm "Add it to ~/${rc_file##*/}?"; then
             printf '\n# Added by mps installer\n%s\n' "$path_line" >> "$rc_file"
             info "Added to ${rc_file}. Restart your shell or run: source ${rc_file}"

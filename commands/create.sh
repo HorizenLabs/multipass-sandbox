@@ -169,7 +169,7 @@ cmd_create() {
 
     # Extra mounts from --mount flags
     local extra_mount
-    for extra_mount in "${arg_extra_mounts[@]}"; do
+    for extra_mount in ${arg_extra_mounts[@]+"${arg_extra_mounts[@]}"}; do
         local mount_src="${extra_mount%%:*}"
         local mount_dst="${extra_mount#*:}"
         # Resolve relative source paths
@@ -192,7 +192,7 @@ cmd_create() {
     fi
 
     # ---- Launch ----
-    mp_launch "$instance_name" "$image" "$cpus" "$memory" "$disk" "$cloud_init_path" "${extra_args[@]}"
+    mp_launch "$instance_name" "$image" "$cpus" "$memory" "$disk" "$cloud_init_path" ${extra_args[@]+"${extra_args[@]}"}
 
     # ---- Wait for cloud-init ----
     mp_wait_cloud_init "$instance_name"
@@ -207,7 +207,7 @@ cmd_create() {
         local meta_file
         meta_file="$(mps_instance_meta "$short_name")"
         local port_rule
-        for port_rule in "${arg_ports[@]}"; do
+        for port_rule in ${arg_ports[@]+"${arg_ports[@]}"}; do
             echo "MPS_PORT_FORWARD+=${port_rule}" >> "$meta_file"
         done
         mps_log_debug "Stored ${#arg_ports[@]} port forwarding rule(s)"
@@ -220,7 +220,7 @@ cmd_create() {
     local transfer_count=0
     if [[ ${#arg_transfers[@]} -gt 0 ]]; then
         local transfer_spec
-        for transfer_spec in "${arg_transfers[@]}"; do
+        for transfer_spec in ${arg_transfers[@]+"${arg_transfers[@]}"}; do
             # Format: <host-path>:<guest-path> (split on first colon)
             local host_src="${transfer_spec%%:*}"
             local guest_dst="${transfer_spec#*:}"
@@ -234,19 +234,22 @@ cmd_create() {
                 host_src="${MPS_PROJECT_DIR:-$(pwd)}/${host_src}"
             fi
 
-            if [[ ! -f "$host_src" ]]; then
+            if [[ ! -e "$host_src" ]]; then
                 mps_die "Transfer source not found: ${host_src}"
+            fi
+            if [[ ! -f "$host_src" && ! -d "$host_src" ]]; then
+                mps_die "Transfer source is not a file or directory: ${host_src}"
             fi
 
             mps_log_info "Transferring '${host_src}' -> '${instance_name}:${guest_dst}'..."
-            mp_transfer "$host_src" "${instance_name}:${guest_dst}"
+            mp_transfer -r -p "$host_src" "${instance_name}:${guest_dst}"
             transfer_count=$((transfer_count + 1))
         done
 
         # Store in metadata
         local transfer_meta_file
         transfer_meta_file="$(mps_instance_meta "$short_name")"
-        for transfer_spec in "${arg_transfers[@]}"; do
+        for transfer_spec in ${arg_transfers[@]+"${arg_transfers[@]}"}; do
             echo "MPS_TRANSFER+=${transfer_spec}" >> "$transfer_meta_file"
         done
         mps_log_debug "Stored ${#arg_transfers[@]} transfer rule(s)"
@@ -261,7 +264,7 @@ cmd_create() {
     printf "  %-14s %s\n" "Instance:" "$instance_name"
     printf "  %-14s %s\n" "Image:" "$image_spec"
     printf "  %-14s %s\n" "Profile:" "$effective_profile"
-    printf "  %-14s %s\n" "CPUs:" "$cpus"
+    printf "  %-14s %s\n" "vCPUs:" "$cpus"
     printf "  %-14s %s\n" "Memory:" "$memory"
     printf "  %-14s %s\n" "Disk:" "$disk"
     if [[ -n "${MPS_MOUNT_SOURCE:-}" ]]; then
@@ -277,7 +280,7 @@ cmd_create() {
         printf "  %-14s %s\n" "Ports:" "${port_fwd_count} forwarded"
     fi
     if [[ $transfer_count -gt 0 ]]; then
-        printf "  %-14s %s\n" "Transferred:" "${transfer_count} file(s)"
+        printf "  %-14s %s\n" "Transferred:" "${transfer_count} path(s)"
     fi
     if [[ -n "$ip" ]]; then
         printf "  %-14s %s\n" "IP:" "$ip"
@@ -310,7 +313,7 @@ ${_color_bold}Flags:${_color_reset}
     --profile <name>        Resource profile: micro, lite, standard, heavy
     --mount <src:dst>       Additional mount point (can be repeated)
     --port <host:guest>     Port forwarding rule (can be repeated)
-    --transfer <src:dst>    Transfer file from host to guest after creation (can be repeated)
+    --transfer <src:dst>    Transfer file or directory from host to guest after creation (can be repeated)
     --no-mount              Do not auto-mount (requires --name)
     --help, -h              Show this help
 

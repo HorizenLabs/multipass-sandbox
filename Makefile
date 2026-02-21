@@ -39,23 +39,24 @@ docker run --rm \
 endef
 
 # ---------- File sets ----------
-BASH_SCRIPTS := $(shell find bin/ lib/ commands/ images/ -name '*.sh' -o -name 'mps' 2>/dev/null | grep -v '.ps1') install.sh uninstall.sh
-PS_SCRIPTS   := $(shell find . -name '*.ps1' 2>/dev/null)
-YAML_FILES   := $(shell find templates/ images/layers/ .github/ISSUE_TEMPLATE/ -name '*.yaml' -o -name '*.yml' 2>/dev/null)
-HCL_FILES    := $(shell find images/ -name '*.pkr.hcl' 2>/dev/null)
-GHA_FILES    := $(shell find .github/workflows/ -name '*.yml' -o -name '*.yaml' 2>/dev/null)
-DOCKERFILES  := Dockerfile.builder Dockerfile.linter Dockerfile.publisher
+BASH_SCRIPTS    := $(shell find bin/ lib/ commands/ images/ -name '*.sh' -o -name 'mps' 2>/dev/null | grep -v '.ps1') install.sh uninstall.sh
+CLIENT_SCRIPTS  := $(shell find bin/ lib/ commands/ -name '*.sh' -o -name 'mps' 2>/dev/null | grep -v '.ps1') install.sh uninstall.sh
+PS_SCRIPTS      := $(shell find . -name '*.ps1' 2>/dev/null)
+YAML_FILES      := $(shell find templates/ images/layers/ .github/ISSUE_TEMPLATE/ -name '*.yaml' -o -name '*.yml' 2>/dev/null)
+HCL_FILES       := $(shell find images/ -name '*.pkr.hcl' 2>/dev/null)
+GHA_FILES       := $(shell find .github/workflows/ -name '*.yml' -o -name '*.yaml' 2>/dev/null)
+DOCKERFILES     := docker/Dockerfile.builder docker/Dockerfile.linter docker/Dockerfile.publisher docker/Dockerfile.bash32
 
 STAMP_DIR := .stamps
 
 BUILDER_STAMP := $(STAMP_DIR)/builder
-BUILDER_DEPS  := Dockerfile.builder docker/entrypoint.sh
+BUILDER_DEPS  := docker/Dockerfile.builder docker/entrypoint.sh
 
 LINTER_STAMP := $(STAMP_DIR)/linter
-LINTER_DEPS  := Dockerfile.linter docker/entrypoint.sh
+LINTER_DEPS  := docker/Dockerfile.linter docker/entrypoint.sh docker/lint-bash32-compat.sh $(wildcard docker/bash-3.2/*)
 
 PUBLISHER_STAMP := $(STAMP_DIR)/publisher
-PUBLISHER_DEPS  := Dockerfile.publisher docker/entrypoint.sh
+PUBLISHER_DEPS  := docker/Dockerfile.publisher docker/entrypoint.sh
 
 # Common deps shared by all image builds
 IMAGE_COMMON_DEPS := images/packer.pkr.hcl images/packer-user-data.pkrtpl.hcl \
@@ -91,8 +92,8 @@ PUBLISH_PHONY     := $(foreach f,$(FLAVORS),publish-$(f) $(foreach a,$(ARCHS),pu
 CLEAN_IMAGE_PHONY := $(foreach f,$(FLAVORS),clean-image-$(f) $(foreach a,$(ARCHS),clean-image-$(f)-$(a)))
 
 .PHONY: all help install uninstall test clean \
-	build-docker-builder build-docker-linter build-docker-publisher \
-	lint lint-bash lint-powershell lint-dockerfile lint-makefile lint-yaml lint-hcl lint-actions \
+	build-docker-builder build-docker-linter build-docker-publisher build-bash32 \
+	lint lint-bash lint-bash32 lint-powershell lint-dockerfile lint-makefile lint-yaml lint-hcl lint-actions \
 	clean-docker-builder clean-docker-linter clean-docker-publisher clean-images \
 	update-manifest \
 	$(IMAGE_PHONY) $(IMPORT_PHONY) $(UPLOAD_PHONY) $(PUBLISH_PHONY) $(CLEAN_IMAGE_PHONY)
@@ -121,20 +122,33 @@ help: ## Show this help
 build-docker-builder: $(BUILDER_STAMP) ## Build the mps-builder Docker image
 
 $(BUILDER_STAMP): $(BUILDER_DEPS) | $(STAMP_DIR)
-	docker build --progress plain -f Dockerfile.builder -t $(BUILDER_IMAGE):$(BUILDER_TAG) .
+	docker build --progress plain -f docker/Dockerfile.builder -t $(BUILDER_IMAGE):$(BUILDER_TAG) .
 	@touch $@
 
 build-docker-linter: $(LINTER_STAMP) ## Build the mps-linter Docker image
 
 $(LINTER_STAMP): $(LINTER_DEPS) | $(STAMP_DIR)
-	docker build --progress plain -f Dockerfile.linter -t $(LINTER_IMAGE):$(LINTER_TAG) .
+	docker build --progress plain -f docker/Dockerfile.linter -t $(LINTER_IMAGE):$(LINTER_TAG) .
 	@touch $@
 
 build-docker-publisher: $(PUBLISHER_STAMP) ## Build the mps-publisher Docker image
 
 $(PUBLISHER_STAMP): $(PUBLISHER_DEPS) | $(STAMP_DIR)
-	docker build --progress plain -f Dockerfile.publisher -t $(PUBLISHER_IMAGE):$(PUBLISHER_TAG) .
+	docker build --progress plain -f docker/Dockerfile.publisher -t $(PUBLISHER_IMAGE):$(PUBLISHER_TAG) .
 	@touch $@
+
+# ---------- Bash 3.2 binary (for compat lint) ----------
+BASH32_IMAGE := bash-3.2-build
+BASH32_ARCH  := $(shell dpkg --print-architecture 2>/dev/null || echo amd64)
+BASH32_BIN   := docker/bash-3.2/bash-3.2.57-linux-$(BASH32_ARCH)
+
+build-bash32: $(BASH32_BIN) ## Build Bash 3.2.57 binary for compat linting
+
+$(BASH32_BIN): docker/Dockerfile.bash32
+	docker build --progress plain -f docker/Dockerfile.bash32 -t $(BASH32_IMAGE) .
+	@mkdir -p docker/bash-3.2
+	@cid=$$(docker create $(BASH32_IMAGE)) && docker cp "$$cid":/bash-3.2 $@ && docker rm "$$cid" >/dev/null
+	@chmod +x $@
 
 # ---------- Install (runs on host) ----------
 install: ## Install mps (symlink to PATH, runs on host)
@@ -150,7 +164,7 @@ test: $(LINTER_STAMP) ## Run BATS tests inside linter container
 	$(DOCKER_RUN) bats tests/
 
 # ---------- Lint (all) ----------
-lint: lint-bash lint-powershell lint-dockerfile lint-makefile lint-yaml lint-hcl lint-actions ## Run all linters
+lint: lint-bash lint-bash32 lint-powershell lint-dockerfile lint-makefile lint-yaml lint-hcl lint-actions ## Run all linters
 
 lint-bash: $(LINTER_STAMP) ## Lint Bash scripts with shellcheck
 	$(DOCKER_RUN) bash -c '\
@@ -162,6 +176,14 @@ lint-bash: $(LINTER_STAMP) ## Lint Bash scripts with shellcheck
 			fi; \
 		done; \
 		exit $$exit_code'
+
+lint-bash32: $(LINTER_STAMP) ## Check client scripts for Bash 3.2 compatibility
+	$(DOCKER_RUN) bash -c '\
+		if command -v lint-bash32-compat.sh >/dev/null 2>&1; then \
+			lint-bash32-compat.sh $(CLIENT_SCRIPTS); \
+		else \
+			echo "WARN: lint-bash32-compat.sh not found, skipping"; \
+		fi'
 
 lint-powershell: $(LINTER_STAMP) ## Lint PowerShell scripts with py-psscriptanalyzer
 	@if [ -n "$(PS_SCRIPTS)" ]; then \

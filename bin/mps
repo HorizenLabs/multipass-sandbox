@@ -128,7 +128,7 @@ main() {
 
     # Skip dependency check if subcommand is --help
     local needs_deps=true
-    for a in "${args[@]}"; do
+    for a in ${args[@]+"${args[@]}"}; do
         if [[ "$a" == "--help" || "$a" == "-h" ]]; then
             needs_deps=false
             break
@@ -164,7 +164,7 @@ main() {
         mps_die "Command script '$cmd_script' does not define function '$cmd_func'"
     fi
 
-    "$cmd_func" "${args[@]}"
+    "$cmd_func" ${args[@]+"${args[@]}"}
 }
 
 main "$@"

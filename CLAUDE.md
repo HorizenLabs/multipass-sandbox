@@ -4,7 +4,7 @@ Internal CLI tool for spinning up isolated VM-based development environments usi
 
 ## Tech Stack
 
-- **CLI**: Bash (macOS/Linux), PowerShell planned (Windows)
+- **CLI**: Bash (macOS/Linux)
 - **VM Engine**: Canonical Multipass
 - **Config**: KEY=VALUE .env files (no YAML parsing in Bash)
 - **Dependencies**: `multipass`, `jq`
@@ -34,11 +34,14 @@ Internal CLI tool for spinning up isolated VM-based development environments usi
 - `templates/profiles/` — Resource profiles (micro, lite, standard, heavy) with auto-scaling CPU/memory
 - `VERSION` — Tool version (SemVer), read by `bin/mps` at startup
 - `config/defaults.env` — Shipped defaults
-- `Dockerfile.builder` + `docker/entrypoint.sh` — Builder image (Packer, QEMU — no B2 credentials)
-- `Dockerfile.linter` — Linter/test image (shellcheck, hadolint, BATS, PSScriptAnalyzer, yamllint, etc.)
-- `Dockerfile.publisher` — Publisher image (b2, jq, yq — credential-isolated from builder)
+- `docker/Dockerfile.builder` + `docker/entrypoint.sh` — Builder image (Packer, QEMU — no B2 credentials)
+- `docker/Dockerfile.linter` — Linter/test image (shellcheck, hadolint, BATS, PSScriptAnalyzer, yamllint, etc.)
+- `docker/Dockerfile.publisher` — Publisher image (b2, jq, yq — credential-isolated from builder)
+- `docker/Dockerfile.bash32` — Bash 3.2.57 builder for compatibility linting
+- `docker/lint-bash32-compat.sh` — Bash 3.2 compatibility linter script
+- `docker/bash-3.2/` — Pre-built Bash 3.2.57 binaries (per-arch, cached for linter image)
 - `Makefile` — All targets run inside Docker containers via `docker run`
-- `install.sh` / `install.ps1` — Installer scripts
+- `install.sh` — Installer script (macOS/Linux)
 - `uninstall.sh` — Uninstaller (removes symlink, VMs, caches, configs)
 - `checkmake.ini`, `.yamllint`, `.github/actionlint.yaml` — Linter configuration files
 - `CODEOWNERS` — GitHub code ownership for PR review routing
@@ -69,12 +72,32 @@ Internal CLI tool for spinning up isolated VM-based development environments usi
 - **Image metadata**: `x-mps:` blocks in layer YAMLs define disk_size, min_profile, min_disk/memory/cpus
 - `mps create` warns when resolved resources are below image minimums (never blocks)
 - Default mount: host CWD → guest at same absolute path (read-write)
-- Windows path conversion: `C:\foo\bar` → `/c/foo/bar`
 - `MPS_MOUNTS` is additive (on top of auto-mount), `MPS_NO_AUTOMOUNT=true` to opt out
 - `mps shell`/`mps exec` auto-set workdir to the mounted project path
 - Commands use `while/case/shift` arg parsing, private `_<cmd>_usage()` helpers
 - Color output uses `$'\033[...]'` ANSI-C quoting (not double-quoted `\033`)
-- **Cross-platform**: Scripts in `bin/`, `commands/`, `lib/`, `config/`, and `install.sh` must work on both GNU/Linux and BSD/macOS, targeting Bash 3.2+ (macOS default). Avoid: `${var,,}` (use `tr`), `readlink -f` (use loop), `md5sum`/`sha256sum` (use `_mps_md5`/`_mps_sha256` from `lib/common.sh`). Scripts in `images/` run inside Docker and may use GNU-only tools.
+- **Cross-platform**: Scripts in `bin/`, `commands/`, `lib/`, `config/`, `install.sh`, and `uninstall.sh` must work on both GNU/Linux and BSD/macOS, targeting Bash 3.2+ (macOS default). Scripts in `images/` run inside Docker and may use GNU-only tools. Banned Bash 4+ features in client scripts:
+  - `${var,,}` / `${var^^}` / `${var,}` / `${var^}` — use `tr '[:upper:]' '[:lower:]'` or `tr '[:lower:]' '[:upper:]'`
+  - `declare -A` / `local -A` (associative arrays) — use delimited strings with `case` pattern matching
+  - `declare -n` / `local -n` (namerefs) — use `echo`-based returns or positional params
+  - `declare -g` (global from function) — use `export` or avoid `local` for the variable
+  - `declare -l` / `declare -u` (auto-case attributes) — use `tr`
+  - `mapfile` / `readarray` — use `while IFS= read -r` loops
+  - `coproc` — use explicit FD redirections or temp files
+  - `|&` (pipe stderr) — use `2>&1 |`
+  - `&>>` (append both streams) — use `>> file 2>&1`
+  - `[[ -v var ]]` (variable-existence test) — use `[[ -n "${var:-}" ]]` or `[[ -z "${var+x}" ]]` (**silent wrong behavior on 3.2** — parsed as non-empty string test, always true)
+  - `${arr[-1]}` (negative array index) — use `${arr[${#arr[@]}-1]}` (**silent wrong behavior on 3.2** — evaluates as arithmetic, wrong index)
+  - `"${arr[@]}"` (unguarded empty array) — use `${arr[@]+"${arr[@]}"}` (crashes under `set -u` in Bash 3.2)
+  - `readlink -f` (GNU-only) — use a loop or `_mps_readlink` helper
+  - `md5sum` / `sha256sum` (GNU-only) — use `_mps_md5` / `_mps_sha256` from `lib/common.sh`
+  - `shopt -s globstar` / `**` recursive glob — use `find`
+  - `shopt -s lastpipe` — use process substitution `< <(...)` instead of piped `while read`
+  - `${var@operator}` (parameter transforms) — use `printf '%q'` or equivalent
+  - `wait -n` — use explicit PID tracking with `wait $pid`
+- **Safe `rm -rf`**: Any `rm -rf` (or `rm -r`) that uses a variable **must** guard with `${var:?}` — e.g., `rm -rf "${dir:?}"`. Prevents catastrophic deletion if the variable is unexpectedly empty. Literal paths (e.g., `rm -rf /tmp/*`) do not need the guard.
+- **SHA256 sidecar parsing**: Packer generates `.sha256` files with **tab** delimiters (not spaces). Always use `awk '{print $1}'` instead of `cut -d' ' -f1` when reading the hash — `awk` splits on any whitespace.
+- **Windows/PowerShell**: Deferred to a future phase. `install.ps1` exists as a placeholder.
 
 ## Build System
 
@@ -83,7 +106,7 @@ Build/test/lint runs inside Docker containers — linter image for lint/test, bu
 make build-docker-linter    # Build the linter image (shellcheck, hadolint, BATS, etc.)
 make build-docker-builder   # Build the builder image (Packer, QEMU — no credentials)
 make build-docker-publisher # Build the publisher image (b2, jq, yq — credential-isolated)
-make lint             # Run all linters (shellcheck, hadolint, yamllint, checkmake, packer fmt, py-psscriptanalyzer, actionlint)
+make lint             # Run all linters (shellcheck, lint-bash32, hadolint, yamllint, checkmake, packer fmt, py-psscriptanalyzer, actionlint)
 make lint-actions      # Lint GitHub Actions workflows with actionlint
 make test             # Run BATS tests
 make image-base       # Build base VM image (both archs in parallel via sub-make -j2)
@@ -97,6 +120,8 @@ make upload-base-amd64 VERSION=1.0.0   # CI: upload image+sidecar to B2 (no mani
 make update-manifest VERSION=1.0.0     # CI fan-in: single manifest write (downloads sidecars from B2)
 make publish-base-amd64 VERSION=1.0.0  # Local: upload + manifest (single arch)
 make publish-base VERSION=1.0.0        # Local: upload + manifest (both archs)
+make build-bash32                      # Build Bash 3.2.57 binary for compat linting
+make lint-bash32                       # Check client scripts for Bash 3.2 compatibility
 make install                           # Install mps (symlink to PATH, runs on host)
 make uninstall        # Uninstall mps (remove symlink, cleanup artifacts, runs on host)
 ```
@@ -124,18 +149,19 @@ The Makefile detects host uid:gid and the entrypoint uses setpriv to step down f
 
 - After modifying any linted file, run `make lint` before committing. Linted files:
   - **Bash**: `bin/mps`, `lib/*.sh`, `commands/*.sh`, `images/**/*.sh`, `install.sh`, `uninstall.sh`
+  - **Bash 3.2 compat**: `bin/mps`, `lib/*.sh`, `commands/*.sh`, `install.sh`, `uninstall.sh` (client scripts only — no `images/`)
   - **PowerShell**: `*.ps1`
-  - **Dockerfile**: `Dockerfile.builder`, `Dockerfile.linter`, `Dockerfile.publisher`
+  - **Dockerfile**: `docker/Dockerfile.builder`, `docker/Dockerfile.linter`, `docker/Dockerfile.publisher`, `docker/Dockerfile.bash32`
   - **Makefile**: `Makefile`
-  - **YAML**: `templates/**/*.yaml`, `images/layers/*.yaml`
+  - **YAML**: `templates/**/*.yaml`, `images/layers/*.yaml`, `.github/ISSUE_TEMPLATE/*.yml`
   - **HCL**: `images/**/*.pkr.hcl`
   - **GitHub Actions**: `.github/workflows/*.yml`
 - Linting requires Docker. The linter image is built automatically if missing (`make lint` depends on the stamp file).
 - Fix all lint errors before committing — do not bypass with `--no-verify` or inline disables unless there is a documented reason.
+- **checkmake quirks**: `minphony` only parses the first line of `.PHONY` declarations — keep `test` and `clean` on the first line. `maxbodylength` default max is 15 lines per target body (configured in `checkmake.ini`).
 
 ## Planning & Status
 
-- Full implementation plan: `.planning/PLAN.md`
+- Implementation plan and status: `.planning/STATUS.md`
 - Architecture decisions: `.planning/DECISIONS.md`
-- Implementation status: `.planning/STATUS.md`
 - CI/CD pipeline design: `.github/CI.md`

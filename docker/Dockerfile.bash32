@@ -1,0 +1,47 @@
+# Bash 3.2.57 — minimal build for syntax-checking macOS-compatible scripts.
+# Produces a statically-usable (dynamically linked) bash binary.
+#
+# Build:  docker build -f docker/Dockerfile.bash32 -t bash-3.2-build .
+# Extract: docker cp $(docker create bash-3.2-build):/bash-3.2 ./bash-3.2
+
+FROM ubuntu:25.10 AS build
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
+# hadolint ignore=DL3008
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        bison \
+        build-essential \
+        ca-certificates \
+        curl \
+        gnupg \
+    && rm -rf /var/lib/apt/lists/*
+
+# ---------- Download + GPG-verify Bash 3.2.57 source ----------
+# Key: Chet Ramey <chet@cwru.edu> — 7C0135FB088AAF6C66C650B9BB5869F064EA74AB
+# hadolint ignore=DL3003
+RUN set -eux; \
+    curl -fsSL "https://ftpmirror.gnu.org/bash/bash-3.2.57.tar.gz" \
+        -o /tmp/bash-3.2.57.tar.gz; \
+    curl -fsSL "https://ftpmirror.gnu.org/bash/bash-3.2.57.tar.gz.sig" \
+        -o /tmp/bash-3.2.57.tar.gz.sig; \
+    GNUPGHOME="$(mktemp -d)"; export GNUPGHOME; \
+    gpg --keyserver keys.openpgp.org \
+        --recv-keys 7C0135FB088AAF6C66C650B9BB5869F064EA74AB \
+    || gpg --keyserver keyserver.ubuntu.com \
+        --recv-keys 7C0135FB088AAF6C66C650B9BB5869F064EA74AB; \
+    gpg --verify /tmp/bash-3.2.57.tar.gz.sig /tmp/bash-3.2.57.tar.gz; \
+    rm -rf "$GNUPGHOME" /tmp/bash-3.2.57.tar.gz.sig; \
+    tar -xzf /tmp/bash-3.2.57.tar.gz -C /tmp; \
+    cd /tmp/bash-3.2.57; \
+    CC="gcc -std=gnu89" CFLAGS="-O2 -w" ./configure --prefix=/opt/bash32; \
+    make -j"$(nproc)"; \
+    make install; \
+    strip /opt/bash32/bin/bash; \
+    rm -rf /tmp/bash-3.2.57 /tmp/bash-3.2.57.tar.gz
+
+FROM scratch
+COPY --from=build /opt/bash32/bin/bash /bash-3.2
+CMD ["/bash-3.2"]
