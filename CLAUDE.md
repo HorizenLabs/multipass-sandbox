@@ -31,6 +31,7 @@ Internal CLI tool for spinning up isolated VM-based development environments usi
 - `images/publish.sh` — Upload images + `.meta.json` sidecars to B2 (`--upload-only` for CI, default includes manifest update)
 - `images/update-manifest.sh` — Fan-in manifest update: downloads `.meta.json` sidecars from B2, single manifest write
 - `images/generate-index.sh` — Generate autoindex HTML pages from manifest and upload to B2
+- `images/publish-release-meta.sh` — Publish `mps-release.json` to B2 (CLI update check metadata)
 - `templates/profiles/` — Resource profiles (micro, lite, standard, heavy) with auto-scaling CPU/memory
 - `VERSION` — Tool version (SemVer), read by `bin/mps` at startup
 - `config/defaults.env` — Shipped defaults
@@ -66,7 +67,7 @@ Internal CLI tool for spinning up isolated VM-based development environments usi
   - Override with `--name` flag or `MPS_NAME` in `.mps.env`
   - Long names truncated with short hash suffix (max 40 chars for Multipass)
   - `--no-mount` without `--name` errors (can't derive folder name)
-- Config cascade: `config/defaults.env` → `~/.mps/config` → `.mps.env` → profile → auto-scaling → CLI flags
+- Config cascade: `config/defaults.env` → `~/.mps/config` → `.mps.env` → profile → auto-scaling → CLI flags. Key config keys: `MPS_CHECK_UPDATES` (CLI update check, default true), `MPS_IMAGE_CHECK_UPDATES` (image staleness check, default true).
 - **Default profile**: `lite` (auto-scales CPU/memory from host hardware fractions with min/cap)
 - **Profiles**: micro (1/8 CPU, 1/16 mem), lite (1/4, 1/6), standard (1/3, 1/4), heavy (1/2, 1/3)
 - **Image metadata**: `x-mps:` blocks in layer YAMLs define disk_size, min_profile, min_disk/memory/cpus
@@ -98,6 +99,7 @@ Internal CLI tool for spinning up isolated VM-based development environments usi
 - **Safe `rm -rf`**: Any `rm -rf` (or `rm -r`) that uses a variable **must** guard with `${var:?}` — e.g., `rm -rf "${dir:?}"`. Prevents catastrophic deletion if the variable is unexpectedly empty. Literal paths (e.g., `rm -rf /tmp/*`) do not need the guard.
 - **SHA256 sidecar parsing**: Packer generates `.sha256` files with **tab** delimiters (not spaces). Always use `awk '{print $1}'` instead of `cut -d' ' -f1` when reading the hash — `awk` splits on any whitespace.
 - **Windows/PowerShell**: Deferred to a future phase. `install.ps1` exists as a placeholder.
+- **CI/local parity**: All CI operations (except GitHub-specific actions like creating releases) must be runnable locally via `make` targets. The pattern is: shell script with the logic → Makefile target wrapping it in `docker run` → CI workflow calls `make`. Keep inline shell in YAML to an absolute minimum (env setup, conditionals); never put business logic there.
 
 ## Build System
 
@@ -120,6 +122,7 @@ make upload-base-amd64 VERSION=1.0.0   # CI: upload image+sidecar to B2 (no mani
 make update-manifest VERSION=1.0.0     # CI fan-in: single manifest write (downloads sidecars from B2)
 make publish-base-amd64 VERSION=1.0.0  # Local: upload + manifest (single arch)
 make publish-base VERSION=1.0.0        # Local: upload + manifest (both archs)
+make publish-release-meta VERSION=0.3.0 # Publish mps-release.json to B2 (CLI update check)
 make build-bash32                      # Build Bash 3.2.57 binary for compat linting
 make lint-bash32                       # Check client scripts for Bash 3.2 compatibility
 make install                           # Install mps (symlink to PATH, runs on host)
@@ -144,6 +147,7 @@ The Makefile detects host uid:gid and the entrypoint uses setpriv to step down f
   - **CI flow**: Runners call `publish.sh --upload-only` to upload images + `.sha256` + `.meta.json` sidecars to B2, then purge CF cache for those files. A fan-in job runs `update-manifest.sh` which downloads `.meta.json` sidecars from B2 and performs a single manifest read-modify-write. Zero race window.
   - **Local flow**: `publish.sh` (no flag) does upload + manifest update in one shot, same as before.
   - **Manifest v2**: `schema_version: 2`, `generated_at` timestamp. No `url` field in arch entries (URLs are deterministic: `<name>/<version>/<arch>.img`). Empty v2 manifest is seeded automatically on first publish.
+- **CLI update metadata**: `mps-release.json` published to CDN root (`mpsandbox.horizenlabs.io/mps-release.json`) by `release.yml`. Contains `version`, `tag`, `commit_sha`. Clients check at most once per 24h via `_mps_check_cli_update()` in `lib/common.sh`.
 
 ## Workflow
 

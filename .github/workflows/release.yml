@@ -10,6 +10,7 @@ permissions:
 jobs:
   release:
     runs-on: warp-ubuntu-latest-x64-2x
+    environment: publish
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -49,6 +50,16 @@ jobs:
             exit 1
           fi
 
+      - name: Validate required secrets
+        run: |
+          source images/lib/publish-common.sh
+          _validate_required_vars B2_APPLICATION_KEY_ID B2_APPLICATION_KEY CF_ZONE_ID CF_API_TOKEN
+        env:
+          B2_APPLICATION_KEY_ID: ${{ secrets.B2_APPLICATION_KEY_ID }}
+          B2_APPLICATION_KEY: ${{ secrets.B2_APPLICATION_KEY }}
+          CF_ZONE_ID: ${{ secrets.CF_ZONE_ID }}
+          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+
       - name: Lint
         run: make lint
 
@@ -66,6 +77,14 @@ jobs:
           tag_name: ${{ steps.resolve.outputs.tag }}
           name: mps ${{ steps.resolve.outputs.version }}
           generate_release_notes: true
+
+      - name: Publish mps-release.json
+        env:
+          B2_APPLICATION_KEY_ID: ${{ secrets.B2_APPLICATION_KEY_ID }}
+          B2_APPLICATION_KEY: ${{ secrets.B2_APPLICATION_KEY }}
+          CF_ZONE_ID: ${{ secrets.CF_ZONE_ID }}
+          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+        run: make publish-release-meta VERSION=${{ steps.resolve.outputs.version }}
 
       - name: Notify Slack on failure
         if: failure()

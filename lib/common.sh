@@ -898,6 +898,85 @@ _mps_warn_image_staleness() {
     return 0
 }
 
+# ---------- CLI Version Update Check ----------
+
+# Warn if a newer mps release is available on the CDN.
+# Fetches mps-release.json (at most once per 24h), compares version + commit SHA.
+# Silent on failure/offline — never blocks.
+_mps_check_cli_update() {
+    # Opt-out check
+    [[ "${MPS_CHECK_UPDATES:-true}" == "true" ]] || return 0
+
+    # Need a valid SemVer local version to compare
+    [[ "${MPS_VERSION:-unknown}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || return 0
+
+    local base_url="${MPS_IMAGE_BASE_URL:-}"
+    [[ -n "$base_url" ]] || return 0
+
+    local cache_file
+    cache_file="$(mps_cache_dir)/mps-release.json"
+
+    # TTL gate: skip fetch if cache file is less than 24h old
+    if [[ -f "$cache_file" ]]; then
+        # find returns the file if older than 1440 min; empty = still fresh
+        local stale=""
+        stale="$(find "$cache_file" -mmin +1440 2>/dev/null)" || true
+        if [[ -z "$stale" ]]; then
+            # Cache is fresh — still parse and warn
+            _mps_cli_update_warn "$cache_file"
+            return 0
+        fi
+    fi
+
+    # Fetch (creates/updates cache file)
+    _mps_remote_fetch "${base_url}/mps-release.json" "$cache_file" >/dev/null 2>&1 || return 0
+
+    _mps_cli_update_warn "$cache_file"
+    return 0
+}
+
+# Parse cached mps-release.json and emit update warnings.
+_mps_cli_update_warn() {
+    local cache_file="$1"
+    [[ -f "$cache_file" ]] || return 0
+
+    local remote_version=""
+    remote_version="$(jq -r '.version // empty' "$cache_file" 2>/dev/null)" || return 0
+    [[ -n "$remote_version" ]] || return 0
+
+    # Remote version is newer → suggest update
+    if _mps_semver_gt "$remote_version" "$MPS_VERSION"; then
+        printf "%smps: update available (%s → %s) — to update: cd %s && git pull%s\n" \
+            "$_color_yellow" "$MPS_VERSION" "$remote_version" "$MPS_ROOT" "$_color_reset" >&2
+        return 0
+    fi
+
+    # Versions equal — check if tag has been force-pushed (commit_sha mismatch)
+    local remote_sha=""
+    remote_sha="$(jq -r '.commit_sha // empty' "$cache_file" 2>/dev/null)" || return 0
+    if [[ -z "$remote_sha" || ${#remote_sha} -lt 7 ]]; then
+        return 0
+    fi
+
+    # Ancestry check: is the remote commit_sha an ancestor of our HEAD?
+    # Fails gracefully on shallow clone, missing objects, or non-git install.
+    if git -C "$MPS_ROOT" merge-base --is-ancestor "$remote_sha" HEAD 2>/dev/null; then
+        return 0
+    fi
+
+    # merge-base failed — could be missing object or actual mismatch.
+    # Only warn if the object actually exists locally (avoids false positives on shallow clones).
+    if ! git -C "$MPS_ROOT" cat-file -e "$remote_sha" 2>/dev/null; then
+        return 0
+    fi
+
+    local remote_tag=""
+    remote_tag="$(jq -r '.tag // empty' "$cache_file" 2>/dev/null)" || true
+    printf "%smps: %s has been updated — to update: cd %s && git pull%s\n" \
+        "$_color_yellow" "${remote_tag:-v${MPS_VERSION}}" "$MPS_ROOT" "$_color_reset" >&2
+    return 0
+}
+
 # ---------- Metadata Helpers ----------
 
 _mps_read_meta_key() {

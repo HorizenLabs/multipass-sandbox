@@ -39,7 +39,6 @@ First round of alpha-tester feedback across macOS and Linux.
 - [x] Add automated Bash 3.2 compatibility linting (`make lint-bash32`)
 - [x] Fix Bash 3.2 incompatibilities flagged by lint-bash32 (1 `local -A`, 32 unguarded `${arr[@]}`)
 - [x] Verify README.md example commands work end-to-end and fix any that don't
-- [ ] Re-publish corrected sidecars/manifest for affected images on B2
 - [x] Remove references to Windows support from docs (README, STATUS context, CLAUDE.md) — deferred to Phase 11
 - [x] Audit and remove dead code paths (unused functions, unreferenced variables, dead metadata writes)
 - [x] Add GPG signature verification for Bash 3.2.57 tarball in Dockerfile.bash32
@@ -47,6 +46,8 @@ First round of alpha-tester feedback across macOS and Linux.
 - [x] Audit and test install/uninstall scripts for dead code paths and stale paths after metadata refactor
 - [x] Ensure consistent naming of vCPU/CPU in README and help output
 - [x] Fix `--transfer` and `mps transfer` to support directories (auto-detect, pass `-r -p` to multipass)
+- [x] Add lightweight CLI version update check (`_mps_check_cli_update()`, `mps-release.json`, `MPS_CHECK_UPDATES`)
+- [x] Re-publish corrected sidecars/manifest for affected images on B2
 - [ ] Triage and fix additional alpha-tester findings
 
 ## Phase 10 — Testing: NOT STARTED
