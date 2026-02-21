@@ -34,9 +34,12 @@ Internal CLI tool for spinning up isolated VM-based development environments usi
 - `templates/profiles/` — Resource profiles (micro, lite, standard, heavy) with auto-scaling CPU/memory
 - `VERSION` — Tool version (SemVer), read by `bin/mps` at startup
 - `config/defaults.env` — Shipped defaults
-- `Dockerfile.builder` + `docker/entrypoint.sh` — Builder image (Packer, QEMU — no B2 credentials)
-- `Dockerfile.linter` — Linter/test image (shellcheck, hadolint, BATS, PSScriptAnalyzer, yamllint, etc.)
-- `Dockerfile.publisher` — Publisher image (b2, jq, yq — credential-isolated from builder)
+- `docker/Dockerfile.builder` + `docker/entrypoint.sh` — Builder image (Packer, QEMU — no B2 credentials)
+- `docker/Dockerfile.linter` — Linter/test image (shellcheck, hadolint, BATS, PSScriptAnalyzer, yamllint, etc.)
+- `docker/Dockerfile.publisher` — Publisher image (b2, jq, yq — credential-isolated from builder)
+- `docker/Dockerfile.bash32` — Bash 3.2.57 builder for compatibility linting
+- `docker/lint-bash32-compat.sh` — Bash 3.2 compatibility linter script
+- `docker/bash-3.2/` — Pre-built Bash 3.2.57 binaries (per-arch, cached for linter image)
 - `Makefile` — All targets run inside Docker containers via `docker run`
 - `install.sh` — Installer script (macOS/Linux)
 - `uninstall.sh` — Uninstaller (removes symlink, VMs, caches, configs)
@@ -101,7 +104,7 @@ Build/test/lint runs inside Docker containers — linter image for lint/test, bu
 make build-docker-linter    # Build the linter image (shellcheck, hadolint, BATS, etc.)
 make build-docker-builder   # Build the builder image (Packer, QEMU — no credentials)
 make build-docker-publisher # Build the publisher image (b2, jq, yq — credential-isolated)
-make lint             # Run all linters (shellcheck, hadolint, yamllint, checkmake, packer fmt, py-psscriptanalyzer, actionlint)
+make lint             # Run all linters (shellcheck, lint-bash32, hadolint, yamllint, checkmake, packer fmt, py-psscriptanalyzer, actionlint)
 make lint-actions      # Lint GitHub Actions workflows with actionlint
 make test             # Run BATS tests
 make image-base       # Build base VM image (both archs in parallel via sub-make -j2)
@@ -146,7 +149,7 @@ The Makefile detects host uid:gid and the entrypoint uses setpriv to step down f
   - **Bash**: `bin/mps`, `lib/*.sh`, `commands/*.sh`, `images/**/*.sh`, `install.sh`, `uninstall.sh`
   - **Bash 3.2 compat**: `bin/mps`, `lib/*.sh`, `commands/*.sh`, `install.sh`, `uninstall.sh` (client scripts only — no `images/`)
   - **PowerShell**: `*.ps1`
-  - **Dockerfile**: `Dockerfile.builder`, `Dockerfile.linter`, `Dockerfile.publisher`, `Dockerfile.bash32`
+  - **Dockerfile**: `docker/Dockerfile.builder`, `docker/Dockerfile.linter`, `docker/Dockerfile.publisher`, `docker/Dockerfile.bash32`
   - **Makefile**: `Makefile`
   - **YAML**: `templates/**/*.yaml`, `images/layers/*.yaml`, `.github/ISSUE_TEMPLATE/*.yml`
   - **HCL**: `images/**/*.pkr.hcl`

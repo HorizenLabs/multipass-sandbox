@@ -86,6 +86,7 @@ Non-OS dependencies installed with integrity verification where possible.
 | actionlint | linter | SHA256 from `checksums.txt` |
 | yamllint, py-psscriptanalyzer | linter | None (pip) |
 | yq | builder, publisher | SHA256 from rhash `checksums` file |
+| Bash 3.2.57 | bash32 | GPG signature (Chet Ramey, `7C0135FB…64EA74AB`) |
 
 Cloud-init layers: yq (rhash checksums), hadolint (.sha256 sidecar), cosign (cosign_checksums.txt), Echidna (sigstore bundle via cosign), shellcheck (no checksums published).
 
@@ -97,7 +98,7 @@ Linter-to-file mapping is in CLAUDE.md "Workflow" section. Additional note: comm
 
 `.stamps/` directory tracks Docker image build state in Make.
 
-- `.stamps/{builder,linter,publisher}` depend on respective Dockerfile + `docker/entrypoint.sh`
+- `.stamps/{builder,linter,publisher}` depend on respective `docker/Dockerfile.*` + `docker/entrypoint.sh`
 - `.stamps/image-<flavor>-amd64` — depend on builder stamp + common image deps + per-flavor layer file + parent flavor stamp (non-base only, layered chain)
 - `.stamps/image-<flavor>-arm64` — depend on builder stamp + common image deps + cumulative layer files (from-scratch, no parent stamp dep)
 - `make clean` removes stamp files; `.stamps/` is in `.gitignore`

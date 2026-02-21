@@ -4,7 +4,7 @@
 # runtime via environment variables — they never touch the builder image
 # that runs Packer/QEMU, enforcing credential isolation.
 #
-# Build:  docker build -f Dockerfile.publisher -t mps-publisher .
+# Build:  docker build -f docker/Dockerfile.publisher -t mps-publisher .
 # Usage:  docker run --rm -v "$PWD:/workdir" \
 #           -e HOST_UID=$(id -u) -e HOST_GID=$(id -g) \
 #           -e B2_APPLICATION_KEY_ID -e B2_APPLICATION_KEY \

@@ -438,6 +438,7 @@ make help                     # Show all targets
 | File type | Linter |
 |-----------|--------|
 | Bash | shellcheck |
+| Bash 3.2 compat | lint-bash32-compat.sh |
 | PowerShell | py-psscriptanalyzer |
 | Dockerfile | hadolint |
 | Makefile | checkmake |

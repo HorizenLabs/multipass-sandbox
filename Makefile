@@ -45,18 +45,18 @@ PS_SCRIPTS      := $(shell find . -name '*.ps1' 2>/dev/null)
 YAML_FILES      := $(shell find templates/ images/layers/ .github/ISSUE_TEMPLATE/ -name '*.yaml' -o -name '*.yml' 2>/dev/null)
 HCL_FILES       := $(shell find images/ -name '*.pkr.hcl' 2>/dev/null)
 GHA_FILES       := $(shell find .github/workflows/ -name '*.yml' -o -name '*.yaml' 2>/dev/null)
-DOCKERFILES     := Dockerfile.builder Dockerfile.linter Dockerfile.publisher Dockerfile.bash32
+DOCKERFILES     := docker/Dockerfile.builder docker/Dockerfile.linter docker/Dockerfile.publisher docker/Dockerfile.bash32
 
 STAMP_DIR := .stamps
 
 BUILDER_STAMP := $(STAMP_DIR)/builder
-BUILDER_DEPS  := Dockerfile.builder docker/entrypoint.sh
+BUILDER_DEPS  := docker/Dockerfile.builder docker/entrypoint.sh
 
 LINTER_STAMP := $(STAMP_DIR)/linter
-LINTER_DEPS  := Dockerfile.linter docker/entrypoint.sh docker/lint-bash32-compat.sh $(wildcard docker/bash-3.2/*)
+LINTER_DEPS  := docker/Dockerfile.linter docker/entrypoint.sh docker/lint-bash32-compat.sh $(wildcard docker/bash-3.2/*)
 
 PUBLISHER_STAMP := $(STAMP_DIR)/publisher
-PUBLISHER_DEPS  := Dockerfile.publisher docker/entrypoint.sh
+PUBLISHER_DEPS  := docker/Dockerfile.publisher docker/entrypoint.sh
 
 # Common deps shared by all image builds
 IMAGE_COMMON_DEPS := images/packer.pkr.hcl images/packer-user-data.pkrtpl.hcl \
@@ -122,19 +122,19 @@ help: ## Show this help
 build-docker-builder: $(BUILDER_STAMP) ## Build the mps-builder Docker image
 
 $(BUILDER_STAMP): $(BUILDER_DEPS) | $(STAMP_DIR)
-	docker build --progress plain -f Dockerfile.builder -t $(BUILDER_IMAGE):$(BUILDER_TAG) .
+	docker build --progress plain -f docker/Dockerfile.builder -t $(BUILDER_IMAGE):$(BUILDER_TAG) .
 	@touch $@
 
 build-docker-linter: $(LINTER_STAMP) ## Build the mps-linter Docker image
 
 $(LINTER_STAMP): $(LINTER_DEPS) | $(STAMP_DIR)
-	docker build --progress plain -f Dockerfile.linter -t $(LINTER_IMAGE):$(LINTER_TAG) .
+	docker build --progress plain -f docker/Dockerfile.linter -t $(LINTER_IMAGE):$(LINTER_TAG) .
 	@touch $@
 
 build-docker-publisher: $(PUBLISHER_STAMP) ## Build the mps-publisher Docker image
 
 $(PUBLISHER_STAMP): $(PUBLISHER_DEPS) | $(STAMP_DIR)
-	docker build --progress plain -f Dockerfile.publisher -t $(PUBLISHER_IMAGE):$(PUBLISHER_TAG) .
+	docker build --progress plain -f docker/Dockerfile.publisher -t $(PUBLISHER_IMAGE):$(PUBLISHER_TAG) .
 	@touch $@
 
 # ---------- Bash 3.2 binary (for compat lint) ----------
@@ -144,8 +144,8 @@ BASH32_BIN   := docker/bash-3.2/bash-3.2.57-linux-$(BASH32_ARCH)
 
 build-bash32: $(BASH32_BIN) ## Build Bash 3.2.57 binary for compat linting
 
-$(BASH32_BIN): Dockerfile.bash32
-	docker build --progress plain -f Dockerfile.bash32 -t $(BASH32_IMAGE) .
+$(BASH32_BIN): docker/Dockerfile.bash32
+	docker build --progress plain -f docker/Dockerfile.bash32 -t $(BASH32_IMAGE) .
 	@mkdir -p docker/bash-3.2
 	@cid=$$(docker create $(BASH32_IMAGE)) && docker cp "$$cid":/bash-3.2 $@ && docker rm "$$cid" >/dev/null
 	@chmod +x $@

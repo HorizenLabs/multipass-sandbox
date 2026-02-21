@@ -1,7 +1,7 @@
 # Multi Pass Sandbox (mps) — Linter Image
 # Contains lint and test tools. No QEMU or b2 (those are in Dockerfile.builder).
 #
-# Build:  docker build -f Dockerfile.linter -t mps-linter .
+# Build:  docker build -f docker/Dockerfile.linter -t mps-linter .
 # Usage:  docker run --rm -v "$PWD:/workdir" -e HOST_UID=$(id -u) -e HOST_GID=$(id -g) mps-linter <command>
 
 FROM ubuntu:25.10
