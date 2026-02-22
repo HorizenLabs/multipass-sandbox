@@ -17,6 +17,106 @@
 #   --append                Write config to ~/.ssh/config.d/mps-<name>
 #   --help, -h              Show this help
 
+# ---------- SSH Key Helpers ----------
+# These functions are exclusive to ssh-config; kept here to reduce lib/common.sh size.
+
+# Resolve SSH public key path.
+# Priority: explicit path > MPS_SSH_KEY config > ~/.ssh/ auto-detect
+# If given a private key path (no .pub), appends .pub.
+_ssh_config_resolve_pubkey() {
+    local explicit_path="${1:-${MPS_SSH_KEY:-}}"
+
+    if [[ -n "$explicit_path" ]]; then
+        # If user gave a private key path, derive the pubkey path
+        if [[ "$explicit_path" != *.pub ]]; then
+            explicit_path="${explicit_path}.pub"
+        fi
+        if [[ -f "$explicit_path" ]]; then
+            echo "$explicit_path"
+            return
+        fi
+        mps_die "SSH public key not found: ${explicit_path}"
+    fi
+
+    # Auto-detect from ~/.ssh/
+    local key_name
+    for key_name in id_ed25519.pub id_ecdsa.pub id_rsa.pub; do
+        if [[ -f "${HOME}/.ssh/${key_name}" ]]; then
+            echo "${HOME}/.ssh/${key_name}"
+            return
+        fi
+    done
+
+    mps_die "No SSH key found. Provide one with --ssh-key <path>, set MPS_SSH_KEY in config, or generate a key with: ssh-keygen -t ed25519"
+}
+
+# Inject SSH public key into a running instance.
+# Checks instance metadata to avoid re-injection.
+# Writes MPS_SSH_KEY and MPS_SSH_INJECTED=true to metadata.
+_ssh_config_inject_key() {
+    local instance_name="$1"
+    local short_name="$2"
+    local pubkey_path="$3"
+    local privkey_path="$4"
+
+    # Check if already injected
+    local meta_file
+    meta_file="$(mps_instance_meta "$short_name")"
+    if [[ -f "$meta_file" ]]; then
+        local injected=""
+        injected="$(_mps_read_meta_json "$meta_file" '.ssh.injected')"
+        if [[ "$injected" == "true" ]]; then
+            mps_log_debug "SSH key already injected for '${short_name}'"
+            return 0
+        fi
+    fi
+
+    mps_log_info "Injecting SSH key into '${short_name}'..."
+
+    # Transfer public key file into the instance, then append to authorized_keys.
+    # Using multipass transfer avoids shell-interpolation risks with inline echo.
+    # Create temp file inside VM with mktemp (unpredictable name).
+    local tmp_dest
+    tmp_dest="$(multipass exec "$instance_name" -- mktemp /tmp/mps_pubkey_XXXXXXXX.pub)"
+    if ! multipass transfer "$pubkey_path" "${instance_name}:${tmp_dest}"; then
+        mps_die "Failed to transfer SSH public key to '${short_name}'"
+    fi
+    if ! multipass exec "$instance_name" -- bash -c \
+        "mkdir -p ~/.ssh && chmod 700 ~/.ssh && cat '${tmp_dest}' >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys && rm -f '${tmp_dest}'"; then
+        mps_die "Failed to inject SSH key into '${short_name}'"
+    fi
+
+    # Record in instance metadata via jq read-modify-write
+    if [[ -f "$meta_file" ]]; then
+        local updated
+        updated="$(jq --arg k "$privkey_path" '.ssh = {"key": $k, "injected": true}' "$meta_file")"
+        _mps_write_json "$meta_file" "$updated"
+    fi
+
+    mps_log_info "SSH key injected."
+}
+
+# Orchestrator: resolve key, inject if needed, return private key path.
+_ssh_config_ensure_key() {
+    local instance_name="$1"
+    local short_name="$2"
+    local ssh_key_arg="${3:-}"
+
+    local pubkey_path privkey_path
+    pubkey_path="$(_ssh_config_resolve_pubkey "$ssh_key_arg")" || exit 1
+    privkey_path="${pubkey_path%.pub}"
+
+    if [[ ! -f "$privkey_path" ]]; then
+        mps_die "SSH private key not found: ${privkey_path} (derived from ${pubkey_path})"
+    fi
+
+    _ssh_config_inject_key "$instance_name" "$short_name" "$pubkey_path" "$privkey_path"
+
+    echo "$privkey_path"
+}
+
+# ---------- Command ----------
+
 cmd_ssh_config() {
     local arg_name=""
     local arg_print=false
@@ -73,7 +173,7 @@ cmd_ssh_config() {
 
     # ---- Resolve key, inject into VM, get private key path ----
     local ssh_key
-    ssh_key="$(mps_ensure_ssh_key "$instance_name" "$short_name" "$arg_ssh_key")"
+    ssh_key="$(_ssh_config_ensure_key "$instance_name" "$short_name" "$arg_ssh_key")"
 
     # ---- Get IP ----
     local ssh_ip

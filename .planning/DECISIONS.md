@@ -48,7 +48,6 @@ Build artifacts: `images/artifacts/mps-<flavor>-<arch>.qcow2.img` (`.qcow2.img` 
 Backblaze B2 for storage, Cloudflare proxy for public serving. Files at bucket root (no path prefix).
 
 - `MPS_IMAGE_BASE_URL` — public Cloudflare-proxied URL (maps 1:1 to bucket root)
-- `MPS_B2_BUCKET` — B2 bucket name (for publish scripts)
 - Manifest: stored in B2 (seeded inline on first publish), SemVer versions + `latest` pointer per image
 - Architecture-aware: separate `amd64`/`arm64` images per version
 - SHA256 checksums verified on pull; local cache at `~/.mps/cache/images/`
@@ -95,10 +94,6 @@ Non-OS dependencies installed with integrity verification where possible.
 
 Cloud-init layers: yq (rhash checksums), hadolint (.sha256 sidecar), cosign (cosign_checksums.txt), Echidna (sigstore bundle via cosign), shellcheck (no checksums published).
 
-## Linting Notes
-
-Linter-to-file mapping is in CLAUDE.md "Workflow" section. Additional note: command files use `# shellcheck disable=SC2154` at file-level — they're sourced by `bin/mps` which provides color variables from `lib/common.sh`.
-
 ## Build System Stamp Files
 
 `.stamps/` directory tracks Docker image build state in Make.
@@ -107,14 +102,6 @@ Linter-to-file mapping is in CLAUDE.md "Workflow" section. Additional note: comm
 - `.stamps/image-<flavor>-amd64` — depend on builder stamp + common image deps + per-flavor layer file + parent flavor stamp (non-base only, layered chain)
 - `.stamps/image-<flavor>-arm64` — depend on builder stamp + common image deps + cumulative layer files (from-scratch, no parent stamp dep)
 - `make clean` removes stamp files; `.stamps/` is in `.gitignore`
-
-## File Transfer
-
-Colon-prefix convention for guest paths in `mps transfer` (`:` prefix = guest path). Supports host→guest (multiple sources), guest→host (single source — multipass limitation). `--transfer` on `mps create` seeds files after VM creation.
-
-## Local Image Support
-
-Explicit import via `mps image import <file>`. Cache at `~/.mps/cache/images/<name>/<tag>/<arch>.img` with `.meta.json` sidecar (JSON, read via `jq`). Pulled images save the remote `.meta.json` verbatim; imported images generate minimal JSON (`sha256` + manifest metadata if name matches a known flavor). Source is inferred from `build_date` presence (pulled has it, imported doesn't). File mtime of local `.meta.json` enables HEAD `If-Modified-Since` staleness checks against the remote sidecar. Name/arch auto-detected from filename. `mps_resolve_image()` checks cache first, falls through to `multipass launch` for Ubuntu versions.
 
 ## SSH Key Management
 

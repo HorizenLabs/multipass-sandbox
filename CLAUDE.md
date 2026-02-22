@@ -84,7 +84,6 @@ Internal CLI tool for spinning up isolated VM-based development environments usi
   - `${var@operator}` (parameter transforms) — use `printf '%q'` or equivalent
   - `wait -n` — use explicit PID tracking with `wait $pid`
 - **Safe `rm -rf`**: Any `rm -rf` (or `rm -r`) that uses a variable **must** guard with `${var:?}` — e.g., `rm -rf "${dir:?}"`. Prevents catastrophic deletion if the variable is unexpectedly empty. Literal paths (e.g., `rm -rf /tmp/*`) do not need the guard.
-- **SHA256 sidecar parsing**: Packer generates `.sha256` files with **tab** delimiters (not spaces). Always use `awk '{print $1}'` instead of `cut -d' ' -f1` when reading the hash — `awk` splits on any whitespace.
 - **Windows/PowerShell**: Deferred to a future phase. `install.ps1` exists as a placeholder.
 - **CI/local parity**: All CI operations (except GitHub-specific actions like creating releases) must be runnable locally via `make` targets. The pattern is: shell script with the logic → Makefile target wrapping it in `docker run` → CI workflow calls `make`. Keep inline shell in YAML to an absolute minimum (env setup, conditionals); never put business logic there.
 

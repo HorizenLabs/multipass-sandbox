@@ -18,7 +18,7 @@ set -euo pipefail
 # Environment:
 #   B2_APPLICATION_KEY_ID — B2 application key ID (required)
 #   B2_APPLICATION_KEY    — B2 application key (required)
-#   MPS_B2_BUCKET         — B2 bucket name (default: from config/defaults.env)
+#   MPS_B2_BUCKET         — B2 bucket name (default: mpsandbox)
 #   CF_ZONE_ID            — Cloudflare zone ID (optional, for cache purge)
 #   CF_API_TOKEN          — Cloudflare API token (optional, for cache purge)
 
