@@ -1135,9 +1135,10 @@ _mps_cli_update_warn() {
         return 0
     fi
 
-    # merge-base failed — could be missing object or actual mismatch.
-    # Only warn if the object actually exists locally (avoids false positives on shallow clones).
-    if ! git -C "$MPS_ROOT" cat-file -e "$remote_sha" 2>/dev/null; then
+    # merge-base failed — either the object is missing locally (user hasn't
+    # pulled the release commit yet) or it exists but isn't an ancestor of HEAD.
+    # Both mean the user is behind; only suppress for non-git installs.
+    if ! git -C "$MPS_ROOT" rev-parse --git-dir >/dev/null 2>&1; then
         return 0
     fi
 
