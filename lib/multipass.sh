@@ -16,6 +16,8 @@ mp_launch() {
     shift 6 || true
     # Remaining args are extra flags (--mount, etc.)
     local -a extra_args=("$@")
+    local _display
+    _display="$(mps_short_name "$instance_name")"
 
     local -a cmd=(multipass launch "$image"
         --name "$instance_name"
@@ -31,55 +33,61 @@ mp_launch() {
 
     cmd+=(${extra_args[@]+"${extra_args[@]}"})
 
-    mps_log_info "Launching instance '$instance_name' (image=$image, vcpus=$cpus, mem=$memory, disk=$disk)..."
+    mps_log_info "Launching instance '${_display}' (image=$image, vcpus=$cpus, mem=$memory, disk=$disk)..."
     mps_log_debug "Running: ${cmd[*]}"
 
     if ! ${cmd[@]+"${cmd[@]}"}; then
-        mps_die "Failed to launch instance '$instance_name'"
+        mps_die "Failed to launch instance '${_display}'"
     fi
 
-    mps_log_info "Instance '$instance_name' launched successfully."
+    mps_log_info "Instance '${_display}' launched successfully."
 }
 
 mp_start() {
     local instance_name="$1"
-    mps_log_info "Starting instance '$instance_name'..."
+    local _display
+    _display="$(mps_short_name "$instance_name")"
+    mps_log_info "Starting instance '${_display}'..."
     if ! multipass start "$instance_name"; then
-        mps_die "Failed to start instance '$instance_name'"
+        mps_die "Failed to start instance '${_display}'"
     fi
-    mps_log_info "Instance '$instance_name' started."
+    mps_log_info "Instance '${_display}' started."
 }
 
 mp_stop() {
     local instance_name="$1"
     local force="${2:-false}"
+    local _display
+    _display="$(mps_short_name "$instance_name")"
 
     local -a cmd=(multipass stop "$instance_name")
     if [[ "$force" == "true" ]]; then
         cmd+=(--force)
     fi
 
-    mps_log_info "Stopping instance '$instance_name'..."
+    mps_log_info "Stopping instance '${_display}'..."
     if ! ${cmd[@]+"${cmd[@]}"}; then
-        mps_die "Failed to stop instance '$instance_name'"
+        mps_die "Failed to stop instance '${_display}'"
     fi
-    mps_log_info "Instance '$instance_name' stopped."
+    mps_log_info "Instance '${_display}' stopped."
 }
 
 mp_delete() {
     local instance_name="$1"
     local purge="${2:-true}"
+    local _display
+    _display="$(mps_short_name "$instance_name")"
 
     local -a cmd=(multipass delete "$instance_name")
     if [[ "$purge" == "true" ]]; then
         cmd+=(--purge)
     fi
 
-    mps_log_info "Deleting instance '$instance_name'..."
+    mps_log_info "Deleting instance '${_display}'..."
     if ! ${cmd[@]+"${cmd[@]}"}; then
-        mps_die "Failed to delete instance '$instance_name'"
+        mps_die "Failed to delete instance '${_display}'"
     fi
-    mps_log_info "Instance '$instance_name' deleted."
+    mps_log_info "Instance '${_display}' deleted."
 }
 
 # ---------- Execution ----------
@@ -121,9 +129,11 @@ mp_shell() {
 
 mp_info() {
     local instance_name="$1"
+    local _display
+    _display="$(mps_short_name "$instance_name")"
     local raw
     raw="$(multipass info "$instance_name" --format json 2>/dev/null)" || {
-        mps_die "Failed to get info for instance '$instance_name'. Is it running?"
+        mps_die "Failed to get info for instance '${_display}'. Is it running?"
     }
     echo "$raw"
 }
@@ -142,15 +152,6 @@ mp_state() {
 mp_ipv4() {
     local instance_name="$1"
     mp_info_field "$instance_name" "ipv4[0]"
-}
-
-mp_list() {
-    local prefix="${MPS_INSTANCE_PREFIX:-mps}"
-    local raw
-    raw="$(multipass list --format json 2>/dev/null)" || {
-        mps_die "Failed to list instances."
-    }
-    echo "$raw" | jq -r ".list[] | select(.name | startswith(\"${prefix}-\"))"
 }
 
 mp_list_all() {
@@ -178,10 +179,12 @@ mp_mount() {
     local source="$1"
     local instance_name="$2"
     local target="$3"
+    local _display
+    _display="$(mps_short_name "$instance_name")"
 
-    mps_log_info "Mounting '$source' → '${instance_name}:${target}'..."
+    mps_log_info "Mounting '$source' → '${_display}:${target}'..."
     if ! multipass mount "$source" "${instance_name}:${target}"; then
-        mps_log_warn "Failed to mount '$source' to '${instance_name}:${target}'"
+        mps_log_warn "Failed to mount '$source' to '${_display}:${target}'"
         return 1
     fi
 }
@@ -189,9 +192,24 @@ mp_mount() {
 mp_umount() {
     local instance_name="$1"
     local target="$2"
+    local _display
+    _display="$(mps_short_name "$instance_name")"
 
-    mps_log_info "Unmounting '${instance_name}:${target}'..."
+    mps_log_info "Unmounting '${_display}:${target}'..."
     multipass umount "${instance_name}:${target}" 2>/dev/null || true
+}
+
+# Get mounts JSON object for an instance.  Returns empty string if no mounts
+# (normalises "null", "{}", and empty).  Caller checks [[ -n "$result" ]].
+mp_get_mounts() {
+    local instance_name="$1"
+    local raw
+    raw="$(mp_info "$instance_name" 2>/dev/null | jq -r ".info[\"${instance_name}\"].mounts // empty" 2>/dev/null)" || true
+    if [[ -z "$raw" || "$raw" == "null" || "$raw" == "{}" ]]; then
+        echo ""
+        return 0
+    fi
+    echo "$raw"
 }
 
 # ---------- File Transfer ----------
@@ -208,41 +226,19 @@ mp_transfer() {
 
 # ---------- SSH ----------
 
-mp_ssh_info() {
-    local instance_name="$1"
-    local ip
-    ip="$(mp_ipv4 "$instance_name")"
-
-    if [[ -z "$ip" ]]; then
-        mps_die "Cannot determine IP for instance '$instance_name'"
-    fi
-
-    # Read SSH key from instance metadata (set by mps ssh-config)
-    local short_name
-    short_name="$(mps_short_name "$instance_name")"
-    local ssh_key=""
-    local meta_file
-    meta_file="$(mps_instance_meta "$short_name")"
-    if [[ -f "$meta_file" ]]; then
-        ssh_key="$(_mps_read_meta_key "$meta_file" "MPS_SSH_KEY")"
-    fi
-
-    echo "IP=$ip"
-    echo "SSH_KEY=$ssh_key"
-    echo "USER=ubuntu"
-}
-
 # ---------- Cloud-init Wait ----------
 
 mp_wait_cloud_init() {
     local instance_name="$1"
     local timeout="${2:-600}"
+    local _display
+    _display="$(mps_short_name "$instance_name")"
 
     mps_log_info "Waiting for cloud-init to complete (timeout: ${timeout}s)..."
     if ! multipass exec "$instance_name" -- cloud-init status --wait 2>/dev/null; then
-        mps_log_warn "cloud-init may not have completed cleanly on '$instance_name'"
+        mps_log_warn "cloud-init may not have completed cleanly on '${_display}'"
     fi
-    mps_log_info "Cloud-init finished on '$instance_name'."
+    mps_log_info "Cloud-init finished on '${_display}'."
 }
 
 # ---------- Docker Health Check ----------

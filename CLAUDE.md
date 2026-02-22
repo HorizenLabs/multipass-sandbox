@@ -18,37 +18,26 @@ Internal CLI tool for spinning up isolated VM-based development environments usi
 - `bin/mps` — Main entry point, subcommand dispatch
 - `lib/common.sh` — Logging, config cascade, path conversion, mount resolution, auto-naming, auto-scaling resources
 - `lib/multipass.sh` — Thin wrappers around `multipass` CLI with `--format json` + `jq`
-- `commands/*.sh` — One file per subcommand, each exports `cmd_<name>()` function
+- `commands/*.sh` — One file per subcommand (create, up, down, destroy, shell, exec, list, status, ssh-config, image, mount, port, transfer), each exports `cmd_<name>()` function
 - `templates/cloud-init/` — Minimal cloud-init templates for VM launch customization
 - `images/layers/` — Composable cloud-init layer files (base, protocol-dev, smart-contract-dev, smart-contract-audit)
 - `images/build.sh` — Image build script (takes flavor arg, merges layers with yq)
-- `images/packer.pkr.hcl` — Packer template (shared across all flavors)
-- `images/packer-user-data.pkrtpl.hcl` — Packer user-data template (cloud-init wrapper for builds)
-- `images/arch-config.sh` — Per-arch Packer variable resolution (KVM vs TCG, EFI firmware, CPU/memory auto-detect)
-- `images/artifacts/` — Built QCOW2 images (gitignored)
-- `images/scripts/post-provision.sh` — Post-build cleanup (runs after cloud-init)
-- `images/lib/publish-common.sh` — Shared helpers for publish, update-manifest, and generate-index scripts
-- `images/publish.sh` — Upload images + `.meta.json` sidecars to B2 (`--upload-only` for CI, default includes manifest update)
-- `images/update-manifest.sh` — Fan-in manifest update: downloads `.meta.json` sidecars from B2, single manifest write
-- `images/generate-index.sh` — Generate autoindex HTML pages from manifest and upload to B2
-- `images/publish-release-meta.sh` — Publish `mps-release.json` to B2 (CLI update check metadata)
+- `images/packer.pkr.hcl`, `packer-user-data.pkrtpl.hcl`, `arch-config.sh` — Packer build config (template, cloud-init wrapper, per-arch variable resolution)
+- `images/publish.sh`, `update-manifest.sh`, `generate-index.sh`, `publish-release-meta.sh` — B2 publish pipeline (`lib/publish-common.sh` for shared helpers)
+- `images/artifacts/` — Built QCOW2 images (gitignored); `images/scripts/post-provision.sh` — post-build cleanup
 - `templates/profiles/` — Resource profiles (micro, lite, standard, heavy) with auto-scaling CPU/memory
 - `VERSION` — Tool version (SemVer), read by `bin/mps` at startup
 - `config/defaults.env` — Shipped defaults
-- `docker/Dockerfile.builder` + `docker/entrypoint.sh` — Builder image (Packer, QEMU — no B2 credentials)
-- `docker/Dockerfile.linter` — Linter/test image (shellcheck, hadolint, BATS, PSScriptAnalyzer, yamllint, etc.)
-- `docker/Dockerfile.publisher` — Publisher image (b2, jq, yq — credential-isolated from builder)
-- `docker/Dockerfile.bash32` — Bash 3.2.57 builder for compatibility linting
-- `docker/lint-bash32-compat.sh` — Bash 3.2 compatibility linter script
-- `docker/bash-3.2/` — Pre-built Bash 3.2.57 binaries (per-arch, cached for linter image)
+- `docker/Dockerfile.{builder,linter,publisher,bash32}` + `entrypoint.sh` — Container images (builder: Packer/QEMU, linter: shellcheck/hadolint/BATS/etc., publisher: b2/jq/yq, bash32: Bash 3.2.57)
+- `docker/lint-bash32-compat.sh`, `docker/bash-3.2/` — Bash 3.2 compatibility linter and pre-built binaries
 - `Makefile` — All targets run inside Docker containers via `docker run`
-- `install.sh` — Installer script (macOS/Linux)
-- `uninstall.sh` — Uninstaller (removes symlink, VMs, caches, configs)
+- `install.sh`, `uninstall.sh` — Installer and uninstaller (macOS/Linux)
 - `checkmake.ini`, `.yamllint`, `.github/actionlint.yaml` — Linter configuration files
 - `CODEOWNERS` — GitHub code ownership for PR review routing
 - `.github/workflows/` — GitHub Actions CI/CD pipelines (ci, images, release, update-submodule)
 - `.github/actions/verify-gpg-tag/` — Composite action for GPG tag signature verification
 - `vendor/hl-claude-marketplace` — Git submodule: private Claude Code plugin marketplace (relative URL)
+- `.claude/skills/` — Claude Code skills (`audit-docs`: doc staleness audit, `init-template`: cloud-init template generator)
 - `.planning/` — Implementation plan, architecture decisions, CI design, status tracking
 
 ## Commands
@@ -58,16 +47,17 @@ Internal CLI tool for spinning up isolated VM-based development environments usi
 - `mps list` / `mps status` — List all / detailed info
 - `mps ssh-config` — Generate SSH config for VS Code (also injects SSH keys)
 - `mps image [list|pull|import|remove]` — Manage pre-built QCOW2 images
+- `mps mount [add|remove|list]` — Manage mounts (origin tracking: auto/config/adhoc)
 - `mps port [forward|list]` — SSH port forwarding
 - `mps transfer` — File copy between host and guest (`:` prefix = guest path)
 
 ## Key Conventions
 
-- **Auto-naming**: `mps-<folder-basename>-<template>-<profile>` (e.g., `mps-myproject-default-lite`)
+- **Auto-naming**: `mps-<folder-basename>-<template>` (e.g., `mps-myproject-default`)
   - Override with `--name` flag or `MPS_NAME` in `.mps.env`
   - Long names truncated with short hash suffix (max 40 chars for Multipass)
   - `--no-mount` without `--name` errors (can't derive folder name)
-- Config cascade: `config/defaults.env` → `~/.mps/config` → `.mps.env` → profile → auto-scaling → CLI flags. Key config keys: `MPS_CHECK_UPDATES` (CLI update check, default true), `MPS_IMAGE_CHECK_UPDATES` (image staleness check, default true).
+- Config cascade: `config/defaults.env` → `~/.mps/config` → `.mps.env` → profile → auto-scaling → CLI flags. No `ENV_VAR=x mps cmd` overrides — use `~/.mps/config` or `.mps.env` to test config knobs. Key config keys: `MPS_CHECK_UPDATES` (CLI update check, default true), `MPS_IMAGE_CHECK_UPDATES` (image and instance staleness checks, default true), `MPS_PORTS` (space-separated `host:guest` pairs, auto-forwarded on up/create).
 - **Default profile**: `lite` (auto-scales CPU/memory from host hardware fractions with min/cap)
 - **Profiles**: micro (1/8 CPU, 1/16 mem), lite (1/4, 1/6), standard (1/3, 1/4), heavy (1/2, 1/3)
 - **Image metadata**: `x-mps:` blocks in layer YAMLs define disk_size, min_profile, min_disk/memory/cpus
@@ -75,8 +65,6 @@ Internal CLI tool for spinning up isolated VM-based development environments usi
 - Default mount: host CWD → guest at same absolute path (read-write)
 - `MPS_MOUNTS` is additive (on top of auto-mount), `MPS_NO_AUTOMOUNT=true` to opt out
 - `mps shell`/`mps exec` auto-set workdir to the mounted project path
-- Commands use `while/case/shift` arg parsing, private `_<cmd>_usage()` helpers
-- Color output uses `$'\033[...]'` ANSI-C quoting (not double-quoted `\033`)
 - **Cross-platform**: Scripts in `bin/`, `commands/`, `lib/`, `config/`, `install.sh`, and `uninstall.sh` must work on both GNU/Linux and BSD/macOS, targeting Bash 3.2+ (macOS default). Scripts in `images/` run inside Docker and may use GNU-only tools. Banned Bash 4+ features in client scripts:
   - `${var,,}` / `${var^^}` / `${var,}` / `${var^}` — use `tr '[:upper:]' '[:lower:]'` or `tr '[:lower:]' '[:upper:]'`
   - `declare -A` / `local -A` (associative arrays) — use delimited strings with `case` pattern matching
@@ -97,7 +85,6 @@ Internal CLI tool for spinning up isolated VM-based development environments usi
   - `${var@operator}` (parameter transforms) — use `printf '%q'` or equivalent
   - `wait -n` — use explicit PID tracking with `wait $pid`
 - **Safe `rm -rf`**: Any `rm -rf` (or `rm -r`) that uses a variable **must** guard with `${var:?}` — e.g., `rm -rf "${dir:?}"`. Prevents catastrophic deletion if the variable is unexpectedly empty. Literal paths (e.g., `rm -rf /tmp/*`) do not need the guard.
-- **SHA256 sidecar parsing**: Packer generates `.sha256` files with **tab** delimiters (not spaces). Always use `awk '{print $1}'` instead of `cut -d' ' -f1` when reading the hash — `awk` splits on any whitespace.
 - **Windows/PowerShell**: Deferred to a future phase. `install.ps1` exists as a placeholder.
 - **CI/local parity**: All CI operations (except GitHub-specific actions like creating releases) must be runnable locally via `make` targets. The pattern is: shell script with the logic → Makefile target wrapping it in `docker run` → CI workflow calls `make`. Keep inline shell in YAML to an absolute minimum (env setup, conditionals); never put business logic there.
 
@@ -142,11 +129,7 @@ The Makefile detects host uid:gid and the entrypoint uses setpriv to step down f
   - **Patch** (`1.0.0` → `1.0.1`): Tool version updates, minor config tweaks in layers
   - **Minor** (`1.0.0` → `1.1.0`): New tool added to a layer
   - **Major** (`1.0.0` → `2.0.0`): Breaking changes (Ubuntu version bump, tool removed, major restructure)
-- **Publishing** uses a fan-in pattern for CI, with a dedicated publisher container (credential-isolated from the builder). B2 credentials (`B2_APPLICATION_KEY_ID`, `B2_APPLICATION_KEY`) are passed as env vars at runtime. Old image file versions in B2 are cleaned up; manifest versions are kept for audit trail.
-  - Each image upload produces a `.meta.json` sidecar (sha256, build_date, file_size, x-mps metadata) uploaded atomically alongside the image. Clients fetch `.meta.json` for immediate SHA256 verification without waiting for manifest.
-  - **CI flow**: Runners call `publish.sh --upload-only` to upload images + `.sha256` + `.meta.json` sidecars to B2, then purge CF cache for those files. A fan-in job runs `update-manifest.sh` which downloads `.meta.json` sidecars from B2 and performs a single manifest read-modify-write. Zero race window.
-  - **Local flow**: `publish.sh` (no flag) does upload + manifest update in one shot, same as before.
-  - **Manifest v2**: `schema_version: 2`, `generated_at` timestamp. No `url` field in arch entries (URLs are deterministic: `<name>/<version>/<arch>.img`). Empty v2 manifest is seeded automatically on first publish.
+- **Publishing** uses a fan-in pattern for CI with credential-isolated publisher container — see DECISIONS.md "Image Distribution" for CI/local flow details.
 - **CLI update metadata**: `mps-release.json` published to CDN root (`mpsandbox.horizenlabs.io/mps-release.json`) by `release.yml`. Contains `version`, `tag`, `commit_sha`. Clients check at most once per 24h via `_mps_check_cli_update()` in `lib/common.sh`.
 
 ## Workflow
@@ -163,6 +146,10 @@ The Makefile detects host uid:gid and the entrypoint uses setpriv to step down f
 - Linting requires Docker. The linter image is built automatically if missing (`make lint` depends on the stamp file).
 - Fix all lint errors before committing — do not bypass with `--no-verify` or inline disables unless there is a documented reason.
 - **checkmake quirks**: `minphony` only parses the first line of `.PHONY` declarations — keep `test` and `clean` on the first line. `maxbodylength` default max is 15 lines per target body (configured in `checkmake.ini`).
+- **Local verification**: `multipass` and `jq` are installed on the dev machine — run `mps` commands directly to verify changes.
+- **Snap confinement**: Multipass is installed as a snap, which restricts file access to the user's home directory. Use paths under `$HOME` (not `/tmp`) for `mps transfer` tests and temp files that interact with the VM.
+- **End-to-end verification**: After implementing changes to command files (`commands/*.sh`) or core libraries (`lib/*.sh`), run the verification steps from the plan against a live VM on the host — not just `make lint`. If the plan includes a test script, execute it. Create a temporary instance (e.g., `--profile micro --name <test-name>`) and clean it up with `mps destroy` afterward.
+- **Automated verification in plans**: Plans must always include an automated verification script — never manual testing steps. The script should create temporary instances, assert expected behavior, and clean up afterward.
 
 ## Planning & Status
 

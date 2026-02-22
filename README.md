@@ -6,6 +6,12 @@
 
 Isolated VM-based development environments powered by [Multipass](https://multipass.run/). Spin up full Linux VMs with Docker, language runtimes, and dev tools pre-configured — stronger isolation than containers alone.
 
+---
+
+[Quick Start](#quick-start) | [Requirements](#requirements) | [Installation](#installation) | [Commands](#commands) | [Auto-Naming](#auto-naming) | [Mounting](#mounting) | [File Transfer](#file-transfer) | [Configuration](#configuration) | [Profiles](#profiles) | [Cloud-init Templates](#cloud-init-templates) | [Image Flavors](#image-flavors) | [SSH & Port Forwarding](#advanced-ssh--port-forwarding) | [Pre-built Images](#pre-built-images) | [Development](#development)
+
+---
+
 ## Quick Start
 
 ```bash
@@ -68,32 +74,33 @@ make uninstall
 | Command | Description |
 |---------|-------------|
 | `mps create [path] [flags]` | Create a new sandbox |
-| `mps up [path] [flags]` | Create (if needed) and start a sandbox |
-| `mps down [-f] [-n <name>]` | Stop a sandbox (`--force` for immediate shutdown) |
+| `mps up [path] [flags]` | Create (if needed) and start a sandbox; restores mounts and port forwards on restart |
+| `mps down [-f] [-n <name>]` | Stop a sandbox; cleans up port forwards and session-only mounts |
 | `mps destroy [-f] [-n <name>]` | Remove a sandbox permanently (`--force` skips confirmation) |
 | `mps shell [-n <name>] [-w <path>]` | Open an interactive shell |
 | `mps exec [-n <name>] [-w <path>] -- <cmd>` | Execute a command in a sandbox |
-| `mps transfer <src...> <dst>` | Transfer files or directories between host and sandbox |
+| `mps transfer [-n <name>] <src...> <dst>` | Transfer files or directories between host and sandbox |
 | `mps list [--json]` | List all sandboxes |
-| `mps status [-n <name>] [--json]` | Show detailed sandbox status |
-| `mps ssh-config [-n <name>]` | Generate SSH config for VS Code |
+| `mps status [-n <name>] [--json]` | Show detailed status (resources, image staleness, mounts, Docker) |
+| `mps ssh-config [-n <name>]` | Configure SSH access (inject key, generate config) |
 | `mps image <list\|pull\|import\|remove>` | Manage sandbox images |
+| `mps mount <add\|remove\|list>` | Manage mounts at runtime (origin tracking: auto/config/adhoc) |
 | `mps port <forward\|list>` | Manage port forwarding |
 
-Common flags across commands: `-n` (`--name`), `-f` (`--force`), `-w` (`--workdir`), `--mem` (`--memory`). `create`/`up` also accept `--transfer <host:guest>` (repeatable). Run `mps <command> --help` for detailed usage on any command.
+Common flags across commands: `-n` (`--name`), `-f` (`--force`), `-w` (`--workdir`), `--mem` (`--memory`). `create`/`up` also accept `--transfer <src:dst>` (repeatable). Run `mps <command> --help` for detailed usage on any command.
 
 ## Auto-Naming
 
-VMs are automatically named based on your project directory, cloud-init template, and profile:
+Sandboxes are automatically named based on your project directory and cloud-init template:
 
 ```
-mps-<folder>-<template>-<profile>
+<folder>-<template>
 ```
 
-For example, running `mps up` from `~/projects/myapp` produces `mps-myapp-default-lite`.
+For example, running `mps up` from `~/projects/myapp` produces `myapp-default`.
 
 - Override with `--name <name>` flag or `MPS_NAME` in `.mps.env`
-- Long names (>40 chars) are truncated with a short hash suffix for uniqueness
+- Long names are truncated with a short hash suffix for uniqueness
 - Commands that operate on existing instances auto-resolve the name from CWD
 
 ```bash
@@ -120,6 +127,22 @@ mps create --mount ./data:/home/ubuntu/data  # Extra mount (repeatable)
 ```
 
 Extra mounts from `MPS_MOUNTS` in `.mps.env` are additive (on top of the auto-mount). Set `MPS_NO_AUTOMOUNT=true` to disable the CWD auto-mount.
+
+### Runtime mount management
+
+Add or remove mounts on a running sandbox with `mps mount`. Each mount is tracked by origin:
+
+- **auto** — the CWD auto-mount (from `mps up`)
+- **config** — persistent mounts from `MPS_MOUNTS` in `.mps.env`
+- **adhoc** — session-only mounts added at runtime (removed automatically on `mps down`)
+
+```bash
+mps mount add ./data:/home/ubuntu/data       # Add a session-only mount
+mps mount list                                # Show mounts with origin
+mps mount remove /home/ubuntu/data            # Unmount
+```
+
+Persistent mounts (auto and config) are automatically restored when restarting a stopped sandbox with `mps up`.
 
 ## File Transfer
 
@@ -183,10 +206,10 @@ MPS_NO_AUTOMOUNT=false
 | `MPS_NO_AUTOMOUNT` | `false` | Disable automatic CWD mount |
 | `MPS_SSH_KEY` | (auto-detect) | SSH key path (auto-detect: ed25519 > ecdsa > rsa) |
 | `MPS_IMAGE_BASE_URL` | `https://mpsandbox.horizenlabs.io` | Image registry URL |
-| `MPS_IMAGE_CHECK_UPDATES` | `true` | Check for image updates on create/up |
+| `MPS_IMAGE_CHECK_UPDATES` | `true` | Check for image and instance staleness updates |
 | `MPS_INSTANCE_PREFIX` | `mps` | Prefix for auto-generated instance names |
+| `MPS_CHECK_UPDATES` | `true` | Check for CLI version updates (at most once per 24h) |
 | `MPS_DEBUG` | `false` | Enable debug logging (`--debug` flag) |
-| `MPS_B2_BUCKET` | `mpsandbox` | Backblaze B2 bucket (build/publish only) |
 
 ## Profiles
 
@@ -219,37 +242,47 @@ mps create --profile lite --cpus 4 --memory 4G   # Profile + overrides
 
 Cloud-init templates customize VMs **at launch time**, on top of pre-built images. This is how you install extra packages, enable plugins, write config files, or run setup scripts without rebuilding an image.
 
+Sandboxes are designed to be disposable — image staleness checks will regularly flag them for rebuild to pick up security patches and tool updates. Rather than manually installing dependencies inside a running sandbox (e.g., `mps shell` then `apt-get install ...`), define your project's setup in a cloud-init template or `.mps.env`. This way, `mps destroy && mps up` always gives you a fresh, correctly configured environment — and teammates get the same setup automatically.
+
 ### Using templates
 
 ```bash
 # Use the default template (enabled plugins, commented-out examples)
 mps create
 
-# Use a named template from templates/cloud-init/
+# Use a named template from templates/cloud-init/ or ~/.mps/cloud-init/
 mps create --cloud-init mytemplate
 
 # Use any file path directly
 mps create --cloud-init ./my-cloud-init.yaml
 
-# Set a default in .mps.env
-MPS_DEFAULT_CLOUD_INIT=mytemplate
+# Set a per-project default in .mps.env (name flows into auto-naming)
+MPS_CLOUD_INIT=.mps/dev.yaml
+
+# Set a personal default in ~/.mps/config
+MPS_DEFAULT_CLOUD_INIT=personal
 ```
+
+Named templates are resolved in order: `templates/cloud-init/` (project), then `~/.mps/cloud-init/` (personal).
 
 ### The default template
 
-The shipped `default` template (`templates/cloud-init/default.yaml`) enables HorizenLabs Claude Code marketplace plugins and includes commented-out examples for:
+The shipped `default` template (`templates/cloud-init/default.yaml`) enables HorizenLabs Claude Code marketplace plugins (`zkverify-product-ideation`, `zkverify-product-development`, `context-utils`) and includes commented-out examples for:
 
 - **Packages**: Install additional apt packages (`packages:` block)
 - **Run commands**: Execute scripts on first boot (`runcmd:` block)
 - **Write files**: Drop config files into the VM (`write_files:` block)
 - **Hostname / timezone**: Set VM hostname and timezone
-- **Claude Code plugins**: Enable plugin marketplaces (Trail of Bits, GSD, SuperClaude, Superpowers, BMAD, GitHub Spec Kit)
+- **Claude Code plugins**: Commented-out examples for Trail of Bits, GSD, SuperClaude, Superpowers, BMAD, GitHub Spec Kit (uncomment to enable)
 
 ### Creating custom templates
 
-Create a `#cloud-config` YAML file and either:
-1. Place it in `templates/cloud-init/` to reference by name (e.g., `mytemplate.yaml` → `--cloud-init mytemplate`)
-2. Pass any file path directly (e.g., `--cloud-init ~/configs/dev-setup.yaml`)
+Create a `#cloud-config` YAML file and place it in one of these locations:
+
+1. **Project-shared** (`<project>/.mps/<name>.yaml`): Checked into git, shared by the team. Set `MPS_CLOUD_INIT=.mps/<name>.yaml` in `.mps.env`. Use a descriptive name — it flows into auto-naming (e.g., `dev.yaml` → `myproject-dev`). The `.mps/` directory keeps MPS config out of the project root.
+2. **Personal** (`~/.mps/cloud-init/<name>.yaml`): Personal defaults, not in any repo. Reference by name (e.g., `--cloud-init personal`) or set `MPS_DEFAULT_CLOUD_INIT=<name>` in `~/.mps/config`.
+3. **MPS built-in** (`templates/cloud-init/<name>.yaml`): For templates shipped with MPS itself.
+4. **Any file path** (e.g., `--cloud-init ~/configs/dev-setup.yaml`)
 
 ```yaml
 #cloud-config
@@ -272,6 +305,17 @@ timezone: America/New_York
 ```
 
 These templates run on top of whatever image you're using. For the image build-time layers (what packages come pre-installed), see `images/layers/*.yaml`.
+
+### Creating templates with Claude Code
+
+The `/init-template` skill guides you through creating a cloud-init template interactively. It reads the default template, knows what's pre-installed in each image flavor, and generates valid YAML with the right config wiring.
+
+```bash
+# In Claude Code (from the mps repo), run:
+/init-template
+```
+
+The skill walks you through: scope (personal vs project), target image flavor, which plugins/frameworks to enable, extra packages, custom commands, and sandbox settings (`.mps.env`). It writes the template and config files for you.
 
 ## Image Flavors
 
@@ -337,7 +381,7 @@ mps ssh-config --append
 #    Add this line if not already present:
 #    Include config.d/*
 
-# 3. In VS Code: Cmd/Ctrl+Shift+P -> "Remote-SSH: Connect to Host" -> select mps-<name>
+# 3. In VS Code: Cmd/Ctrl+Shift+P -> "Remote-SSH: Connect to Host" -> select <name>
 ```
 
 The `--append` flag writes to `~/.ssh/config.d/<instance-name>`, which VS Code picks up automatically when your `~/.ssh/config` includes `config.d/*`. Use `--print` (the default) if you prefer to manage SSH config manually.
@@ -369,6 +413,8 @@ Forwards bind to `localhost` only — they are not exposed on external network i
 mps port forward --privileged mydev 80:80
 ```
 
+> **Note:** Auto-forwarding (via `MPS_PORTS` or `--port` metadata) skips privileged ports for safety — it never triggers a `sudo` prompt automatically. If you have privileged ports configured, `mps up` will warn and print the exact `mps port forward --privileged` command to run manually.
+
 Ports are automatically cleaned up on `mps down` and `mps destroy`.
 
 ## Pre-built Images
@@ -395,7 +441,7 @@ mps image remove base:1.0.0
 mps image remove --all
 ```
 
-Images are checked for updates automatically on `mps create` and `mps up`. Disable with `MPS_IMAGE_CHECK_UPDATES=false`.
+Images are checked for updates automatically on `mps create` and `mps up`. Running sandboxes are also checked for staleness (rebuilt image pulled, or newer version available locally) on `mps up`, `mps shell`, `mps exec`, `mps status`, `mps transfer`, and `mps ssh-config`. Disable all image/instance update checks with `MPS_IMAGE_CHECK_UPDATES=false`.
 
 ### Building Images Locally
 

@@ -123,17 +123,17 @@ cmd_create() {
     local effective_template="${arg_cloud_init:-${MPS_CLOUD_INIT:-${MPS_DEFAULT_CLOUD_INIT:-default}}}"
 
     # ---- Resolve instance name ----
-    # Auto-name: mps-<folder>-<template>-<profile>
+    # Auto-name: mps-<folder>-<template>
     # Override: --name flag or MPS_NAME config
     local instance_name
-    instance_name="$(mps_resolve_name "$arg_name" "${MPS_MOUNT_SOURCE:-}" "$effective_template" "$effective_profile")"
+    instance_name="$(mps_resolve_name "$arg_name" "${MPS_MOUNT_SOURCE:-}" "$effective_template")"
     mps_log_debug "Resolved instance name: ${instance_name}"
 
     # ---- Check instance does not already exist ----
     if mp_instance_exists "$instance_name"; then
         local short
         short="$(mps_short_name "$instance_name")"
-        mps_die "Instance '${instance_name}' already exists. Use 'mps up' to start it, or 'mps destroy --name ${short}' first."
+        mps_die "Instance '${short}' already exists. Use 'mps up' to start it, or 'mps destroy --name ${short}' first."
     fi
 
     # ---- Resolve cloud-init ----
@@ -163,6 +163,11 @@ cmd_create() {
 
     # Primary mount (passed as --mount to multipass launch)
     if [[ -n "${MPS_MOUNT_SOURCE:-}" && -n "${MPS_MOUNT_TARGET:-}" ]]; then
+        # Rule 2 check only for auto-mount (CWD is virtually always under $HOME)
+        if [[ "${MPS_MOUNT_SOURCE}" == "${HOME:-}" ]]; then
+            mps_log_warn "Mounting your entire home directory exposes dotfiles (.ssh, .gnupg, etc.) inside the VM."
+            mps_log_warn "Consider mounting a project subdirectory instead, or use --no-mount."
+        fi
         extra_args+=(--mount "${MPS_MOUNT_SOURCE}:${MPS_MOUNT_TARGET}")
         mps_log_debug "Primary mount: ${MPS_MOUNT_SOURCE} -> ${MPS_MOUNT_TARGET}"
     fi
@@ -176,6 +181,7 @@ cmd_create() {
         if [[ "$mount_src" != /* ]]; then
             mount_src="$(cd "$mount_src" 2>/dev/null && pwd)" || mps_die "Mount source does not exist: ${mount_src}"
         fi
+        mps_validate_mount_source "$mount_src"
         extra_args+=(--mount "${mount_src}:${mount_dst}")
         mps_log_debug "Extra mount: ${mount_src} -> ${mount_dst}"
     done
@@ -186,6 +192,8 @@ cmd_create() {
     if [[ -n "$config_mounts" ]]; then
         local cfg_mount
         for cfg_mount in $config_mounts; do
+            local cfg_src="${cfg_mount%%:*}"
+            mps_validate_mount_source "$cfg_src"
             extra_args+=(--mount "$cfg_mount")
             mps_log_debug "Config mount: ${cfg_mount}"
         done
@@ -197,21 +205,60 @@ cmd_create() {
     # ---- Wait for cloud-init ----
     mp_wait_cloud_init "$instance_name"
 
-    # ---- Save instance metadata ----
+    # ---- Build metadata JSON sub-objects ----
     local short_name
     short_name="$(mps_short_name "$instance_name")"
-    mps_save_instance_meta "$short_name"
 
-    # ---- Store port forwarding rules in metadata (for use by 'mps port' later) ----
-    if [[ ${#arg_ports[@]} -gt 0 ]]; then
-        local meta_file
-        meta_file="$(mps_instance_meta "$short_name")"
-        local port_rule
-        for port_rule in ${arg_ports[@]+"${arg_ports[@]}"}; do
-            echo "MPS_PORT_FORWARD+=${port_rule}" >> "$meta_file"
-        done
-        mps_log_debug "Stored ${#arg_ports[@]} port forwarding rule(s)"
+    # Image provenance
+    local image_json="null"
+    if [[ "$image" == file://* ]]; then
+        local img_path="${image#file://}"
+        local img_arch img_version img_name img_sha256="" img_source="pulled"
+        img_arch="$(basename "$img_path" .img)"
+        img_version="$(basename "$(dirname "$img_path")")"
+        img_name="$(basename "$(dirname "$(dirname "$img_path")")")"
+        # Read sha256 from .meta.json sidecar
+        local img_meta_file="${img_path%.img}.meta.json"
+        if [[ -f "$img_meta_file" ]]; then
+            img_sha256="$(jq -r '.sha256 // empty' "$img_meta_file")"
+            # Detect imported vs pulled: imported images lack build_date
+            local build_date=""
+            build_date="$(jq -r '.build_date // empty' "$img_meta_file")"
+            if [[ -z "$build_date" ]]; then
+                img_source="imported"
+            fi
+        fi
+        image_json="$(jq -n \
+            --arg name "$img_name" \
+            --arg version "$img_version" \
+            --arg arch "$img_arch" \
+            --arg sha256 "$img_sha256" \
+            --arg source "$img_source" \
+            '{name: $name, version: $version, arch: $arch, sha256: (if $sha256 == "" then null else $sha256 end), source: $source}')"
+    elif ! _mps_is_mps_image "$image_spec"; then
+        # Stock Ubuntu passthrough
+        image_json="$(jq -n --arg name "$image_spec" \
+            '{name: $name, version: null, arch: null, sha256: null, source: "stock"}')"
     fi
+
+    # Workdir for metadata (the auto-mount target path)
+    local workdir="${MPS_MOUNT_TARGET:-}"
+
+    # Port forwards array
+    local pf_json="[]"
+    local port_rule
+    for port_rule in ${arg_ports[@]+"${arg_ports[@]}"}; do
+        pf_json="$(echo "$pf_json" | jq --arg p "$port_rule" '. + [$p]')"
+    done
+
+    # Transfers array
+    local tf_json="[]"
+    local tf_spec
+    for tf_spec in ${arg_transfers[@]+"${arg_transfers[@]}"}; do
+        tf_json="$(echo "$tf_json" | jq --arg t "$tf_spec" '. + [$t]')"
+    done
+
+    mps_save_instance_meta "$short_name" "$image_json" "$workdir" "$pf_json" "$tf_json"
 
     # ---- Auto-forward ports (from MPS_PORTS config + --port flags) ----
     mps_auto_forward_ports "$instance_name" "$short_name"
@@ -241,27 +288,19 @@ cmd_create() {
                 mps_die "Transfer source is not a file or directory: ${host_src}"
             fi
 
-            mps_log_info "Transferring '${host_src}' -> '${instance_name}:${guest_dst}'..."
+            mps_log_info "Transferring '${host_src}' -> '${short_name}:${guest_dst}'..."
             mp_transfer -r -p "$host_src" "${instance_name}:${guest_dst}"
             transfer_count=$((transfer_count + 1))
         done
-
-        # Store in metadata
-        local transfer_meta_file
-        transfer_meta_file="$(mps_instance_meta "$short_name")"
-        for transfer_spec in ${arg_transfers[@]+"${arg_transfers[@]}"}; do
-            echo "MPS_TRANSFER+=${transfer_spec}" >> "$transfer_meta_file"
-        done
-        mps_log_debug "Stored ${#arg_transfers[@]} transfer rule(s)"
     fi
 
     # ---- Print summary ----
     local ip=""
     ip="$(mp_ipv4 "$instance_name" 2>/dev/null)" || true
 
-    mps_log_info "Sandbox '${instance_name}' is ready."
+    mps_log_info "Sandbox '${short_name}' is ready."
     echo ""
-    printf "  %-14s %s\n" "Instance:" "$instance_name"
+    printf "  %-14s %s\n" "Instance:" "$short_name"
     printf "  %-14s %s\n" "Image:" "$image_spec"
     printf "  %-14s %s\n" "Profile:" "$effective_profile"
     printf "  %-14s %s\n" "vCPUs:" "$cpus"
@@ -270,12 +309,8 @@ cmd_create() {
     if [[ -n "${MPS_MOUNT_SOURCE:-}" ]]; then
         printf "  %-14s %s -> %s\n" "Mount:" "$MPS_MOUNT_SOURCE" "$MPS_MOUNT_TARGET"
     fi
-    local port_fwd_count=0
-    local pf_file
-    pf_file="$(mps_ports_file "$short_name")"
-    if [[ -f "$pf_file" ]]; then
-        port_fwd_count="$(wc -l < "$pf_file")"
-    fi
+    local port_fwd_count
+    port_fwd_count="$(mps_port_forward_count "$short_name")"
     if [[ $port_fwd_count -gt 0 ]]; then
         printf "  %-14s %s\n" "Ports:" "${port_fwd_count} forwarded"
     fi
@@ -289,6 +324,19 @@ cmd_create() {
     mps_log_info "Connect with: mps shell --name ${short_name}"
 }
 
+_complete_create() {
+    case "${1:-}" in
+        flags) echo "--name -n --image --cpus --memory --mem --disk --cloud-init --profile --mount --port --transfer --no-mount --help -h" ;;
+        flag-values)
+            case "${2:-}" in
+                --name|-n)    echo "__instances__" ;;
+                --profile)    echo "__profiles__" ;;
+                --image)      echo "__images__" ;;
+                --cloud-init) echo "__cloud_init__" ;;
+            esac ;;
+    esac
+}
+
 _create_usage() {
     cat <<EOF
 ${_color_bold}mps create${_color_reset} — Create a new sandbox
@@ -300,7 +348,7 @@ ${_color_bold}Arguments:${_color_reset}
     path        Host directory to mount (default: current directory)
 
 ${_color_bold}Naming:${_color_reset}
-    Auto-generated: mps-<folder>-<template>-<profile>
+    Auto-generated: mps-<folder>-<template>
     Override with --name or MPS_NAME in .mps.env
 
 ${_color_bold}Flags:${_color_reset}

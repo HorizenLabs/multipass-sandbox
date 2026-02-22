@@ -56,8 +56,9 @@ cmd_transfer() {
     local instance_name
     instance_name="$(mps_resolve_instance_name "$arg_name")"
 
-    # ---- Check instance is running ----
-    mps_require_running "$instance_name"
+    # ---- Prepare running instance (state check, staleness, port forwards) ----
+    local short_name
+    short_name="$(mps_prepare_running_instance "$instance_name")"
 
     # ---- Separate sources and destination ----
     local -a sources=("${file_args[@]:0:${#file_args[@]}-1}")
@@ -109,9 +110,9 @@ cmd_transfer() {
     # ---- Execute transfer ----
     local src_count=${#sources[@]}
     if [[ "$guest_dst" == "true" ]]; then
-        mps_log_info "Transferring ${src_count} path(s) host -> ${instance_name}..."
+        mps_log_info "Transferring ${src_count} path(s) host -> ${short_name}..."
     else
-        mps_log_info "Transferring from ${instance_name} -> host..."
+        mps_log_info "Transferring from ${short_name} -> host..."
     fi
 
     mp_transfer -r -p ${resolved_args[@]+"${resolved_args[@]}"}
@@ -138,6 +139,13 @@ _transfer_resolve_path() {
             echo "${MPS_PROJECT_DIR:-$(pwd)}/${path}"
         fi
     fi
+}
+
+_complete_transfer() {
+    case "${1:-}" in
+        flags)       echo "--name -n --help -h" ;;
+        flag-values) case "${2:-}" in --name|-n) echo "__instances__" ;; esac ;;
+    esac
 }
 
 _transfer_usage() {

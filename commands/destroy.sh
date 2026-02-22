@@ -71,7 +71,7 @@ cmd_destroy() {
         mps_log_debug "Removed metadata: ${meta_file}"
     fi
 
-    # ---- Kill port forwards and remove .ports file ----
+    # ---- Kill port forwards, remove .ports file, clean up sockets ----
     mps_kill_port_forwards "$short_name"
     local ports_file
     ports_file="$(mps_ports_file "$short_name")"
@@ -79,6 +79,7 @@ cmd_destroy() {
         rm -f "$ports_file"
         mps_log_debug "Removed ports file: ${ports_file}"
     fi
+    mps_cleanup_port_sockets "$short_name"
 
     # ---- Remove SSH config if present ----
     local ssh_config="${HOME}/.ssh/config.d/${instance_name}"
@@ -88,6 +89,13 @@ cmd_destroy() {
     fi
 
     mps_log_info "Sandbox '${short_name}' destroyed."
+}
+
+_complete_destroy() {
+    case "${1:-}" in
+        flags)       echo "--name -n --force -f --help -h" ;;
+        flag-values) case "${2:-}" in --name|-n) echo "__instances__" ;; esac ;;
+    esac
 }
 
 _destroy_usage() {

@@ -96,7 +96,7 @@ runcmd:
   #     export HOME=/home/ubuntu
   #     export NVM_DIR="$HOME/.nvm"
   #     [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
-  #     npx bmad-method install --directory ~/.claude --modules bmm --tools claude-code --yes
+  #     npx bmad-method install --directory ~ --modules bmm --tools claude-code --yes
   #   '
   # --- GitHub Spec Kit (uncomment to enable) ---
   # Spec-driven development CLI for AI coding agents.

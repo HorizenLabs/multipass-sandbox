@@ -31,11 +31,12 @@ _mps_download_file() {
     if command -v aria2c &>/dev/null; then
         aria2c -x 8 -s 8 \
             --file-allocation=none \
+            --allow-overwrite=true \
             --console-log-level=warn \
             --summary-interval=0 \
             -d "$(dirname "$dest")" \
             -o "$(basename "$dest")" \
-            "$url"
+            "$url" >&2
     else
         curl --progress-bar -fSL "$url" -o "$dest"
     fi
@@ -288,13 +289,20 @@ _mps_compute_resources() {
 # Maximum length for Multipass instance names
 MPS_MAX_INSTANCE_NAME_LEN=40
 
-# Generate the auto-name: mps-<folder>-<template>-<profile>
+# Generate the auto-name: mps-<folder>-<template>
+# Profile is a resource sizing knob, not an identity component — excluded from
+# the name so that changing the profile doesn't orphan an existing instance.
 # Truncates the folder portion and appends a short hash if too long.
 mps_auto_name() {
     local mount_source="${1:-}"
-    local template="${2:-${MPS_CLOUD_INIT:-${MPS_DEFAULT_CLOUD_INIT:-default}}}"
-    local profile="${3:-${MPS_PROFILE:-${MPS_DEFAULT_PROFILE:-lite}}}"
+    local raw_template="${2:-${MPS_CLOUD_INIT:-${MPS_DEFAULT_CLOUD_INIT:-default}}}"
     local prefix="${MPS_INSTANCE_PREFIX:-mps}"
+
+    # Strip path and extension from template name (e.g., ".mps/cloud-init.yaml" → "cloud-init")
+    local template
+    template="$(basename "$raw_template")"
+    template="${template%.yaml}"
+    template="${template%.yml}"
 
     if [[ -z "$mount_source" ]]; then
         mps_die "Cannot auto-name: no mount path. Use --name to specify a name, or provide a mount path."
@@ -307,7 +315,7 @@ mps_auto_name() {
     folder="$(echo "$folder" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g; s/--*/-/g; s/^-//; s/-$//')"
 
     # Build the full name
-    local suffix="${template}-${profile}"
+    local suffix="${template}"
     local full_name="${prefix}-${folder}-${suffix}"
 
     # Truncate if too long
@@ -342,7 +350,6 @@ mps_resolve_name() {
     local explicit_name="${1:-}"
     local mount_source="${2:-}"
     local template="${3:-}"
-    local profile="${4:-}"
 
     # 1. Explicit --name flag
     if [[ -n "$explicit_name" ]]; then
@@ -360,7 +367,7 @@ mps_resolve_name() {
 
     # 3. Auto-name from mount path
     if [[ -n "$mount_source" ]]; then
-        mps_auto_name "$mount_source" "$template" "$profile"
+        mps_auto_name "$mount_source" "$template"
         return
     fi
 
@@ -396,8 +403,7 @@ mps_resolve_instance_name() {
         instance_name="$(mps_instance_name "$arg_name")"
     else
         instance_name="$(mps_resolve_name "" "$(pwd)" \
-            "${MPS_CLOUD_INIT:-${MPS_DEFAULT_CLOUD_INIT:-default}}" \
-            "${MPS_PROFILE:-${MPS_DEFAULT_PROFILE:-lite}}")"
+            "${MPS_CLOUD_INIT:-${MPS_DEFAULT_CLOUD_INIT:-default}}")"
     fi
     mps_log_debug "Resolved instance name: ${instance_name}"
     echo "$instance_name"
@@ -421,22 +427,38 @@ mps_cache_dir() {
 
 mps_require_exists() {
     local instance_name="$1"
-    local suffix="${2:-Create it with: mps up --name $(mps_short_name "$instance_name")}"
+    local _display
+    _display="$(mps_short_name "$instance_name")"
+    local suffix="${2:-Create it with: mps up --name ${_display}}"
     if ! mp_instance_exists "$instance_name"; then
-        mps_die "Instance '${instance_name}' does not exist. ${suffix}"
+        mps_die "Instance '${_display}' does not exist. ${suffix}"
     fi
 }
 
 mps_require_running() {
     local instance_name="$1"
+    local _display
+    _display="$(mps_short_name "$instance_name")"
     local state
     state="$(mp_instance_state "$instance_name")"
     if [[ "$state" == "nonexistent" ]]; then
-        mps_die "Instance '${instance_name}' does not exist. Create it with: mps up --name $(mps_short_name "$instance_name")"
+        mps_die "Instance '${_display}' does not exist. Create it with: mps up --name ${_display}"
     fi
     if [[ "$state" != "Running" ]]; then
-        mps_die "Instance '${instance_name}' is not running (state: ${state}). Start it with: mps up --name $(mps_short_name "$instance_name")"
+        mps_die "Instance '${_display}' is not running (state: ${state}). Start it with: mps up --name ${_display}"
     fi
+}
+
+# Validate instance is running, warn about staleness, and re-establish port
+# forwards.  Echoes short_name to stdout; all logging goes to stderr.
+mps_prepare_running_instance() {
+    local instance_name="$1"
+    mps_require_running "$instance_name"
+    local short_name
+    short_name="$(mps_short_name "$instance_name")"
+    _mps_warn_instance_staleness "$short_name"
+    mps_auto_forward_ports "$instance_name" "$short_name" "Re-established"
+    echo "$short_name"
 }
 
 # ---------- Workdir Resolution ----------
@@ -451,11 +473,11 @@ mps_resolve_workdir() {
     local meta_file
     meta_file="$(mps_instance_meta "$(mps_short_name "$instance_name")")"
     if [[ -f "$meta_file" ]]; then
-        local mount_target=""
-        mount_target="$(_mps_read_meta_key "$meta_file" "MPS_MOUNT_TARGET")"
-        if [[ -n "$mount_target" ]]; then
-            mps_log_debug "Using mount target as workdir: ${mount_target}"
-            echo "$mount_target"
+        local workdir=""
+        workdir="$(_mps_read_meta_json "$meta_file" '.workdir')"
+        if [[ -n "$workdir" ]]; then
+            mps_log_debug "Using workdir from metadata: ${workdir}"
+            echo "$workdir"
             return
         fi
     fi
@@ -787,6 +809,15 @@ _mps_fetch_manifest() {
     _mps_remote_fetch "${base_url}/manifest.json" "$(mps_cache_dir)/manifest.json"
 }
 
+# Read cached manifest.json from disk (no network). Returns manifest on stdout.
+# Returns 1 if no cached manifest exists.
+_mps_read_cached_manifest() {
+    local cache_file
+    cache_file="$(mps_cache_dir)/manifest.json"
+    [[ -f "$cache_file" ]] || return 1
+    cat "$cache_file"
+}
+
 # Compare local .meta.json SHA256 vs remote .meta.json sidecar (HEAD + body fallback).
 # Prints one of: up-to-date, stale, update:<ver>, unknown.
 _mps_check_image_staleness() {
@@ -898,6 +929,146 @@ _mps_warn_image_staleness() {
     return 0
 }
 
+# ---------- Instance Staleness Detection ----------
+
+# Check if an instance is stale vs its locally cached image.
+# Compares instance metadata SHA256 against cached image .meta.json.
+# Returns (stdout): up-to-date, stale, update:<new_ver>, unknown
+_mps_check_instance_staleness() {
+    local short_name="$1"
+    local meta_file
+    meta_file="$(mps_instance_meta "$short_name")"
+    [[ -f "$meta_file" ]] || { echo "unknown"; return 0; }
+
+    local img_name img_version img_arch img_sha256 img_source
+    img_name="$(_mps_read_meta_json "$meta_file" '.image.name')"
+    img_version="$(_mps_read_meta_json "$meta_file" '.image.version')"
+    img_arch="$(_mps_read_meta_json "$meta_file" '.image.arch')"
+    img_sha256="$(_mps_read_meta_json "$meta_file" '.image.sha256')"
+    img_source="$(_mps_read_meta_json "$meta_file" '.image.source')"
+
+    # Can't compare stock images or missing sha256
+    if [[ "$img_source" == "stock" || -z "$img_sha256" ]]; then
+        echo "unknown"
+        return 0
+    fi
+
+    # Need name/version/arch to locate cached image
+    if [[ -z "$img_name" || -z "$img_version" || -z "$img_arch" ]]; then
+        echo "unknown"
+        return 0
+    fi
+
+    # Read cached image .meta.json
+    local cache_meta
+    cache_meta="$(mps_cache_dir)/images/${img_name}/${img_version}/${img_arch}.meta.json"
+    if [[ ! -f "$cache_meta" ]]; then
+        echo "unknown"
+        return 0
+    fi
+
+    local cached_sha256=""
+    cached_sha256="$(_mps_read_meta_json "$cache_meta" '.sha256')"
+
+    # Check for newer SemVer version in local cache (only for SemVer tags)
+    local has_update=""
+    if [[ "$img_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        local image_dir
+        image_dir="$(mps_cache_dir)/images/${img_name}"
+        if [[ -d "$image_dir" ]]; then
+            local best_version=""
+            best_version="$(_mps_resolve_latest_version "$image_dir" "$img_arch")"
+            if [[ -n "$best_version" && "$best_version" != "local" ]] && _mps_semver_gt "$best_version" "$img_version"; then
+                has_update="$best_version"
+            fi
+        fi
+    fi
+
+    # Priority: update > stale > up-to-date
+    if [[ -n "$has_update" ]]; then
+        echo "update:${has_update}"
+        return 0
+    fi
+
+    if [[ -n "$cached_sha256" && "$img_sha256" != "$cached_sha256" ]]; then
+        echo "stale"
+        return 0
+    fi
+
+    # ---- Manifest-based enhancement (no network) ----
+    local manifest=""
+    manifest="$(_mps_read_cached_manifest)" || true
+
+    if [[ -n "$manifest" ]]; then
+        # Newer version in manifest?
+        if [[ "$img_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            local manifest_latest=""
+            manifest_latest="$(echo "$manifest" | jq -r ".images[\"${img_name}\"].latest // empty")"
+            if [[ -n "$manifest_latest" && "$manifest_latest" != "$img_version" ]] \
+                && _mps_semver_gt "$manifest_latest" "$img_version"; then
+                echo "update:manifest:${manifest_latest}"
+                return 0
+            fi
+        fi
+
+        # Rebuild detection via manifest SHA256
+        local manifest_sha256=""
+        manifest_sha256="$(echo "$manifest" | jq -r \
+            ".images[\"${img_name}\"].versions[\"${img_version}\"][\"${img_arch}\"].sha256 // empty")"
+        if [[ -n "$manifest_sha256" && "$img_sha256" != "$manifest_sha256" ]]; then
+            echo "stale:manifest"
+            return 0
+        fi
+    fi
+
+    echo "up-to-date"
+    return 0
+}
+
+# High-level wrapper: check instance staleness and emit warnings.
+# Respects MPS_IMAGE_CHECK_UPDATES opt-out. Silent on up-to-date/unknown/failure.
+_mps_warn_instance_staleness() {
+    local short_name="$1"
+    local skip_manifest="${2:-}"
+
+    # Opt-out check
+    [[ "${MPS_IMAGE_CHECK_UPDATES:-true}" == "true" ]] || return 0
+
+    local status=""
+    status="$(_mps_check_instance_staleness "$short_name")" || return 0
+
+    # Suppress manifest-sourced warnings when caller already handles image staleness
+    if [[ "$skip_manifest" == "--skip-manifest" ]]; then
+        case "$status" in
+            stale:manifest|update:manifest:*) return 0 ;;
+        esac
+    fi
+
+    local meta_file
+    meta_file="$(mps_instance_meta "$short_name")"
+    local img_name img_version
+    img_name="$(_mps_read_meta_json "$meta_file" '.image.name')"
+    img_version="$(_mps_read_meta_json "$meta_file" '.image.version')"
+
+    case "$status" in
+        stale:manifest)
+            mps_log_warn "Sandbox '${short_name}' was created from an older build of ${img_name}:${img_version}. Update with: mps image pull ${img_name}:${img_version} && mps destroy --name ${short_name} && mps up --name ${short_name}"
+            ;;
+        stale)
+            mps_log_warn "Sandbox '${short_name}' was created from an older build of ${img_name}:${img_version}. Recreate with: mps destroy --name ${short_name} && mps up --name ${short_name}"
+            ;;
+        update:manifest:*)
+            local new_ver="${status#update:manifest:}"
+            mps_log_warn "Sandbox '${short_name}' uses ${img_name}:${img_version} but ${new_ver} is available. Update with: mps image pull ${img_name} && mps destroy --name ${short_name} && mps up --name ${short_name}"
+            ;;
+        update:*)
+            local new_ver="${status#update:}"
+            mps_log_warn "Sandbox '${short_name}' uses ${img_name}:${img_version} but ${new_ver} is available locally. Recreate with: mps destroy --name ${short_name} && mps up --name ${short_name}"
+            ;;
+    esac
+    return 0
+}
+
 # ---------- CLI Version Update Check ----------
 
 # Warn if a newer mps release is available on the CDN.
@@ -979,16 +1150,26 @@ _mps_cli_update_warn() {
 
 # ---------- Metadata Helpers ----------
 
-_mps_read_meta_key() {
-    local file="$1" key="$2"
-    if [[ -f "$file" ]]; then
-        grep "^${key}=" "$file" 2>/dev/null | cut -d= -f2 || true
-    fi
+# Read a value from a JSON file using a jq expression.
+# Returns empty string on missing file, missing key, or jq error.
+_mps_read_meta_json() {
+    local file="$1" jq_expr="$2"
+    [[ -f "$file" ]] || return 0
+    jq -r "$jq_expr // empty" "$file" 2>/dev/null || true
+}
+
+# Atomic write of a JSON string to a file (temp + mv + chmod 600).
+_mps_write_json() {
+    local file="$1" json_string="$2"
+    local tmp_file="${file}.tmp.$$"
+    printf '%s\n' "$json_string" > "$tmp_file"
+    chmod 600 "$tmp_file"
+    mv -f "$tmp_file" "$file"
 }
 
 mps_instance_meta() {
     local name="$1"
-    echo "$(mps_state_dir)/${name}.env"
+    echo "$(mps_state_dir)/${name}.json"
 }
 
 # Read a key from an image's .meta.json sidecar file.
@@ -1004,20 +1185,42 @@ mps_image_meta() {
 
 mps_save_instance_meta() {
     local name="$1"
+    local image_json="${2:-null}"
+    local workdir="${3:-}"
+    local port_forwards_json="${4:-[]}"
+    local transfers_json="${5:-[]}"
     local meta_file
     meta_file="$(mps_instance_meta "$name")"
-    cat > "$meta_file" <<EOF
-MPS_INSTANCE_NAME=${name}
-MPS_INSTANCE_FULL=$(mps_instance_name "$name")
-MPS_CREATED=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-MPS_CPUS=${MPS_CPUS:-${MPS_DEFAULT_CPUS:-2}}
-MPS_MEMORY=${MPS_MEMORY:-${MPS_DEFAULT_MEMORY:-2G}}
-MPS_DISK=${MPS_DISK:-${MPS_DEFAULT_DISK:-20G}}
-MPS_CLOUD_INIT=${MPS_CLOUD_INIT:-${MPS_DEFAULT_CLOUD_INIT:-default}}
-MPS_MOUNT_SOURCE=${MPS_MOUNT_SOURCE:-}
-MPS_MOUNT_TARGET=${MPS_MOUNT_TARGET:-}
-EOF
-    chmod 600 "$meta_file"
+    local full_name
+    full_name="$(mps_instance_name "$name")"
+    local json
+    json="$(jq -n \
+        --arg name "$name" \
+        --arg full_name "$full_name" \
+        --arg created "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+        --arg cpus "${MPS_CPUS:-${MPS_DEFAULT_CPUS:-2}}" \
+        --arg memory "${MPS_MEMORY:-${MPS_DEFAULT_MEMORY:-2G}}" \
+        --arg disk "${MPS_DISK:-${MPS_DEFAULT_DISK:-20G}}" \
+        --arg cloud_init "${MPS_CLOUD_INIT:-${MPS_DEFAULT_CLOUD_INIT:-default}}" \
+        --argjson image "$image_json" \
+        --arg workdir "$workdir" \
+        --argjson port_forwards "$port_forwards_json" \
+        --argjson transfers "$transfers_json" \
+        '{
+            name: $name,
+            full_name: $full_name,
+            created: $created,
+            cpus: ($cpus | tonumber),
+            memory: $memory,
+            disk: $disk,
+            cloud_init: $cloud_init,
+            image: $image,
+            workdir: (if $workdir == "" then null else $workdir end),
+            ssh: null,
+            port_forwards: $port_forwards,
+            transfers: $transfers
+        }')"
+    _mps_write_json "$meta_file" "$json"
     mps_log_debug "Saved instance metadata to $meta_file"
 }
 
@@ -1119,6 +1322,107 @@ mps_parse_extra_mounts() {
     echo "${result[*]}"
 }
 
+# Validate mount source path against security rules.
+# Called after resolving to absolute path.
+# Returns 0 on success, dies on hard block, warns on soft issues.
+mps_validate_mount_source() {
+    local source_path="$1"
+    local home_dir="${HOME:-}"
+
+    # Rule 1: Block mounts outside $HOME
+    if [[ -n "$home_dir" ]]; then
+        case "$source_path" in
+            "${home_dir}"|"${home_dir}"/*)
+                # Inside $HOME — OK
+                ;;
+            *)
+                mps_die "Mount source must be within your home directory (${home_dir})."
+                ;;
+        esac
+    fi
+
+    # Rule 2: Warn on mounting $HOME directly
+    if [[ "$source_path" == "$home_dir" ]]; then
+        mps_log_warn "Mounting your entire home directory exposes dotfiles (.ssh, .gnupg, etc.) inside the VM."
+        mps_log_warn "Consider mounting a project subdirectory instead, or use --no-mount."
+    fi
+
+    # Rule 3: Warn on hidden paths on Linux (Snap may block)
+    local os
+    os="$(mps_detect_os)"
+    if [[ "$os" == "linux" ]]; then
+        local basename
+        basename="$(basename "$source_path")"
+        case "$basename" in
+            .*)
+                mps_log_warn "Snap may block mounting hidden paths directly. Consider mounting the parent directory instead."
+                ;;
+        esac
+    fi
+}
+
+# Resolve the set of persistent mounts for an instance.
+# Reads workdir from metadata and MPS_MOUNTS from the full config cascade:
+# current env (already loaded) -> project .mps.env -> ~/.mps/config -> defaults.env.
+# Outputs space-separated "source:target" pairs to stdout.
+# Usage: _mps_resolve_project_mounts <short_name>
+_mps_resolve_project_mounts() {
+    local short_name="$1"
+    local -a persistent=()
+
+    # Read workdir from metadata
+    local meta_file
+    meta_file="$(mps_instance_meta "$short_name")"
+    local workdir=""
+    if [[ -f "$meta_file" ]]; then
+        workdir="$(_mps_read_meta_json "$meta_file" '.workdir')"
+    fi
+
+    # Auto-mount: workdir maps to itself (identity on Linux/macOS)
+    if [[ -n "$workdir" ]]; then
+        persistent+=("${workdir}:${workdir}")
+    fi
+
+    # Config mounts: try MPS_MOUNTS from current cascade first
+    local config_mounts="${MPS_MOUNTS:-}"
+
+    # If MPS_MOUNTS not set in current env and workdir is known,
+    # grep it from the project's .mps.env and global config (don't source)
+    if [[ -z "$config_mounts" && -n "$workdir" ]]; then
+        local project_env="${workdir}/.mps.env"
+        if [[ -f "$project_env" ]]; then
+            config_mounts="$(grep -E '^MPS_MOUNTS=' "$project_env" 2>/dev/null | head -1 | sed 's/^MPS_MOUNTS=//' | sed 's/^["'"'"']//; s/["'"'"']$//')" || true
+        fi
+    fi
+    if [[ -z "$config_mounts" ]]; then
+        local global_config="${HOME}/.mps/config"
+        if [[ -f "$global_config" ]]; then
+            config_mounts="$(grep -E '^MPS_MOUNTS=' "$global_config" 2>/dev/null | head -1 | sed 's/^MPS_MOUNTS=//' | sed 's/^["'"'"']//; s/["'"'"']$//')" || true
+        fi
+    fi
+    if [[ -z "$config_mounts" ]]; then
+        local defaults_env="${MPS_ROOT}/config/defaults.env"
+        if [[ -f "$defaults_env" ]]; then
+            config_mounts="$(grep -E '^MPS_MOUNTS=' "$defaults_env" 2>/dev/null | head -1 | sed 's/^MPS_MOUNTS=//' | sed 's/^["'"'"']//; s/["'"'"']$//')" || true
+        fi
+    fi
+
+    # Parse config mounts
+    if [[ -n "$config_mounts" ]]; then
+        local mount
+        for mount in $config_mounts; do
+            local src="${mount%%:*}"
+            local dst="${mount#*:}"
+            if [[ "$src" != /* && -n "$workdir" ]]; then
+                src="$(cd "${workdir}/$src" 2>/dev/null && pwd)" || continue
+            fi
+            persistent+=("${src}:${dst}")
+        done
+    fi
+
+    echo "${persistent[*]}"
+}
+
 # ---------- Cloud-init Resolution ----------
 
 mps_resolve_cloud_init() {
@@ -1130,14 +1434,21 @@ mps_resolve_cloud_init() {
         return
     fi
 
-    # Look in the templates directory
+    # Look in the project templates directory
     local template_path="${MPS_ROOT}/templates/cloud-init/${template}.yaml"
     if [[ -f "$template_path" ]]; then
         echo "$template_path"
         return
     fi
 
-    mps_die "Cloud-init template not found: $template (searched ${template_path})"
+    # Look in personal templates directory
+    local user_path="${HOME}/.mps/cloud-init/${template}.yaml"
+    if [[ -f "$user_path" ]]; then
+        echo "$user_path"
+        return
+    fi
+
+    mps_die "Cloud-init template not found: $template (searched ${template_path} and ${user_path})"
 }
 
 # ---------- Validation ----------
@@ -1260,125 +1571,33 @@ mps_confirm() {
     [[ "$response" =~ ^[Yy]([Ee][Ss])?$ ]]
 }
 
-# ---------- SSH Key Helpers ----------
-
-# Resolve SSH public key path.
-# Priority: explicit path > MPS_SSH_KEY config > ~/.ssh/ auto-detect
-# If given a private key path (no .pub), appends .pub.
-mps_resolve_ssh_pubkey() {
-    local explicit_path="${1:-${MPS_SSH_KEY:-}}"
-
-    if [[ -n "$explicit_path" ]]; then
-        # If user gave a private key path, derive the pubkey path
-        if [[ "$explicit_path" != *.pub ]]; then
-            explicit_path="${explicit_path}.pub"
-        fi
-        if [[ -f "$explicit_path" ]]; then
-            echo "$explicit_path"
-            return
-        fi
-        mps_die "SSH public key not found: ${explicit_path}"
-    fi
-
-    # Auto-detect from ~/.ssh/
-    local key_name
-    for key_name in id_ed25519.pub id_ecdsa.pub id_rsa.pub; do
-        if [[ -f "${HOME}/.ssh/${key_name}" ]]; then
-            echo "${HOME}/.ssh/${key_name}"
-            return
-        fi
-    done
-
-    mps_die "No SSH key found. Provide one with --ssh-key <path>, set MPS_SSH_KEY in config, or generate a key with: ssh-keygen -t ed25519"
-}
-
-# Inject SSH public key into a running instance.
-# Checks instance metadata to avoid re-injection.
-# Writes MPS_SSH_KEY and MPS_SSH_INJECTED=true to metadata.
-mps_inject_ssh_key() {
-    local instance_name="$1"
-    local short_name="$2"
-    local pubkey_path="$3"
-    local privkey_path="$4"
-
-    # Check if already injected
-    local meta_file
-    meta_file="$(mps_instance_meta "$short_name")"
-    if [[ -f "$meta_file" ]]; then
-        local injected=""
-        injected="$(_mps_read_meta_key "$meta_file" "MPS_SSH_INJECTED")"
-        if [[ "$injected" == "true" ]]; then
-            mps_log_debug "SSH key already injected for '${short_name}'"
-            return 0
-        fi
-    fi
-
-    mps_log_info "Injecting SSH key into '${short_name}'..."
-
-    # Transfer public key file into the instance, then append to authorized_keys.
-    # Using multipass transfer avoids shell-interpolation risks with inline echo.
-    # Create temp file inside VM with mktemp (unpredictable name).
-    local tmp_dest
-    tmp_dest="$(multipass exec "$instance_name" -- mktemp /tmp/mps_pubkey_XXXXXXXX.pub)"
-    if ! multipass transfer "$pubkey_path" "${instance_name}:${tmp_dest}"; then
-        mps_die "Failed to transfer SSH public key to '${instance_name}'"
-    fi
-    if ! multipass exec "$instance_name" -- bash -c \
-        "mkdir -p ~/.ssh && chmod 700 ~/.ssh && cat '${tmp_dest}' >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys && rm -f '${tmp_dest}'"; then
-        mps_die "Failed to inject SSH key into '${instance_name}'"
-    fi
-
-    # Record in instance metadata
-    if [[ -f "$meta_file" ]]; then
-        # Append to existing metadata
-        printf "MPS_SSH_KEY=%s\nMPS_SSH_INJECTED=true\n" "$privkey_path" >> "$meta_file"
-    else
-        # Create metadata file with SSH info
-        printf "MPS_SSH_KEY=%s\nMPS_SSH_INJECTED=true\n" "$privkey_path" > "$meta_file"
-    fi
-    chmod 600 "$meta_file"
-
-    mps_log_info "SSH key injected."
-}
-
-# Orchestrator: resolve key, inject if needed, return private key path.
-# Used by ssh-config only.
-mps_ensure_ssh_key() {
-    local instance_name="$1"
-    local short_name="$2"
-    local ssh_key_arg="${3:-}"
-
-    local pubkey_path privkey_path
-    pubkey_path="$(mps_resolve_ssh_pubkey "$ssh_key_arg")"
-    privkey_path="${pubkey_path%.pub}"
-
-    if [[ ! -f "$privkey_path" ]]; then
-        mps_die "SSH private key not found: ${privkey_path} (derived from ${pubkey_path})"
-    fi
-
-    mps_inject_ssh_key "$instance_name" "$short_name" "$pubkey_path" "$privkey_path"
-
-    echo "$privkey_path"
-}
-
 # ---------- Port Forwarding Helpers ----------
-
-# Verify a PID belongs to an ssh process before signaling it.
-_mps_is_ssh_pid() {
-    local pid="$1" use_sudo="$2"
-    local pname
-    if [[ "$use_sudo" == "true" ]]; then
-        pname="$(sudo ps -o comm= -p "$pid" 2>/dev/null)" || return 1
-    else
-        pname="$(ps -o comm= -p "$pid" 2>/dev/null)" || return 1
-    fi
-    [[ "$pname" == "ssh" ]]
-}
 
 # Return the path to the .ports tracking file for an instance
 mps_ports_file() {
     local short_name="$1"
-    echo "$(mps_state_dir)/${short_name}.ports"
+    echo "$(mps_state_dir)/${short_name}.ports.json"
+}
+
+# Return the control socket path for a given instance + host port.
+# Sockets live in ~/.mps/sockets/, separate from instance metadata.
+mps_port_socket() {
+    local short_name="$1" host_port="$2"
+    local dir="${HOME}/.mps/sockets"
+    mkdir -p "$dir"
+    echo "${dir}/${short_name}-${host_port}.sock"
+}
+
+# Return the number of active port forwards for an instance (echoes "0" if none).
+mps_port_forward_count() {
+    local short_name="$1"
+    local pf_file
+    pf_file="$(mps_ports_file "$short_name")"
+    if [[ -f "$pf_file" ]]; then
+        jq 'length' "$pf_file" 2>/dev/null || echo "0"
+    else
+        echo "0"
+    fi
 }
 
 # Gather port specs from MPS_PORTS config and instance metadata.
@@ -1401,19 +1620,19 @@ mps_collect_port_specs() {
         done
     fi
 
-    # Source 2: MPS_PORT_FORWARD+ entries in instance metadata
+    # Source 2: port_forwards array in instance metadata JSON
     local meta_file
     meta_file="$(mps_instance_meta "$short_name")"
     if [[ -f "$meta_file" ]]; then
-        while IFS='=' read -r key val; do
-            if [[ "$key" == "MPS_PORT_FORWARD+" ]]; then
-                local hp="${val%%:*}"
-                case "$seen" in *" $hp "*) ;; *)
-                    seen="$seen$hp "
-                    specs+=("$val")
-                ;; esac
-            fi
-        done < "$meta_file"
+        local pf_entry=""
+        while IFS= read -r pf_entry; do
+            [[ -z "$pf_entry" ]] && continue
+            local hp="${pf_entry%%:*}"
+            case "$seen" in *" $hp "*) ;; *)
+                seen="$seen$hp "
+                specs+=("$pf_entry")
+            ;; esac
+        done < <(_mps_read_meta_json "$meta_file" '.port_forwards[]')
     fi
 
     local s
@@ -1422,9 +1641,11 @@ mps_collect_port_specs() {
     done
 }
 
-# Forward a single port via SSH tunnel.
+# Forward a single port via SSH tunnel using a control socket.
 # Args: instance_name short_name port_spec [--privileged]
-# Returns 0 on success, 1 on failure (warns but never dies).
+# Returns: 0 = tunnel newly established
+#          2 = already active (dedup skip)
+#          1 = error (warns but never dies)
 mps_forward_port() {
     local instance_name="$1"
     local short_name="$2"
@@ -1463,7 +1684,7 @@ mps_forward_port() {
     local ip
     ip="$(mp_ipv4 "$instance_name")" || true
     if [[ -z "$ip" ]]; then
-        mps_log_warn "Cannot determine IP for '${instance_name}' — skipping port ${port_spec}"
+        mps_log_warn "Cannot determine IP for '${short_name}' — skipping port ${port_spec}"
         return 1
     fi
 
@@ -1473,9 +1694,9 @@ mps_forward_port() {
     meta_file="$(mps_instance_meta "$short_name")"
     if [[ -f "$meta_file" ]]; then
         local injected=""
-        injected="$(_mps_read_meta_key "$meta_file" "MPS_SSH_INJECTED")"
+        injected="$(_mps_read_meta_json "$meta_file" '.ssh.injected')"
         if [[ "$injected" == "true" ]]; then
-            ssh_key="$(_mps_read_meta_key "$meta_file" "MPS_SSH_KEY")"
+            ssh_key="$(_mps_read_meta_json "$meta_file" '.ssh.key')"
         fi
     fi
     if [[ -z "$ssh_key" || ! -f "$ssh_key" ]]; then
@@ -1483,40 +1704,27 @@ mps_forward_port() {
         return 1
     fi
 
-    # Check for existing active tunnel on same host port
-    local ports_file
-    ports_file="$(mps_ports_file "$short_name")"
-    if [[ -f "$ports_file" ]]; then
-        local _line
-        while IFS= read -r _line; do
-            [[ -z "$_line" ]] && continue
-            local _fhp="" _fpid="" _fsudo=false
-            if [[ "$_line" =~ ^([0-9]+):[0-9]+:s:([0-9]+)$ ]]; then
-                _fhp="${BASH_REMATCH[1]}"; _fpid="${BASH_REMATCH[2]}"; _fsudo=true
-            elif [[ "$_line" =~ ^([0-9]+):[0-9]+:([0-9]+)$ ]]; then
-                _fhp="${BASH_REMATCH[1]}"; _fpid="${BASH_REMATCH[2]}"
-            fi
-            if [[ "$_fhp" == "$host_port" && -n "$_fpid" ]]; then
-                # Verify PID is actually an SSH process before trusting it
-                if ! _mps_is_ssh_pid "$_fpid" "$_fsudo"; then
-                    continue
-                fi
-                local _alive=false
-                if [[ "$_fsudo" == "true" ]]; then
-                    sudo kill -0 "$_fpid" 2>/dev/null && _alive=true
-                else
-                    kill -0 "$_fpid" 2>/dev/null && _alive=true
-                fi
-                if [[ "$_alive" == "true" ]]; then
-                    mps_log_debug "Port ${host_port} already forwarded (PID ${_fpid}) — skipping"
-                    return 0
-                fi
-            fi
-        done < "$ports_file"
+    # Check for existing active tunnel via control socket
+    local socket_path
+    socket_path="$(mps_port_socket "$short_name" "$host_port")"
+    if [[ -e "$socket_path" ]]; then
+        local _check_ok=false
+        if [[ "$_use_sudo" == "true" ]]; then
+            # Use sudo -n to avoid password prompts; if cache expired, treat as not forwarded
+            sudo -n ssh -O check -S "$socket_path" dummy 2>/dev/null && _check_ok=true
+        else
+            ssh -O check -S "$socket_path" dummy 2>/dev/null && _check_ok=true
+        fi
+        if [[ "$_check_ok" == "true" ]]; then
+            mps_log_debug "Port ${host_port} already forwarded (socket ${socket_path}) — skipping"
+            return 2
+        fi
+        # Stale socket — remove it before re-establishing
+        rm -f "$socket_path"
     fi
 
-    # Build SSH tunnel command
-    local -a ssh_cmd=(ssh -N -f
+    # Build SSH tunnel command with control socket
+    local -a ssh_cmd=(ssh -M -S "$socket_path" -N -f
         -L "${host_port}:localhost:${guest_port}"
         -o StrictHostKeyChecking=accept-new
         -o UserKnownHostsFile=/dev/null
@@ -1538,22 +1746,31 @@ mps_forward_port() {
         return 1
     fi
 
-    # Track PID (sudo-spawned ssh runs as root, needs sudo pgrep)
-    local pid
+    # Verify tunnel is up via control socket
+    local _verify_ok=false
     if [[ "$_use_sudo" == "true" ]]; then
-        pid="$(sudo pgrep -f "ssh.*-L.*${host_port}:localhost:${guest_port}.*${ip}" | tail -1)" || true
+        sudo ssh -O check -S "$socket_path" dummy 2>/dev/null && _verify_ok=true
     else
-        pid="$(pgrep -f "ssh.*-L.*${host_port}:localhost:${guest_port}.*${ip}" | tail -1)" || true
+        ssh -O check -S "$socket_path" dummy 2>/dev/null && _verify_ok=true
     fi
-    if [[ -n "$pid" ]]; then
-        # Prefix with 's:' to mark sudo-owned tunnels for cleanup
-        local owner_prefix=""
-        [[ "$_use_sudo" == "true" ]] && owner_prefix="s:"
-        echo "${host_port}:${guest_port}:${owner_prefix}${pid}" >> "$ports_file"
-        chmod 600 "$ports_file"
-        mps_log_debug "Port forward active (PID ${pid}): localhost:${host_port} → ${instance_name}:${guest_port}"
+
+    if [[ "$_verify_ok" == "true" ]]; then
+        # Record in .ports.json (socket path instead of PID)
+        local ports_file
+        ports_file="$(mps_ports_file "$short_name")"
+        local current_json="{}"
+        [[ -f "$ports_file" ]] && current_json="$(cat "$ports_file")"
+        local updated
+        updated="$(echo "$current_json" | jq \
+            --arg hp "$host_port" \
+            --argjson gp "$guest_port" \
+            --arg sock "$socket_path" \
+            --argjson sudo "$_use_sudo" \
+            '.[$hp] = {"guest_port": $gp, "socket": $sock, "sudo": $sudo}')"
+        _mps_write_json "$ports_file" "$updated"
+        mps_log_debug "Port forward active (socket ${socket_path}): localhost:${host_port} → ${instance_name}:${guest_port}"
     else
-        mps_log_warn "Port forward started but could not track PID for ${port_spec}"
+        mps_log_warn "Port forward started but control socket check failed for ${port_spec}"
     fi
     return 0
 }
@@ -1562,6 +1779,7 @@ mps_forward_port() {
 mps_auto_forward_ports() {
     local instance_name="$1"
     local short_name="$2"
+    local verb="${3:-Forwarded}"
     local count=0
 
     local specs
@@ -1570,20 +1788,21 @@ mps_auto_forward_ports() {
         return 0
     fi
 
-    local spec
+    local spec rc
     while IFS= read -r spec; do
         [[ -z "$spec" ]] && continue
-        if mps_forward_port "$instance_name" "$short_name" "$spec"; then
-            count=$((count + 1))
-        fi
+        rc=0
+        mps_forward_port "$instance_name" "$short_name" "$spec" || rc=$?
+        # Only count newly established tunnels (0); ignore already-active (2) and errors (1)
+        [[ $rc -eq 0 ]] && count=$((count + 1))
     done <<< "$specs"
 
     if [[ $count -gt 0 ]]; then
-        mps_log_info "Forwarded ${count} port(s)."
+        mps_log_info "${verb} ${count} port forward(s)."
     fi
 }
 
-# Kill all tracked port forwards for an instance.
+# Kill all tracked port forwards for an instance via control sockets.
 # Returns silently if no .ports file exists.
 mps_kill_port_forwards() {
     local short_name="$1"
@@ -1595,38 +1814,39 @@ mps_kill_port_forwards() {
     fi
 
     local killed=0
-    local line
-    while IFS= read -r line; do
-        [[ -z "$line" ]] && continue
-        # Format: host_port:guest_port:[s:]pid — 's:' prefix marks sudo-owned tunnels
-        local pid="" use_sudo=false
-        if [[ "$line" =~ :s:([0-9]+)$ ]]; then
-            pid="${BASH_REMATCH[1]}"
-            use_sudo=true
-        elif [[ "$line" =~ :([0-9]+)$ ]]; then
-            pid="${BASH_REMATCH[1]}"
-        fi
-        if [[ -z "$pid" ]]; then
+    local entry
+    while IFS= read -r entry; do
+        [[ -z "$entry" ]] && continue
+        local sock="" use_sudo=false
+        sock="$(echo "$entry" | jq -r '.socket')"
+        local sudo_val=""
+        sudo_val="$(echo "$entry" | jq -r '.sudo')"
+        [[ "$sudo_val" == "true" ]] && use_sudo=true
+        if [[ -z "$sock" || "$sock" == "null" ]]; then
             continue
         fi
-        # Verify PID is actually an SSH process before killing
-        if ! _mps_is_ssh_pid "$pid" "$use_sudo"; then
-            continue
-        fi
+        # Gracefully shut down the SSH master via control socket
         if [[ "$use_sudo" == "true" ]]; then
-            if sudo kill -0 "$pid" 2>/dev/null; then
-                sudo kill "$pid" 2>/dev/null || true
-                killed=$((killed + 1))
-            fi
-        elif kill -0 "$pid" 2>/dev/null; then
-            kill "$pid" 2>/dev/null || true
-            killed=$((killed + 1))
+            sudo ssh -n -O exit -S "$sock" dummy 2>/dev/null || true
+        else
+            ssh -n -O exit -S "$sock" dummy 2>/dev/null || true
         fi
-    done < "$ports_file"
+        rm -f "$sock"
+        killed=$((killed + 1))
+    done < <(jq -c '.[]' "$ports_file" 2>/dev/null)
 
     if [[ $killed -gt 0 ]]; then
         mps_log_debug "Killed ${killed} port forward(s) for '${short_name}'"
     fi
+}
+
+# Clean up any remaining control socket files for an instance.
+mps_cleanup_port_sockets() {
+    local short_name="$1"
+    local sock
+    for sock in "${HOME}/.mps/sockets/${short_name}-"*.sock; do
+        if [[ -e "$sock" ]]; then rm -f "$sock"; fi
+    done
 }
 
 # Reset port forwards: kill existing tunnels, clear tracking file, optionally auto-forward.
@@ -1637,7 +1857,8 @@ mps_reset_port_forwards() {
     mps_kill_port_forwards "$short_name"
     local ports_file
     ports_file="$(mps_ports_file "$short_name")"
-    [[ -f "$ports_file" ]] && true > "$ports_file"
+    rm -f "$ports_file"
+    mps_cleanup_port_sockets "$short_name"
     if [[ "$auto_forward" == "--auto-forward" ]]; then
         mps_auto_forward_ports "$instance_name" "$short_name"
     fi

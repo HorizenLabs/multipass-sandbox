@@ -52,7 +52,31 @@ else
     info "No symlink found at ${symlink_path}."
 fi
 
-# ---------- 2. VM Cleanup ----------
+# ---------- 2. Bash Completion ----------
+
+# Check known completion locations for our symlink
+comp_locations=(
+    "${HOME}/.local/share/bash-completion/completions/mps"
+)
+# Add Homebrew path if available
+brew_prefix="$(brew --prefix 2>/dev/null || true)"
+if [[ -n "$brew_prefix" ]]; then
+    comp_locations+=("${brew_prefix}/etc/bash_completion.d/mps")
+fi
+
+for comp_path in ${comp_locations[@]+"${comp_locations[@]}"}; do
+    if [[ -L "$comp_path" ]]; then
+        rm -f "$comp_path"
+        removed+=("Bash completion: ${comp_path}")
+        info "Removed bash completion: ${comp_path}"
+    elif [[ -f "$comp_path" ]]; then
+        rm -f "$comp_path"
+        removed+=("Bash completion: ${comp_path}")
+        info "Removed bash completion: ${comp_path}"
+    fi
+done
+
+# ---------- 3. VM Cleanup ----------
 
 if command -v multipass &>/dev/null && command -v jq &>/dev/null; then
     mps_vms="$(multipass list --format json 2>/dev/null | jq -r '.list[]? | select(.name | startswith("mps-")) | "\(.name) (\(.state))"' 2>/dev/null || true)"
@@ -80,7 +104,7 @@ else
     info "multipass or jq not available — skipping VM cleanup."
 fi
 
-# ---------- 3. SSH Configs ----------
+# ---------- 4. SSH Configs ----------
 
 ssh_config_dir="${HOME}/.ssh/config.d"
 if [[ -d "$ssh_config_dir" ]]; then
@@ -97,14 +121,14 @@ if [[ -d "$ssh_config_dir" ]]; then
     fi
 fi
 
-# ---------- 4. Instance Metadata ----------
+# ---------- 5. Instance Metadata ----------
 
 instances_dir="${HOME}/.mps/instances"
 if [[ -d "$instances_dir" ]]; then
     instance_files=()
     while IFS= read -r -d '' f; do
         instance_files+=("$f")
-    done < <(find "$instances_dir" -maxdepth 1 \( -name '*.env' -o -name '*.ports' \) -print0 2>/dev/null || true)
+    done < <(find "$instances_dir" -maxdepth 1 \( -name '*.json' -o -name '*.ports.json' -o -name '*.env' -o -name '*.ports' \) -print0 2>/dev/null || true)
     if [[ ${#instance_files[@]} -gt 0 ]]; then
         for f in ${instance_files[@]+"${instance_files[@]}"}; do
             rm -f "$f"
@@ -114,7 +138,7 @@ if [[ -d "$instances_dir" ]]; then
     fi
 fi
 
-# ---------- 5. Cached Images ----------
+# ---------- 6. Cached Images ----------
 
 cache_dir="${HOME}/.mps/cache"
 if [[ -d "$cache_dir" ]]; then
@@ -127,7 +151,7 @@ if [[ -d "$cache_dir" ]]; then
     fi
 fi
 
-# ---------- 6. User Config ----------
+# ---------- 7. User Config ----------
 
 user_config="${HOME}/.mps/config"
 if [[ -f "$user_config" ]]; then
@@ -139,7 +163,7 @@ if [[ -f "$user_config" ]]; then
     fi
 fi
 
-# ---------- 7. Cleanup ~/.mps ----------
+# ---------- 8. Cleanup ~/.mps ----------
 
 if [[ -d "${HOME}/.mps" ]]; then
     # Remove instances dir if empty
@@ -148,7 +172,7 @@ if [[ -d "${HOME}/.mps" ]]; then
     rmdir "${HOME}/.mps" 2>/dev/null && removed+=("Directory: ~/.mps") || true
 fi
 
-# ---------- 8. Summary ----------
+# ---------- 9. Summary ----------
 
 echo ""
 if [[ ${#removed[@]} -gt 0 ]]; then

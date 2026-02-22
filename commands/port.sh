@@ -2,6 +2,18 @@
 # shellcheck disable=SC2154  # color vars defined in lib/common.sh
 # commands/port.sh — mps port [forward|list]
 
+_complete_port() {
+    case "${1:-}" in
+        subcmds) echo "forward list" ;;
+        flags)
+            case "${2:-}" in
+                forward) echo "--privileged --help -h" ;;
+                list)    echo "--help -h" ;;
+                *)       echo "--help -h" ;;
+            esac ;;
+    esac
+}
+
 _port_usage() {
     cat <<EOF
 ${_color_bold}Usage:${_color_reset} mps port <subcommand> [options]
@@ -95,16 +107,18 @@ _port_forward() {
     local state
     state="$(mp_instance_state "$instance_name")"
     if [[ "$state" != "Running" ]]; then
-        mps_die "Instance '$name' is not running (state: $state). Start it with: mps up $name"
+        mps_die "Instance '$name' is not running (state: $state). Start it with: mps up --name $name"
     fi
 
-    mps_log_info "Forwarding localhost:${host_port} → ${instance_name}:${guest_port}..."
+    mps_log_info "Forwarding localhost:${host_port} → ${name}:${guest_port}..."
 
-    if ! mps_forward_port "$instance_name" "$name" "${host_port}:${guest_port}" "$privileged"; then
-        mps_die "Failed to establish port forward"
-    fi
-
-    mps_log_info "Port forward active: localhost:${host_port} → ${instance_name}:${guest_port}"
+    local rc=0
+    mps_forward_port "$instance_name" "$name" "${host_port}:${guest_port}" "$privileged" || rc=$?
+    case $rc in
+        0) mps_log_info "Port forward active: localhost:${host_port} → ${name}:${guest_port}" ;;
+        2) mps_log_warn "Port localhost:${host_port} is already forwarded to ${name}:${guest_port}" ;;
+        *) mps_die "Failed to establish port forward" ;;
+    esac
 }
 
 # ---------- port list ----------
@@ -125,54 +139,68 @@ _port_list() {
 
     local found=false
 
-    printf "${_color_bold}%-20s %-12s %-12s %-8s %s${_color_reset}\n" \
-        "SANDBOX" "HOST PORT" "GUEST PORT" "PID" "STATUS"
+    # ---- Ensure port forwards are alive before displaying status ----
+    local _pf
+    for _pf in "$state_dir"/*.ports.json; do
+        [[ -f "$_pf" ]] || continue
+        local _sn
+        _sn="$(basename "$_pf" .ports.json)"
+        if [[ -n "$name" && "$_sn" != "$name" ]]; then continue; fi
+        local _meta_file
+        _meta_file="$(mps_instance_meta "$_sn")"
+        [[ -f "$_meta_file" ]] || continue
+        local _fn=""
+        _fn="$(_mps_read_meta_json "$_meta_file" '.full_name')"
+        [[ -z "$_fn" ]] && continue
+        local _st=""
+        _st="$(mp_instance_state "$_fn" 2>/dev/null)" || true
+        [[ "$_st" == "Running" ]] && mps_auto_forward_ports "$_fn" "$_sn" "Re-established"
+    done
+
+    printf "${_color_bold}%-20s %-12s %-12s %s${_color_reset}\n" \
+        "SANDBOX" "HOST PORT" "GUEST PORT" "STATUS"
 
     local ports_file
-    for ports_file in "$state_dir"/*.ports; do
+    for ports_file in "$state_dir"/*.ports.json; do
         [[ -f "$ports_file" ]] || continue
 
         local sandbox_name
-        sandbox_name="$(basename "$ports_file" .ports)"
+        sandbox_name="$(basename "$ports_file" .ports.json)"
 
         # If filtering by name, skip non-matching
         if [[ -n "$name" && "$sandbox_name" != "$name" ]]; then
             continue
         fi
 
-        local line
-        while IFS= read -r line; do
-            [[ -z "$line" ]] && continue
-            # Format: host_port:guest_port:[s:]pid — 's:' prefix marks sudo-owned tunnels
-            local host_port="" guest_port="" pid="" use_sudo=false
-            if [[ "$line" =~ ^([0-9]+):([0-9]+):s:([0-9]+)$ ]]; then
-                host_port="${BASH_REMATCH[1]}"
-                guest_port="${BASH_REMATCH[2]}"
-                pid="${BASH_REMATCH[3]}"
-                use_sudo=true
-            elif [[ "$line" =~ ^([0-9]+):([0-9]+):([0-9]+)$ ]]; then
-                host_port="${BASH_REMATCH[1]}"
-                guest_port="${BASH_REMATCH[2]}"
-                pid="${BASH_REMATCH[3]}"
-            else
-                continue
-            fi
+        local entry
+        while IFS= read -r entry; do
+            [[ -z "$entry" ]] && continue
+            local host_port="" guest_port="" sock="" use_sudo=false
+            host_port="$(echo "$entry" | jq -r '.key')"
+            guest_port="$(echo "$entry" | jq -r '.value.guest_port')"
+            sock="$(echo "$entry" | jq -r '.value.socket')"
+            local sudo_val=""
+            sudo_val="$(echo "$entry" | jq -r '.value.sudo')"
+            [[ "$sudo_val" == "true" ]] && use_sudo=true
             local status
             if [[ "$use_sudo" == "true" ]]; then
-                if sudo kill -0 "$pid" 2>/dev/null; then
+                # Use sudo -n to avoid password prompts on read-only list
+                if sudo -n ssh -n -O check -S "$sock" dummy 2>/dev/null; then
                     status="${_color_green}active${_color_reset}"
+                elif ! sudo -n true 2>/dev/null; then
+                    status="${_color_yellow}unknown${_color_reset}"
                 else
                     status="${_color_red}dead${_color_reset}"
                 fi
-            elif kill -0 "$pid" 2>/dev/null; then
+            elif ssh -n -O check -S "$sock" dummy 2>/dev/null; then
                 status="${_color_green}active${_color_reset}"
             else
                 status="${_color_red}dead${_color_reset}"
             fi
-            printf "%-20s %-12s %-12s %-8s %b\n" \
-                "$sandbox_name" "$host_port" "$guest_port" "${pid:-—}" "$status"
+            printf "%-20s %-12s %-12s %b\n" \
+                "$sandbox_name" "$host_port" "$guest_port" "$status"
             found=true
-        done < "$ports_file"
+        done < <(jq -c 'to_entries[]' "$ports_file" 2>/dev/null)
     done
 
     if [[ "$found" == "false" ]]; then

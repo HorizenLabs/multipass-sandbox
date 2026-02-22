@@ -49,28 +49,85 @@ cmd_down() {
     mps_require_exists "$instance_name" "Nothing to stop."
 
     # ---- Check current state ----
+    local short_name
+    short_name="$(mps_short_name "$instance_name")"
     local state
     state="$(mp_instance_state "$instance_name")"
     mps_log_debug "Instance state: ${state}"
 
     if [[ "$state" == "Stopped" ]]; then
-        mps_log_info "Instance '${instance_name}' is already stopped."
+        mps_log_info "Instance '${short_name}' is already stopped."
         return 0
     fi
 
     if [[ "$state" != "Running" && "$state" != "Suspended" ]]; then
-        mps_die "Instance '${instance_name}' is in unexpected state: ${state}"
+        mps_die "Instance '${short_name}' is in unexpected state: ${state}"
     fi
 
     # ---- Kill port forwards ----
-    local short_name
-    short_name="$(mps_short_name "$instance_name")"
     mps_reset_port_forwards "$instance_name" "$short_name"
+
+    # ---- Clean up adhoc mounts ----
+    _down_cleanup_adhoc_mounts "$instance_name" "$short_name"
 
     # ---- Stop ----
     mp_stop "$instance_name" "$arg_force"
 
     mps_log_info "Sandbox '${short_name}' stopped."
+}
+
+# Remove adhoc (session-only) mounts before stopping.
+# Persistent mounts = auto-mount (workdir) + MPS_MOUNTS config.
+# Anything else in Multipass is adhoc and gets unmounted.
+_down_cleanup_adhoc_mounts() {
+    local instance_name="$1"
+    local short_name="$2"
+
+    # Get current mounts from Multipass
+    local mount_info=""
+    mount_info="$(mp_get_mounts "$instance_name")"
+
+    if [[ -z "$mount_info" ]]; then
+        return 0
+    fi
+
+    # Resolve persistent mounts for this instance
+    local persistent_mounts
+    persistent_mounts="$(_mps_resolve_project_mounts "$short_name")"
+
+    # Build a list of persistent guest paths for matching
+    local -a persistent_targets=()
+    if [[ -n "$persistent_mounts" ]]; then
+        local pmount
+        for pmount in $persistent_mounts; do
+            persistent_targets+=("${pmount#*:}")
+        done
+    fi
+
+    # Iterate over current Multipass mounts and unmount adhoc ones
+    local guest_path
+    while IFS= read -r guest_path; do
+        [[ -z "$guest_path" ]] && continue
+        local is_persistent=false
+        local ptgt
+        for ptgt in ${persistent_targets[@]+"${persistent_targets[@]}"}; do
+            if [[ "$guest_path" == "$ptgt" ]]; then
+                is_persistent=true
+                break
+            fi
+        done
+        if [[ "$is_persistent" == "false" ]]; then
+            mps_log_debug "Unmounting adhoc mount: ${guest_path}"
+            mp_umount "$instance_name" "$guest_path"
+        fi
+    done < <(echo "$mount_info" | jq -r 'keys[]' 2>/dev/null)
+}
+
+_complete_down() {
+    case "${1:-}" in
+        flags)       echo "--name -n --force -f --help -h" ;;
+        flag-values) case "${2:-}" in --name|-n) echo "__instances__" ;; esac ;;
+    esac
 }
 
 _down_usage() {

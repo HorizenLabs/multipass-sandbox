@@ -48,12 +48,16 @@ Build artifacts: `images/artifacts/mps-<flavor>-<arch>.qcow2.img` (`.qcow2.img` 
 Backblaze B2 for storage, Cloudflare proxy for public serving. Files at bucket root (no path prefix).
 
 - `MPS_IMAGE_BASE_URL` — public Cloudflare-proxied URL (maps 1:1 to bucket root)
-- `MPS_B2_BUCKET` — B2 bucket name (for publish scripts)
 - Manifest: stored in B2 (seeded inline on first publish), SemVer versions + `latest` pointer per image
 - Architecture-aware: separate `amd64`/`arm64` images per version
 - SHA256 checksums verified on pull; local cache at `~/.mps/cache/images/`
 - `file_size` (bytes) stored in manifest arch entries for autoindex display
 - Static `index.html` pages generated from manifest after every publish (root, per-flavor, per-version)
+- B2 credentials (`B2_APPLICATION_KEY_ID`, `B2_APPLICATION_KEY`) passed as env vars at runtime. Old image file versions cleaned up; manifest versions kept for audit trail.
+- Each image upload produces a `.meta.json` sidecar (sha256, build_date, file_size, x-mps metadata) uploaded atomically alongside the image. Clients fetch `.meta.json` for immediate SHA256 verification without waiting for manifest.
+- **CI flow**: `publish.sh --upload-only` uploads images + `.sha256` + `.meta.json` to B2, then purges CF cache. Fan-in job runs `update-manifest.sh` (downloads `.meta.json` sidecars, single manifest read-modify-write). Zero race window.
+- **Local flow**: `publish.sh` (no flag) does upload + manifest update in one shot.
+- **Manifest v2**: `schema_version: 2`, `generated_at` timestamp. No `url` field in arch entries (deterministic: `<name>/<version>/<arch>.img`). Empty v2 manifest seeded on first publish.
 
 ## Image Flavor Metadata
 
@@ -90,10 +94,6 @@ Non-OS dependencies installed with integrity verification where possible.
 
 Cloud-init layers: yq (rhash checksums), hadolint (.sha256 sidecar), cosign (cosign_checksums.txt), Echidna (sigstore bundle via cosign), shellcheck (no checksums published).
 
-## Linting Notes
-
-Linter-to-file mapping is in CLAUDE.md "Workflow" section. Additional note: command files use `# shellcheck disable=SC2154` at file-level — they're sourced by `bin/mps` which provides color variables from `lib/common.sh`.
-
 ## Build System Stamp Files
 
 `.stamps/` directory tracks Docker image build state in Make.
@@ -103,17 +103,9 @@ Linter-to-file mapping is in CLAUDE.md "Workflow" section. Additional note: comm
 - `.stamps/image-<flavor>-arm64` — depend on builder stamp + common image deps + cumulative layer files (from-scratch, no parent stamp dep)
 - `make clean` removes stamp files; `.stamps/` is in `.gitignore`
 
-## File Transfer
-
-Colon-prefix convention for guest paths in `mps transfer` (`:` prefix = guest path). Supports host→guest (multiple sources), guest→host (single source — multipass limitation). `--transfer` on `mps create` seeds files after VM creation.
-
-## Local Image Support
-
-Explicit import via `mps image import <file>`. Cache at `~/.mps/cache/images/<name>/<tag>/<arch>.img` with `.meta.json` sidecar (JSON, read via `jq`). Pulled images save the remote `.meta.json` verbatim; imported images generate minimal JSON (`sha256` + manifest metadata if name matches a known flavor). Source is inferred from `build_date` presence (pulled has it, imported doesn't). File mtime of local `.meta.json` enables HEAD `If-Modified-Since` staleness checks against the remote sidecar. Name/arch auto-detected from filename. `mps_resolve_image()` checks cache first, falls through to `multipass launch` for Ubuntu versions.
-
 ## SSH Key Management
 
-`mps ssh-config` is the **only** command that injects SSH keys. Key resolution: `--ssh-key` flag → `MPS_SSH_KEY` config → auto-detect from `~/.ssh/` (ed25519 > ecdsa > rsa). Injection is idempotent (`MPS_SSH_INJECTED=true` metadata). `mps port forward` requires SSH pre-configured.
+`mps ssh-config` is the **only** command that injects SSH keys. Key resolution: `--ssh-key` flag → `MPS_SSH_KEY` config → auto-detect from `~/.ssh/` (ed25519 > ecdsa > rsa). Injection is idempotent (`.ssh.injected: true` in instance JSON metadata). `mps port forward` requires SSH pre-configured.
 
 ## Git Tagging Strategy
 

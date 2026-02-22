@@ -45,7 +45,7 @@ For each commit (newest first), flag if it:
 - **Modifies `images/publish.sh` or `images/update-manifest.sh`** — check DECISIONS.md Image Distribution
 - **Modifies `images/packer.pkr.hcl`** — check DECISIONS.md Image Flavor Metadata (disk sizes)
 - **Adds/removes commands** in `commands/*.sh` — check CLAUDE.md Commands section
-- **Modifies `images/manifest.json`** — check DECISIONS.md Image Flavors table
+- **Modifies `images/update-manifest.sh` or `images/publish.sh`** (manifest schema) — check DECISIONS.md Image Flavors table
 - **Modifies `config/defaults.env`** — check DECISIONS.md for referenced `MPS_*` vars
 - **Modifies `.github/workflows/*.yml`** — check `.github/CI.md` still matches (only if workflows were actually changed; skip otherwise)
 
@@ -84,7 +84,7 @@ Check the "Secure Dependency Installation" table against `Dockerfile.builder`, `
 
 ### 8. Image Flavor Consistency (DECISIONS.md)
 
-Cross-reference three sources of truth: `images/build.sh` (case statement), `images/manifest.json` (registry entries), DECISIONS.md "Image Flavors" table. All must agree on flavor names, layer composition, and ordering.
+Cross-reference two sources of truth: `images/build.sh` (case statement with layer mappings) and DECISIONS.md "Image Flavors" table. Both must agree on flavor names, layer composition, and ordering.
 
 ### 9. Config Variable Cross-Reference
 

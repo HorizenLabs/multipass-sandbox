@@ -2,6 +2,25 @@
 # shellcheck disable=SC2154  # color vars defined in lib/common.sh
 # commands/image.sh — mps image [list|pull|import|remove]
 
+_complete_image() {
+    case "${1:-}" in
+        subcmds) echo "list pull import remove" ;;
+        flags)
+            case "${2:-}" in
+                list)   echo "--remote --help -h" ;;
+                pull)   echo "--force -f --help -h" ;;
+                import) echo "--name --tag --arch --help -h" ;;
+                remove) echo "--arch --all --force -f --help -h" ;;
+                *)      echo "--help -h" ;;
+            esac ;;
+        flag-values)
+            case "${2:-}" in
+                --arch) echo "__archs__" ;;
+                --name) echo "__images__" ;;
+            esac ;;
+    esac
+}
+
 _image_usage() {
     cat <<EOF
 ${_color_bold}Usage:${_color_reset} mps image <subcommand> [options]

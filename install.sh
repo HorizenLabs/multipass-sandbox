@@ -121,6 +121,7 @@ fi
 info "Creating ~/.mps/ directory structure..."
 mkdir -p "${HOME}/.mps/instances"
 mkdir -p "${HOME}/.mps/cache/images"
+mkdir -p "${HOME}/.mps/cloud-init"
 mkdir -p "${HOME}/.ssh/config.d"
 
 # ---------- Install ----------
@@ -151,6 +152,52 @@ else
     warn "Cannot write to ${INSTALL_DIR}. Trying with sudo..."
     sudo ln -sf "${MPS_ROOT}/bin/mps" "${INSTALL_DIR}/mps"
     info "Symlinked (sudo): ${INSTALL_DIR}/mps → ${MPS_ROOT}/bin/mps"
+fi
+
+# ---------- Bash Completion ----------
+
+COMPLETIONS_SRC="${MPS_ROOT}/completions/mps.bash"
+if [[ -f "$COMPLETIONS_SRC" ]]; then
+    installed_completion=false
+
+    if [[ "$OS" == "linux" ]]; then
+        # Linux: ~/.local/share/bash-completion/completions/mps
+        comp_dir="${HOME}/.local/share/bash-completion/completions"
+        mkdir -p "$comp_dir"
+        if [[ -L "${comp_dir}/mps" ]]; then
+            rm -f "${comp_dir}/mps"
+        fi
+        ln -sf "$COMPLETIONS_SRC" "${comp_dir}/mps"
+        info "Bash completion installed: ${comp_dir}/mps"
+        installed_completion=true
+    elif [[ "$OS" == "macos" ]]; then
+        # macOS: use Homebrew bash-completion directory if available
+        brew_prefix="$(brew --prefix 2>/dev/null || true)"
+        if [[ -n "$brew_prefix" && -d "${brew_prefix}/etc/bash_completion.d" ]]; then
+            comp_dir="${brew_prefix}/etc/bash_completion.d"
+            if [[ -L "${comp_dir}/mps" ]]; then
+                rm -f "${comp_dir}/mps"
+            fi
+            ln -sf "$COMPLETIONS_SRC" "${comp_dir}/mps"
+            info "Bash completion installed: ${comp_dir}/mps"
+            installed_completion=true
+        fi
+    fi
+
+    if [[ "$installed_completion" == "false" ]]; then
+        warn "Could not auto-install bash completion."
+        warn "Add this to your shell profile:"
+        warn "  source ${COMPLETIONS_SRC}"
+    fi
+
+    # Hint for zsh users
+    shell_basename="$(basename "${SHELL:-bash}")"
+    if [[ "$shell_basename" == "zsh" ]]; then
+        info ""
+        info "For zsh, add to your ~/.zshrc:"
+        info "  autoload -U +X bashcompinit && bashcompinit"
+        info "  source ${COMPLETIONS_SRC}"
+    fi
 fi
 
 # ---------- PATH Check ----------

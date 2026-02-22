@@ -20,7 +20,7 @@ set -euo pipefail
 # Environment:
 #   B2_APPLICATION_KEY_ID — B2 application key ID (required, read by b2 CLI)
 #   B2_APPLICATION_KEY    — B2 application key (required, read by b2 CLI)
-#   MPS_B2_BUCKET         — B2 bucket name (default: from config/defaults.env)
+#   MPS_B2_BUCKET         — B2 bucket name (default: mpsandbox)
 
 # shellcheck source=lib/publish-common.sh
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/publish-common.sh"

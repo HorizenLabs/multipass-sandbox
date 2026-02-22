@@ -46,8 +46,8 @@ cmd_shell() {
     local instance_name
     instance_name="$(mps_resolve_instance_name "$arg_name")"
 
-    # ---- Check instance is running ----
-    mps_require_running "$instance_name"
+    # ---- Prepare running instance (state check, staleness, port forwards) ----
+    mps_prepare_running_instance "$instance_name" >/dev/null
 
     # ---- Determine working directory ----
     local workdir
@@ -56,6 +56,13 @@ cmd_shell() {
     # ---- Open shell ----
     mps_log_debug "Opening shell in '${instance_name}' (workdir: ${workdir:-<default>})"
     mp_shell "$instance_name" "$workdir"
+}
+
+_complete_shell() {
+    case "${1:-}" in
+        flags)       echo "--name -n --workdir -w --help -h" ;;
+        flag-values) case "${2:-}" in --name|-n) echo "__instances__" ;; esac ;;
+    esac
 }
 
 _shell_usage() {
