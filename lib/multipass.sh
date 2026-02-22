@@ -154,15 +154,6 @@ mp_ipv4() {
     mp_info_field "$instance_name" "ipv4[0]"
 }
 
-mp_list() {
-    local prefix="${MPS_INSTANCE_PREFIX:-mps}"
-    local raw
-    raw="$(multipass list --format json 2>/dev/null)" || {
-        mps_die "Failed to list instances."
-    }
-    echo "$raw" | jq -r ".list[] | select(.name | startswith(\"${prefix}-\"))"
-}
-
 mp_list_all() {
     local prefix="${MPS_INSTANCE_PREFIX:-mps}"
     multipass list --format json 2>/dev/null | jq -r "[.list[] | select(.name | startswith(\"${prefix}-\"))]"
@@ -221,32 +212,6 @@ mp_transfer() {
 }
 
 # ---------- SSH ----------
-
-mp_ssh_info() {
-    local instance_name="$1"
-    local _display
-    _display="$(mps_short_name "$instance_name")"
-    local ip
-    ip="$(mp_ipv4 "$instance_name")"
-
-    if [[ -z "$ip" ]]; then
-        mps_die "Cannot determine IP for instance '${_display}'"
-    fi
-
-    # Read SSH key from instance metadata (set by mps ssh-config)
-    local short_name
-    short_name="$(mps_short_name "$instance_name")"
-    local ssh_key=""
-    local meta_file
-    meta_file="$(mps_instance_meta "$short_name")"
-    if [[ -f "$meta_file" ]]; then
-        ssh_key="$(_mps_read_meta_json "$meta_file" '.ssh.key')"
-    fi
-
-    echo "IP=$ip"
-    echo "SSH_KEY=$ssh_key"
-    echo "USER=ubuntu"
-}
 
 # ---------- Cloud-init Wait ----------
 

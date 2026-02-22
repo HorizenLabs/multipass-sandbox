@@ -54,7 +54,7 @@ First round of alpha-tester feedback across macOS and Linux.
 - [x] Lazy port forward re-establishment (ensure on exec/shell/transfer/port-list)
 - [x] Add instance staleness detection
 - [x] Normalize user-facing messages to show short names (strip `mps-` prefix)
-- [ ] Scan for dead code paths and unused variables after refactoring work
+- [x] Scan for dead code paths and unused variables after refactoring work
 - [ ] Documentation updates: intended user flow and customization suggestions
 - [ ] Triage and fix additional alpha-tester findings
 
