@@ -37,6 +37,7 @@ Internal CLI tool for spinning up isolated VM-based development environments usi
 - `.github/workflows/` — GitHub Actions CI/CD pipelines (ci, images, release, update-submodule)
 - `.github/actions/verify-gpg-tag/` — Composite action for GPG tag signature verification
 - `vendor/hl-claude-marketplace` — Git submodule: private Claude Code plugin marketplace (relative URL)
+- `.claude/skills/` — Claude Code skills (`audit-docs`: doc staleness audit, `init-template`: cloud-init template generator)
 - `.planning/` — Implementation plan, architecture decisions, CI design, status tracking
 
 ## Commands

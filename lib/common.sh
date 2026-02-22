@@ -293,9 +293,15 @@ MPS_MAX_INSTANCE_NAME_LEN=40
 # Truncates the folder portion and appends a short hash if too long.
 mps_auto_name() {
     local mount_source="${1:-}"
-    local template="${2:-${MPS_CLOUD_INIT:-${MPS_DEFAULT_CLOUD_INIT:-default}}}"
+    local raw_template="${2:-${MPS_CLOUD_INIT:-${MPS_DEFAULT_CLOUD_INIT:-default}}}"
     local profile="${3:-${MPS_PROFILE:-${MPS_DEFAULT_PROFILE:-lite}}}"
     local prefix="${MPS_INSTANCE_PREFIX:-mps}"
+
+    # Strip path and extension from template name (e.g., ".mps/cloud-init.yaml" → "cloud-init")
+    local template
+    template="$(basename "$raw_template")"
+    template="${template%.yaml}"
+    template="${template%.yml}"
 
     if [[ -z "$mount_source" ]]; then
         mps_die "Cannot auto-name: no mount path. Use --name to specify a name, or provide a mount path."
@@ -1429,14 +1435,21 @@ mps_resolve_cloud_init() {
         return
     fi
 
-    # Look in the templates directory
+    # Look in the project templates directory
     local template_path="${MPS_ROOT}/templates/cloud-init/${template}.yaml"
     if [[ -f "$template_path" ]]; then
         echo "$template_path"
         return
     fi
 
-    mps_die "Cloud-init template not found: $template (searched ${template_path})"
+    # Look in personal templates directory
+    local user_path="${HOME}/.mps/cloud-init/${template}.yaml"
+    if [[ -f "$user_path" ]]; then
+        echo "$user_path"
+        return
+    fi
+
+    mps_die "Cloud-init template not found: $template (searched ${template_path} and ${user_path})"
 }
 
 # ---------- Validation ----------

@@ -250,15 +250,20 @@ Sandboxes are designed to be disposable — image staleness checks will regularl
 # Use the default template (enabled plugins, commented-out examples)
 mps create
 
-# Use a named template from templates/cloud-init/
+# Use a named template from templates/cloud-init/ or ~/.mps/cloud-init/
 mps create --cloud-init mytemplate
 
 # Use any file path directly
 mps create --cloud-init ./my-cloud-init.yaml
 
-# Set a default in .mps.env
-MPS_DEFAULT_CLOUD_INIT=mytemplate
+# Set a per-project default in .mps.env (name flows into auto-naming)
+MPS_CLOUD_INIT=.mps/dev.yaml
+
+# Set a personal default in ~/.mps/config
+MPS_DEFAULT_CLOUD_INIT=personal
 ```
+
+Named templates are resolved in order: `templates/cloud-init/` (project), then `~/.mps/cloud-init/` (personal).
 
 ### The default template
 
@@ -272,9 +277,12 @@ The shipped `default` template (`templates/cloud-init/default.yaml`) enables Hor
 
 ### Creating custom templates
 
-Create a `#cloud-config` YAML file and either:
-1. Place it in `templates/cloud-init/` to reference by name (e.g., `mytemplate.yaml` → `--cloud-init mytemplate`)
-2. Pass any file path directly (e.g., `--cloud-init ~/configs/dev-setup.yaml`)
+Create a `#cloud-config` YAML file and place it in one of these locations:
+
+1. **Project-shared** (`<project>/.mps/<name>.yaml`): Checked into git, shared by the team. Set `MPS_CLOUD_INIT=.mps/<name>.yaml` in `.mps.env`. Use a descriptive name — it flows into auto-naming (e.g., `dev.yaml` → `myproject-dev-lite`). The `.mps/` directory keeps MPS config out of the project root.
+2. **Personal** (`~/.mps/cloud-init/<name>.yaml`): Personal defaults, not in any repo. Reference by name (e.g., `--cloud-init personal`) or set `MPS_DEFAULT_CLOUD_INIT=<name>` in `~/.mps/config`.
+3. **MPS built-in** (`templates/cloud-init/<name>.yaml`): For templates shipped with MPS itself.
+4. **Any file path** (e.g., `--cloud-init ~/configs/dev-setup.yaml`)
 
 ```yaml
 #cloud-config
@@ -297,6 +305,17 @@ timezone: America/New_York
 ```
 
 These templates run on top of whatever image you're using. For the image build-time layers (what packages come pre-installed), see `images/layers/*.yaml`.
+
+### Creating templates with Claude Code
+
+The `/init-template` skill guides you through creating a cloud-init template interactively. It reads the default template, knows what's pre-installed in each image flavor, and generates valid YAML with the right config wiring.
+
+```bash
+# In Claude Code (from the mps repo), run:
+/init-template
+```
+
+The skill walks you through: scope (personal vs project), target image flavor, which plugins/frameworks to enable, extra packages, custom commands, and sandbox settings (`.mps.env`). It writes the template and config files for you.
 
 ## Image Flavors
 

@@ -121,6 +121,7 @@ fi
 info "Creating ~/.mps/ directory structure..."
 mkdir -p "${HOME}/.mps/instances"
 mkdir -p "${HOME}/.mps/cache/images"
+mkdir -p "${HOME}/.mps/cloud-init"
 mkdir -p "${HOME}/.ssh/config.d"
 
 # ---------- Install ----------
