@@ -1687,6 +1687,7 @@ mps_forward_port() {
 mps_auto_forward_ports() {
     local instance_name="$1"
     local short_name="$2"
+    local verb="${3:-Forwarded}"
     local count=0
 
     local specs
@@ -1705,7 +1706,7 @@ mps_auto_forward_ports() {
     done <<< "$specs"
 
     if [[ $count -gt 0 ]]; then
-        mps_log_info "Forwarded ${count} port(s)."
+        mps_log_info "${verb} ${count} port forward(s)."
     fi
 }
 

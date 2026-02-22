@@ -59,6 +59,11 @@ cmd_transfer() {
     # ---- Check instance is running ----
     mps_require_running "$instance_name"
 
+    # ---- Ensure port forwards are alive ----
+    local short_name
+    short_name="$(mps_short_name "$instance_name")"
+    mps_auto_forward_ports "$instance_name" "$short_name" "Re-established"
+
     # ---- Separate sources and destination ----
     local -a sources=("${file_args[@]:0:${#file_args[@]}-1}")
     local destination="${file_args[${#file_args[@]}-1]}"

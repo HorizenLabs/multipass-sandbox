@@ -165,6 +165,7 @@ The Makefile detects host uid:gid and the entrypoint uses setpriv to step down f
 - Fix all lint errors before committing — do not bypass with `--no-verify` or inline disables unless there is a documented reason.
 - **checkmake quirks**: `minphony` only parses the first line of `.PHONY` declarations — keep `test` and `clean` on the first line. `maxbodylength` default max is 15 lines per target body (configured in `checkmake.ini`).
 - **Local verification**: `multipass` and `jq` are installed on the dev machine — run `mps` commands directly to verify changes.
+- **End-to-end verification**: After implementing changes to command files (`commands/*.sh`) or core libraries (`lib/*.sh`), run the verification steps from the plan against a live VM on the host — not just `make lint`. If the plan includes a test script, execute it. Create a temporary instance (e.g., `--profile micro --name <test-name>`) and clean it up with `mps destroy` afterward.
 
 ## Planning & Status
 

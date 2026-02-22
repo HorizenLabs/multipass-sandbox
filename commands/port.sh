@@ -127,6 +127,24 @@ _port_list() {
 
     local found=false
 
+    # ---- Ensure port forwards are alive before displaying status ----
+    local _pf
+    for _pf in "$state_dir"/*.ports.json; do
+        [[ -f "$_pf" ]] || continue
+        local _sn
+        _sn="$(basename "$_pf" .ports.json)"
+        if [[ -n "$name" && "$_sn" != "$name" ]]; then continue; fi
+        local _meta_file
+        _meta_file="$(mps_instance_meta "$_sn")"
+        [[ -f "$_meta_file" ]] || continue
+        local _fn=""
+        _fn="$(_mps_read_meta_json "$_meta_file" '.full_name')"
+        [[ -z "$_fn" ]] && continue
+        local _st=""
+        _st="$(mp_instance_state "$_fn" 2>/dev/null)" || true
+        [[ "$_st" == "Running" ]] && mps_auto_forward_ports "$_fn" "$_sn" "Re-established"
+    done
+
     printf "${_color_bold}%-20s %-12s %-12s %s${_color_reset}\n" \
         "SANDBOX" "HOST PORT" "GUEST PORT" "STATUS"
 
