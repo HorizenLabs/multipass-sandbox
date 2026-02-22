@@ -51,6 +51,7 @@ First round of alpha-tester feedback across macOS and Linux.
 - [x] Refactor instance metadata & port tracking to JSON
 - [x] Refactor mount system — implementation and automated verification (28/28 tests pass)
 - [x] Refactor SSH port forward lifecycle (control sockets) — implementation and automated verification
+- [ ] Lazy port forward re-establishment (ensure on exec/shell/transfer/port-list)
 - [ ] Add instance staleness detection
 - [ ] Documentation updates: intended user flow and customization suggestions
 - [ ] Triage and fix additional alpha-tester findings

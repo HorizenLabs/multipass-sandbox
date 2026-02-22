@@ -18,7 +18,7 @@ Internal CLI tool for spinning up isolated VM-based development environments usi
 - `bin/mps` — Main entry point, subcommand dispatch
 - `lib/common.sh` — Logging, config cascade, path conversion, mount resolution, auto-naming, auto-scaling resources
 - `lib/multipass.sh` — Thin wrappers around `multipass` CLI with `--format json` + `jq`
-- `commands/*.sh` — One file per subcommand, each exports `cmd_<name>()` function
+- `commands/*.sh` — One file per subcommand (create, up, down, destroy, shell, exec, list, status, ssh-config, image, mount, port, transfer), each exports `cmd_<name>()` function
 - `templates/cloud-init/` — Minimal cloud-init templates for VM launch customization
 - `images/layers/` — Composable cloud-init layer files (base, protocol-dev, smart-contract-dev, smart-contract-audit)
 - `images/build.sh` — Image build script (takes flavor arg, merges layers with yq)
@@ -58,6 +58,7 @@ Internal CLI tool for spinning up isolated VM-based development environments usi
 - `mps list` / `mps status` — List all / detailed info
 - `mps ssh-config` — Generate SSH config for VS Code (also injects SSH keys)
 - `mps image [list|pull|import|remove]` — Manage pre-built QCOW2 images
+- `mps mount [add|remove|list]` — Manage mounts (origin tracking: auto/config/adhoc)
 - `mps port [forward|list]` — SSH port forwarding
 - `mps transfer` — File copy between host and guest (`:` prefix = guest path)
 
@@ -67,7 +68,7 @@ Internal CLI tool for spinning up isolated VM-based development environments usi
   - Override with `--name` flag or `MPS_NAME` in `.mps.env`
   - Long names truncated with short hash suffix (max 40 chars for Multipass)
   - `--no-mount` without `--name` errors (can't derive folder name)
-- Config cascade: `config/defaults.env` → `~/.mps/config` → `.mps.env` → profile → auto-scaling → CLI flags. No `ENV_VAR=x mps cmd` overrides — use `~/.mps/config` or `.mps.env` to test config knobs. Key config keys: `MPS_CHECK_UPDATES` (CLI update check, default true), `MPS_IMAGE_CHECK_UPDATES` (image staleness check, default true).
+- Config cascade: `config/defaults.env` → `~/.mps/config` → `.mps.env` → profile → auto-scaling → CLI flags. No `ENV_VAR=x mps cmd` overrides — use `~/.mps/config` or `.mps.env` to test config knobs. Key config keys: `MPS_CHECK_UPDATES` (CLI update check, default true), `MPS_IMAGE_CHECK_UPDATES` (image staleness check, default true), `MPS_PORTS` (space-separated `host:guest` pairs, auto-forwarded on up/create).
 - **Default profile**: `lite` (auto-scales CPU/memory from host hardware fractions with min/cap)
 - **Profiles**: micro (1/8 CPU, 1/16 mem), lite (1/4, 1/6), standard (1/3, 1/4), heavy (1/2, 1/3)
 - **Image metadata**: `x-mps:` blocks in layer YAMLs define disk_size, min_profile, min_disk/memory/cpus
