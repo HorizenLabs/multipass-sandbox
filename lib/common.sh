@@ -452,7 +452,7 @@ mps_resolve_workdir() {
     meta_file="$(mps_instance_meta "$(mps_short_name "$instance_name")")"
     if [[ -f "$meta_file" ]]; then
         local mount_target=""
-        mount_target="$(_mps_read_meta_key "$meta_file" "MPS_MOUNT_TARGET")"
+        mount_target="$(_mps_read_meta_json "$meta_file" '.mounts[] | select(.auto) | .target')"
         if [[ -n "$mount_target" ]]; then
             mps_log_debug "Using mount target as workdir: ${mount_target}"
             echo "$mount_target"
@@ -979,16 +979,26 @@ _mps_cli_update_warn() {
 
 # ---------- Metadata Helpers ----------
 
-_mps_read_meta_key() {
-    local file="$1" key="$2"
-    if [[ -f "$file" ]]; then
-        grep "^${key}=" "$file" 2>/dev/null | cut -d= -f2 || true
-    fi
+# Read a value from a JSON file using a jq expression.
+# Returns empty string on missing file, missing key, or jq error.
+_mps_read_meta_json() {
+    local file="$1" jq_expr="$2"
+    [[ -f "$file" ]] || return 0
+    jq -r "$jq_expr // empty" "$file" 2>/dev/null || true
+}
+
+# Atomic write of a JSON string to a file (temp + mv + chmod 600).
+_mps_write_json() {
+    local file="$1" json_string="$2"
+    local tmp_file="${file}.tmp.$$"
+    printf '%s\n' "$json_string" > "$tmp_file"
+    chmod 600 "$tmp_file"
+    mv -f "$tmp_file" "$file"
 }
 
 mps_instance_meta() {
     local name="$1"
-    echo "$(mps_state_dir)/${name}.env"
+    echo "$(mps_state_dir)/${name}.json"
 }
 
 # Read a key from an image's .meta.json sidecar file.
@@ -1004,20 +1014,42 @@ mps_image_meta() {
 
 mps_save_instance_meta() {
     local name="$1"
+    local image_json="${2:-null}"
+    local mounts_json="${3:-[]}"
+    local port_forwards_json="${4:-[]}"
+    local transfers_json="${5:-[]}"
     local meta_file
     meta_file="$(mps_instance_meta "$name")"
-    cat > "$meta_file" <<EOF
-MPS_INSTANCE_NAME=${name}
-MPS_INSTANCE_FULL=$(mps_instance_name "$name")
-MPS_CREATED=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-MPS_CPUS=${MPS_CPUS:-${MPS_DEFAULT_CPUS:-2}}
-MPS_MEMORY=${MPS_MEMORY:-${MPS_DEFAULT_MEMORY:-2G}}
-MPS_DISK=${MPS_DISK:-${MPS_DEFAULT_DISK:-20G}}
-MPS_CLOUD_INIT=${MPS_CLOUD_INIT:-${MPS_DEFAULT_CLOUD_INIT:-default}}
-MPS_MOUNT_SOURCE=${MPS_MOUNT_SOURCE:-}
-MPS_MOUNT_TARGET=${MPS_MOUNT_TARGET:-}
-EOF
-    chmod 600 "$meta_file"
+    local full_name
+    full_name="$(mps_instance_name "$name")"
+    local json
+    json="$(jq -n \
+        --arg name "$name" \
+        --arg full_name "$full_name" \
+        --arg created "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+        --arg cpus "${MPS_CPUS:-${MPS_DEFAULT_CPUS:-2}}" \
+        --arg memory "${MPS_MEMORY:-${MPS_DEFAULT_MEMORY:-2G}}" \
+        --arg disk "${MPS_DISK:-${MPS_DEFAULT_DISK:-20G}}" \
+        --arg cloud_init "${MPS_CLOUD_INIT:-${MPS_DEFAULT_CLOUD_INIT:-default}}" \
+        --argjson image "$image_json" \
+        --argjson mounts "$mounts_json" \
+        --argjson port_forwards "$port_forwards_json" \
+        --argjson transfers "$transfers_json" \
+        '{
+            name: $name,
+            full_name: $full_name,
+            created: $created,
+            cpus: ($cpus | tonumber),
+            memory: $memory,
+            disk: $disk,
+            cloud_init: $cloud_init,
+            image: $image,
+            mounts: $mounts,
+            ssh: null,
+            port_forwards: $port_forwards,
+            transfers: $transfers
+        }')"
+    _mps_write_json "$meta_file" "$json"
     mps_log_debug "Saved instance metadata to $meta_file"
 }
 
@@ -1306,7 +1338,7 @@ mps_inject_ssh_key() {
     meta_file="$(mps_instance_meta "$short_name")"
     if [[ -f "$meta_file" ]]; then
         local injected=""
-        injected="$(_mps_read_meta_key "$meta_file" "MPS_SSH_INJECTED")"
+        injected="$(_mps_read_meta_json "$meta_file" '.ssh.injected')"
         if [[ "$injected" == "true" ]]; then
             mps_log_debug "SSH key already injected for '${short_name}'"
             return 0
@@ -1328,15 +1360,12 @@ mps_inject_ssh_key() {
         mps_die "Failed to inject SSH key into '${instance_name}'"
     fi
 
-    # Record in instance metadata
+    # Record in instance metadata via jq read-modify-write
     if [[ -f "$meta_file" ]]; then
-        # Append to existing metadata
-        printf "MPS_SSH_KEY=%s\nMPS_SSH_INJECTED=true\n" "$privkey_path" >> "$meta_file"
-    else
-        # Create metadata file with SSH info
-        printf "MPS_SSH_KEY=%s\nMPS_SSH_INJECTED=true\n" "$privkey_path" > "$meta_file"
+        local updated
+        updated="$(jq --arg k "$privkey_path" '.ssh = {"key": $k, "injected": true}' "$meta_file")"
+        _mps_write_json "$meta_file" "$updated"
     fi
-    chmod 600 "$meta_file"
 
     mps_log_info "SSH key injected."
 }
@@ -1378,7 +1407,7 @@ _mps_is_ssh_pid() {
 # Return the path to the .ports tracking file for an instance
 mps_ports_file() {
     local short_name="$1"
-    echo "$(mps_state_dir)/${short_name}.ports"
+    echo "$(mps_state_dir)/${short_name}.ports.json"
 }
 
 # Gather port specs from MPS_PORTS config and instance metadata.
@@ -1401,19 +1430,19 @@ mps_collect_port_specs() {
         done
     fi
 
-    # Source 2: MPS_PORT_FORWARD+ entries in instance metadata
+    # Source 2: port_forwards array in instance metadata JSON
     local meta_file
     meta_file="$(mps_instance_meta "$short_name")"
     if [[ -f "$meta_file" ]]; then
-        while IFS='=' read -r key val; do
-            if [[ "$key" == "MPS_PORT_FORWARD+" ]]; then
-                local hp="${val%%:*}"
-                case "$seen" in *" $hp "*) ;; *)
-                    seen="$seen$hp "
-                    specs+=("$val")
-                ;; esac
-            fi
-        done < "$meta_file"
+        local pf_entry=""
+        while IFS= read -r pf_entry; do
+            [[ -z "$pf_entry" ]] && continue
+            local hp="${pf_entry%%:*}"
+            case "$seen" in *" $hp "*) ;; *)
+                seen="$seen$hp "
+                specs+=("$pf_entry")
+            ;; esac
+        done < <(_mps_read_meta_json "$meta_file" '.port_forwards[]')
     fi
 
     local s
@@ -1473,9 +1502,9 @@ mps_forward_port() {
     meta_file="$(mps_instance_meta "$short_name")"
     if [[ -f "$meta_file" ]]; then
         local injected=""
-        injected="$(_mps_read_meta_key "$meta_file" "MPS_SSH_INJECTED")"
+        injected="$(_mps_read_meta_json "$meta_file" '.ssh.injected')"
         if [[ "$injected" == "true" ]]; then
-            ssh_key="$(_mps_read_meta_key "$meta_file" "MPS_SSH_KEY")"
+            ssh_key="$(_mps_read_meta_json "$meta_file" '.ssh.key')"
         fi
     fi
     if [[ -z "$ssh_key" || ! -f "$ssh_key" ]]; then
@@ -1487,20 +1516,14 @@ mps_forward_port() {
     local ports_file
     ports_file="$(mps_ports_file "$short_name")"
     if [[ -f "$ports_file" ]]; then
-        local _line
-        while IFS= read -r _line; do
-            [[ -z "$_line" ]] && continue
-            local _fhp="" _fpid="" _fsudo=false
-            if [[ "$_line" =~ ^([0-9]+):[0-9]+:s:([0-9]+)$ ]]; then
-                _fhp="${BASH_REMATCH[1]}"; _fpid="${BASH_REMATCH[2]}"; _fsudo=true
-            elif [[ "$_line" =~ ^([0-9]+):[0-9]+:([0-9]+)$ ]]; then
-                _fhp="${BASH_REMATCH[1]}"; _fpid="${BASH_REMATCH[2]}"
-            fi
-            if [[ "$_fhp" == "$host_port" && -n "$_fpid" ]]; then
-                # Verify PID is actually an SSH process before trusting it
-                if ! _mps_is_ssh_pid "$_fpid" "$_fsudo"; then
-                    continue
-                fi
+        local _fpid="" _fsudo=false
+        _fpid="$(_mps_read_meta_json "$ports_file" ".[\"${host_port}\"].pid")"
+        if [[ -n "$_fpid" ]]; then
+            local _fsudo_val=""
+            _fsudo_val="$(_mps_read_meta_json "$ports_file" ".[\"${host_port}\"].sudo")"
+            [[ "$_fsudo_val" == "true" ]] && _fsudo=true
+            # Verify PID is actually an SSH process before trusting it
+            if _mps_is_ssh_pid "$_fpid" "$_fsudo"; then
                 local _alive=false
                 if [[ "$_fsudo" == "true" ]]; then
                     sudo kill -0 "$_fpid" 2>/dev/null && _alive=true
@@ -1512,7 +1535,7 @@ mps_forward_port() {
                     return 0
                 fi
             fi
-        done < "$ports_file"
+        fi
     fi
 
     # Build SSH tunnel command
@@ -1546,11 +1569,17 @@ mps_forward_port() {
         pid="$(pgrep -f "ssh.*-L.*${host_port}:localhost:${guest_port}.*${ip}" | tail -1)" || true
     fi
     if [[ -n "$pid" ]]; then
-        # Prefix with 's:' to mark sudo-owned tunnels for cleanup
-        local owner_prefix=""
-        [[ "$_use_sudo" == "true" ]] && owner_prefix="s:"
-        echo "${host_port}:${guest_port}:${owner_prefix}${pid}" >> "$ports_file"
-        chmod 600 "$ports_file"
+        # Read-modify-write JSON ports file
+        local current_json="{}"
+        [[ -f "$ports_file" ]] && current_json="$(cat "$ports_file")"
+        local updated
+        updated="$(echo "$current_json" | jq \
+            --arg hp "$host_port" \
+            --argjson gp "$guest_port" \
+            --argjson pid "$pid" \
+            --argjson sudo "$_use_sudo" \
+            '.[$hp] = {"guest_port": $gp, "pid": $pid, "sudo": $sudo}')"
+        _mps_write_json "$ports_file" "$updated"
         mps_log_debug "Port forward active (PID ${pid}): localhost:${host_port} → ${instance_name}:${guest_port}"
     else
         mps_log_warn "Port forward started but could not track PID for ${port_spec}"
@@ -1595,18 +1624,15 @@ mps_kill_port_forwards() {
     fi
 
     local killed=0
-    local line
-    while IFS= read -r line; do
-        [[ -z "$line" ]] && continue
-        # Format: host_port:guest_port:[s:]pid — 's:' prefix marks sudo-owned tunnels
+    local entry
+    while IFS= read -r entry; do
+        [[ -z "$entry" ]] && continue
         local pid="" use_sudo=false
-        if [[ "$line" =~ :s:([0-9]+)$ ]]; then
-            pid="${BASH_REMATCH[1]}"
-            use_sudo=true
-        elif [[ "$line" =~ :([0-9]+)$ ]]; then
-            pid="${BASH_REMATCH[1]}"
-        fi
-        if [[ -z "$pid" ]]; then
+        pid="$(echo "$entry" | jq -r '.pid')"
+        local sudo_val=""
+        sudo_val="$(echo "$entry" | jq -r '.sudo')"
+        [[ "$sudo_val" == "true" ]] && use_sudo=true
+        if [[ -z "$pid" || "$pid" == "null" ]]; then
             continue
         fi
         # Verify PID is actually an SSH process before killing
@@ -1622,7 +1648,7 @@ mps_kill_port_forwards() {
             kill "$pid" 2>/dev/null || true
             killed=$((killed + 1))
         fi
-    done < "$ports_file"
+    done < <(jq -c '.[]' "$ports_file" 2>/dev/null)
 
     if [[ $killed -gt 0 ]]; then
         mps_log_debug "Killed ${killed} port forward(s) for '${short_name}'"
@@ -1637,7 +1663,7 @@ mps_reset_port_forwards() {
     mps_kill_port_forwards "$short_name"
     local ports_file
     ports_file="$(mps_ports_file "$short_name")"
-    [[ -f "$ports_file" ]] && true > "$ports_file"
+    rm -f "$ports_file"
     if [[ "$auto_forward" == "--auto-forward" ]]; then
         mps_auto_forward_ports "$instance_name" "$short_name"
     fi

@@ -197,21 +197,83 @@ cmd_create() {
     # ---- Wait for cloud-init ----
     mp_wait_cloud_init "$instance_name"
 
-    # ---- Save instance metadata ----
+    # ---- Build metadata JSON sub-objects ----
     local short_name
     short_name="$(mps_short_name "$instance_name")"
-    mps_save_instance_meta "$short_name"
 
-    # ---- Store port forwarding rules in metadata (for use by 'mps port' later) ----
-    if [[ ${#arg_ports[@]} -gt 0 ]]; then
-        local meta_file
-        meta_file="$(mps_instance_meta "$short_name")"
-        local port_rule
-        for port_rule in ${arg_ports[@]+"${arg_ports[@]}"}; do
-            echo "MPS_PORT_FORWARD+=${port_rule}" >> "$meta_file"
-        done
-        mps_log_debug "Stored ${#arg_ports[@]} port forwarding rule(s)"
+    # Image provenance
+    local image_json="null"
+    if [[ "$image" == file://* ]]; then
+        local img_path="${image#file://}"
+        local img_arch img_version img_name img_sha256="" img_source="pulled"
+        img_arch="$(basename "$img_path" .img)"
+        img_version="$(basename "$(dirname "$img_path")")"
+        img_name="$(basename "$(dirname "$(dirname "$img_path")")")"
+        # Read sha256 from .meta.json sidecar
+        local img_meta_file="${img_path%.img}.meta.json"
+        if [[ -f "$img_meta_file" ]]; then
+            img_sha256="$(jq -r '.sha256 // empty' "$img_meta_file")"
+            # Detect imported vs pulled: imported images lack build_date
+            local build_date=""
+            build_date="$(jq -r '.build_date // empty' "$img_meta_file")"
+            if [[ -z "$build_date" ]]; then
+                img_source="imported"
+            fi
+        fi
+        image_json="$(jq -n \
+            --arg name "$img_name" \
+            --arg version "$img_version" \
+            --arg arch "$img_arch" \
+            --arg sha256 "$img_sha256" \
+            --arg source "$img_source" \
+            '{name: $name, version: $version, arch: $arch, sha256: (if $sha256 == "" then null else $sha256 end), source: $source}')"
+    elif ! _mps_is_mps_image "$image_spec"; then
+        # Stock Ubuntu passthrough
+        image_json="$(jq -n --arg name "$image_spec" \
+            '{name: $name, version: null, arch: null, sha256: null, source: "stock"}')"
     fi
+
+    # Mounts array
+    local mounts_json="[]"
+    if [[ -n "${MPS_MOUNT_SOURCE:-}" && -n "${MPS_MOUNT_TARGET:-}" ]]; then
+        mounts_json="$(jq -n --arg src "$MPS_MOUNT_SOURCE" --arg tgt "$MPS_MOUNT_TARGET" \
+            '[{"source": $src, "target": $tgt, "auto": true}]')"
+    fi
+    local extra_mount
+    for extra_mount in ${arg_extra_mounts[@]+"${arg_extra_mounts[@]}"}; do
+        local mount_src="${extra_mount%%:*}"
+        local mount_dst="${extra_mount#*:}"
+        if [[ "$mount_src" != /* ]]; then
+            mount_src="$(cd "$mount_src" 2>/dev/null && pwd)" || continue
+        fi
+        mounts_json="$(echo "$mounts_json" | jq --arg src "$mount_src" --arg tgt "$mount_dst" \
+            '. + [{"source": $src, "target": $tgt, "auto": false}]')"
+    done
+    if [[ -n "$config_mounts" ]]; then
+        local cfg_mount
+        for cfg_mount in $config_mounts; do
+            local cfg_src="${cfg_mount%%:*}"
+            local cfg_dst="${cfg_mount#*:}"
+            mounts_json="$(echo "$mounts_json" | jq --arg src "$cfg_src" --arg tgt "$cfg_dst" \
+                '. + [{"source": $src, "target": $tgt, "auto": false}]')"
+        done
+    fi
+
+    # Port forwards array
+    local pf_json="[]"
+    local port_rule
+    for port_rule in ${arg_ports[@]+"${arg_ports[@]}"}; do
+        pf_json="$(echo "$pf_json" | jq --arg p "$port_rule" '. + [$p]')"
+    done
+
+    # Transfers array
+    local tf_json="[]"
+    local tf_spec
+    for tf_spec in ${arg_transfers[@]+"${arg_transfers[@]}"}; do
+        tf_json="$(echo "$tf_json" | jq --arg t "$tf_spec" '. + [$t]')"
+    done
+
+    mps_save_instance_meta "$short_name" "$image_json" "$mounts_json" "$pf_json" "$tf_json"
 
     # ---- Auto-forward ports (from MPS_PORTS config + --port flags) ----
     mps_auto_forward_ports "$instance_name" "$short_name"
@@ -245,14 +307,6 @@ cmd_create() {
             mp_transfer -r -p "$host_src" "${instance_name}:${guest_dst}"
             transfer_count=$((transfer_count + 1))
         done
-
-        # Store in metadata
-        local transfer_meta_file
-        transfer_meta_file="$(mps_instance_meta "$short_name")"
-        for transfer_spec in ${arg_transfers[@]+"${arg_transfers[@]}"}; do
-            echo "MPS_TRANSFER+=${transfer_spec}" >> "$transfer_meta_file"
-        done
-        mps_log_debug "Stored ${#arg_transfers[@]} transfer rule(s)"
     fi
 
     # ---- Print summary ----
@@ -274,7 +328,7 @@ cmd_create() {
     local pf_file
     pf_file="$(mps_ports_file "$short_name")"
     if [[ -f "$pf_file" ]]; then
-        port_fwd_count="$(wc -l < "$pf_file")"
+        port_fwd_count="$(jq 'length' "$pf_file" 2>/dev/null)" || port_fwd_count=0
     fi
     if [[ $port_fwd_count -gt 0 ]]; then
         printf "  %-14s %s\n" "Ports:" "${port_fwd_count} forwarded"

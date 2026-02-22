@@ -129,34 +129,27 @@ _port_list() {
         "SANDBOX" "HOST PORT" "GUEST PORT" "PID" "STATUS"
 
     local ports_file
-    for ports_file in "$state_dir"/*.ports; do
+    for ports_file in "$state_dir"/*.ports.json; do
         [[ -f "$ports_file" ]] || continue
 
         local sandbox_name
-        sandbox_name="$(basename "$ports_file" .ports)"
+        sandbox_name="$(basename "$ports_file" .ports.json)"
 
         # If filtering by name, skip non-matching
         if [[ -n "$name" && "$sandbox_name" != "$name" ]]; then
             continue
         fi
 
-        local line
-        while IFS= read -r line; do
-            [[ -z "$line" ]] && continue
-            # Format: host_port:guest_port:[s:]pid — 's:' prefix marks sudo-owned tunnels
+        local entry
+        while IFS= read -r entry; do
+            [[ -z "$entry" ]] && continue
             local host_port="" guest_port="" pid="" use_sudo=false
-            if [[ "$line" =~ ^([0-9]+):([0-9]+):s:([0-9]+)$ ]]; then
-                host_port="${BASH_REMATCH[1]}"
-                guest_port="${BASH_REMATCH[2]}"
-                pid="${BASH_REMATCH[3]}"
-                use_sudo=true
-            elif [[ "$line" =~ ^([0-9]+):([0-9]+):([0-9]+)$ ]]; then
-                host_port="${BASH_REMATCH[1]}"
-                guest_port="${BASH_REMATCH[2]}"
-                pid="${BASH_REMATCH[3]}"
-            else
-                continue
-            fi
+            host_port="$(echo "$entry" | jq -r '.key')"
+            guest_port="$(echo "$entry" | jq -r '.value.guest_port')"
+            pid="$(echo "$entry" | jq -r '.value.pid')"
+            local sudo_val=""
+            sudo_val="$(echo "$entry" | jq -r '.value.sudo')"
+            [[ "$sudo_val" == "true" ]] && use_sudo=true
             local status
             if [[ "$use_sudo" == "true" ]]; then
                 if sudo kill -0 "$pid" 2>/dev/null; then
@@ -172,7 +165,7 @@ _port_list() {
             printf "%-20s %-12s %-12s %-8s %b\n" \
                 "$sandbox_name" "$host_port" "$guest_port" "${pid:-—}" "$status"
             found=true
-        done < "$ports_file"
+        done < <(jq -c 'to_entries[]' "$ports_file" 2>/dev/null)
     done
 
     if [[ "$found" == "false" ]]; then

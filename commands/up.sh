@@ -176,7 +176,7 @@ _up_show_info() {
     local pf_file
     pf_file="$(mps_ports_file "$short_name")"
     if [[ -f "$pf_file" ]]; then
-        port_fwd_count="$(wc -l < "$pf_file")"
+        port_fwd_count="$(jq 'length' "$pf_file" 2>/dev/null)" || port_fwd_count=0
     fi
 
     echo ""

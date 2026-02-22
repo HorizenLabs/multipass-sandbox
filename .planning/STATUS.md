@@ -48,6 +48,12 @@ First round of alpha-tester feedback across macOS and Linux.
 - [x] Fix `--transfer` and `mps transfer` to support directories (auto-detect, pass `-r -p` to multipass)
 - [x] Add lightweight CLI version update check (`_mps_check_cli_update()`, `mps-release.json`, `MPS_CHECK_UPDATES`)
 - [x] Re-publish corrected sidecars/manifest for affected images on B2
+- [x] Refactor instance metadata & port tracking to JSON
+- [ ] Refactor auto-mount behavior
+- [ ] Fix privileged port forward PID tracking bug (see `.planning/FIX-PRIVILEGED-PORT-PID.md`)
+- [ ] Refactor SSH port forward duplication detection logic
+- [ ] Add instance staleness detection
+- [ ] Documentation updates: intended user flow and customization suggestions
 - [ ] Triage and fix additional alpha-tester findings
 
 ## Phase 10 — Testing: NOT STARTED

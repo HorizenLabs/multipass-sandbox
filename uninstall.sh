@@ -104,7 +104,7 @@ if [[ -d "$instances_dir" ]]; then
     instance_files=()
     while IFS= read -r -d '' f; do
         instance_files+=("$f")
-    done < <(find "$instances_dir" -maxdepth 1 \( -name '*.env' -o -name '*.ports' \) -print0 2>/dev/null || true)
+    done < <(find "$instances_dir" -maxdepth 1 \( -name '*.json' -o -name '*.ports.json' -o -name '*.env' -o -name '*.ports' \) -print0 2>/dev/null || true)
     if [[ ${#instance_files[@]} -gt 0 ]]; then
         for f in ${instance_files[@]+"${instance_files[@]}"}; do
             rm -f "$f"
