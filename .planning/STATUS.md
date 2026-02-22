@@ -49,9 +49,10 @@ First round of alpha-tester feedback across macOS and Linux.
 - [x] Add lightweight CLI version update check (`_mps_check_cli_update()`, `mps-release.json`, `MPS_CHECK_UPDATES`)
 - [x] Re-publish corrected sidecars/manifest for affected images on B2
 - [x] Refactor instance metadata & port tracking to JSON
-- [ ] Refactor auto-mount behavior
-- [ ] Fix privileged port forward PID tracking bug (see `.planning/FIX-PRIVILEGED-PORT-PID.md`)
-- [ ] Refactor SSH port forward duplication detection logic
+- [ ] Refactor mount system — implementation (see `.planning/MOUNT-REFACTOR.md`)
+- [ ] Refactor mount system — automated verification (see `.planning/MOUNT-REFACTOR-TESTS.md`)
+- [ ] Refactor SSH port forward lifecycle (control sockets) — implementation (see `.planning/FIX-PRIVILEGED-PORT-PID.md`)
+- [ ] Refactor SSH port forward lifecycle (control sockets) — automated verification (see `.planning/FIX-PRIVILEGED-PORT-PID-TESTS.md`)
 - [ ] Add instance staleness detection
 - [ ] Documentation updates: intended user flow and customization suggestions
 - [ ] Triage and fix additional alpha-tester findings

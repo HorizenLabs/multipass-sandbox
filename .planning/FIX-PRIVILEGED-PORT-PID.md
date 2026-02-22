@@ -1,133 +1,225 @@
-# Fix: Privileged Port Forward PID Tracking
+# Refactor: SSH Port Forward Lifecycle — Control Sockets
 
-## Bug Summary
+## Context
 
-When forwarding privileged ports (`< 1024`) via `--privileged`, the PID recorded in `.ports.json` is the transient `sudo` wrapper PID instead of the actual `ssh -N -f` daemon PID. This causes `mps port list` to report privileged forwards as `dead` even though the tunnels are actively listening.
+Port forwarding uses `ssh -N -f -L` tunnels tracked by PID in `.ports.json`. This has several problems:
 
-## Discovered
+1. **Wrong PID captured for privileged ports** — `pgrep -f ... | tail -1` picks the transient `sudo` wrapper PID instead of the `ssh` daemon PID
+2. **`sudo` prompts in read-only operations** — `mps port list` calls `sudo kill -0` for privileged forwards, can prompt for password when sudo cache expires
+3. **Fragile dedup** — relies on `pgrep` regex matching against process command lines, `ps -o comm=` introspection, and `kill -0` liveness checks across privilege boundaries
 
-2026-02-22, during live verification of the JSON metadata refactor (commit `a259484`).
+All three issues stem from the same root cause: tracking tunnels by PID. Replace the entire PID-based tracking with SSH control sockets (`-M -S`), which provide a reliable, cross-platform mechanism for liveness checks, dedup, and clean shutdown — no PID tracking, no `pgrep`, no `kill -0`, no `sudo` for status checks.
 
-## Root Cause
+**Approach:** One control socket per tunnel (Option A from design discussion). Each `mps port forward` creates an independent SSH master with its own socket file. Dedup = socket exists + `ssh -O check` succeeds. Cleanup = `ssh -O exit` per socket.
 
-`lib/common.sh:1567`:
+---
+
+## Step 1: Add socket directory helper
+
+**File:** `lib/common.sh` — after `mps_ports_file()` (line 1411)
+
+Add helper to return the control socket path for a given instance + host port:
 
 ```bash
-pid="$(sudo pgrep -f "ssh.*-L.*${host_port}:localhost:${guest_port}.*${ip}" | tail -1)" || true
+mps_port_socket() {
+    local short_name="$1" host_port="$2"
+    local dir="${HOME}/.mps/sockets"
+    mkdir -p "$dir"
+    echo "${dir}/${short_name}-${host_port}.sock"
+}
 ```
 
-Classic `pgrep -f` self-match gotcha:
+Sockets go in `~/.mps/sockets/` (separate from `~/.mps/instances/` metadata). Socket filenames encode the instance and host port: `<short_name>-<host_port>.sock`.
 
-1. `sudo ssh -N -f -L 80:localhost:80 ...` runs → ssh forks into background (PID 77609), sudo exits
-2. `sudo pgrep -f "ssh.*-L.*80:localhost:80.*IP" | tail -1` runs
-3. `pgrep` excludes its own PID but **not** its parent `sudo` process
-4. `sudo`'s command line (`sudo pgrep -f "ssh.*-L.*80:localhost:80..."`) contains the search pattern as a literal string, so the regex matches it
-5. `tail -1` picks the highest PID — which is the transient `sudo` wrapper, not the ssh daemon
+---
 
-### Observed PIDs
+## Step 2: Rewrite `mps_forward_port()` — control socket tunnel
 
-| Port | Recorded PID (sudo, dead) | Actual SSH PID (alive) |
-|------|---------------------------|------------------------|
-| 80   | 77611                     | 77609                  |
-| 443  | 78257                     | 78255                  |
-| 3000 | 77930 (correct)           | 77930                  |
+**File:** `lib/common.sh` — `mps_forward_port()` (lines 1457-1588)
 
-Unprivileged ports (3000) are unaffected — no `sudo` wrapper means no self-match.
+### 2a. Return code convention
 
-## Cross-Platform Impact
+Change `mps_forward_port()` to use distinct return codes:
 
-**Affects both Linux and macOS identically.** Both Linux `pgrep` (procps) and macOS `pgrep` (BSD):
-- Exclude their own PID with `-f`
-- Do **not** exclude the parent `sudo` process
-- Match against full command line with `-f`
+- **return 0** — tunnel newly established
+- **return 2** — already active (dedup skip)
+- **return 1** — error
 
-## Downstream Effects
+Callers handle accordingly:
+- `_port_forward()` (explicit `mps port forward`): on return 2, warn: "Port localhost:<host_port> is already forwarded to <instance>:<guest_port>"
+- `mps_auto_forward_ports()`: on return 2, log debug (silent), don't increment the forwarded count
 
-1. **`mps port list`** reports privileged forwards as `dead` (checks recorded PID via `sudo kill -0`)
-2. **Duplicate tunnel detection** (`lib/common.sh:1526`) calls `_mps_is_ssh_pid` on the wrong PID — would fail to detect an existing tunnel and could spawn duplicates
-3. **`mps port list`** uses `sudo kill -0` for liveness checks on privileged ports (line 1155). If the sudo credential cache has expired, this triggers an **unexpected password prompt during a read-only listing operation**
+### 2b. Replace dedup block (lines 1515-1539)
 
-## Fix
+Remove the entire PID-based dedup (read `.ports.json`, `_mps_is_ssh_pid`, `kill -0`). Replace with:
 
-### Primary: PID capture (`lib/common.sh:1566-1570`)
+```
+socket_path = mps_port_socket(short_name, host_port)
+if socket exists AND ssh -O check -S <socket> succeeds:
+    return 2
+```
 
-Replace `tail -1` with `head -1` on both the sudo and non-sudo paths:
+For privileged sockets (owned by root), use `sudo ssh -O check`. Use `sudo -n` to avoid password prompts — if sudo cache expired, treat as "not forwarded" and re-establish (the actual `sudo ssh` forward command will prompt if needed, which is acceptable for a write operation).
 
+### 2c. Add `-M -S` to SSH command (lines 1542-1551)
+
+Add control socket flags to the SSH command array:
+
+```
+ssh -M -S <socket_path> -N -f -L ...
+```
+
+### 2d. Replace PID capture + JSON write (lines 1565-1586)
+
+Remove the entire `pgrep` + `.ports.json` write block. Replace with:
+
+```
+Verify tunnel is up: ssh -O check -S <socket_path>
+Write .ports.json entry with socket path instead of PID:
+  { "guest_port": N, "socket": "<path>", "sudo": true/false }
+```
+
+The `.ports.json` schema changes from:
+```json
+{"3000": {"guest_port": 8080, "pid": 12345, "sudo": false}}
+```
+to:
+```json
+{"3000": {"guest_port": 8080, "socket": "/home/user/.mps/sockets/foo-3000.sock", "sudo": false}}
+```
+
+---
+
+## Step 3: Update callers for return code 2
+
+**File:** `commands/port.sh` — `_port_forward()` (line 103)
+
+Current code:
 ```bash
-# Before (broken)
-if [[ "$_use_sudo" == "true" ]]; then
-    pid="$(sudo pgrep -f "ssh.*-L.*${host_port}:localhost:${guest_port}.*${ip}" | tail -1)" || true
-else
-    pid="$(pgrep -f "ssh.*-L.*${host_port}:localhost:${guest_port}.*${ip}" | tail -1)" || true
+if ! mps_forward_port "$instance_name" "$name" "${host_port}:${guest_port}" "$privileged"; then
+    mps_die "Failed to establish port forward"
 fi
-
-# After (fixed)
-if [[ "$_use_sudo" == "true" ]]; then
-    pid="$(sudo pgrep -f "ssh.*-L.*${host_port}:localhost:${guest_port}.*${ip}" | head -1)" || true
-else
-    pid="$(pgrep -f "ssh.*-L.*${host_port}:localhost:${guest_port}.*${ip}" | head -1)" || true
-fi
+mps_log_info "Port forward active: localhost:${host_port} → ${instance_name}:${guest_port}"
 ```
 
-**Why `head -1` works:** The actual `ssh -N -f` daemon is always the oldest (lowest PID) match. Transient processes (`sudo`, `pgrep`, shell wrappers) are spawned after the ssh daemon and always have higher PIDs.
+Change to capture return code and handle 0/1/2:
+```
+rc = mps_forward_port(...)
+if rc == 1: die "Failed to establish port forward"
+if rc == 2: warn "Port localhost:<host_port> is already forwarded to <instance>:<guest_port>"
+if rc == 0: info "Port forward active: ..."
+```
 
-### Secondary: `mps port list` sudo prompt on expired cache
+**File:** `lib/common.sh` — `mps_auto_forward_ports()` (line 1603)
 
-`commands/port.sh:155` uses `sudo kill -0` for liveness checks. If sudo credentials have expired, this prompts for a password during a read-only list operation.
+Current code counts any successful return. Change to only increment count on return 0 (newly established), ignore return 2 (already active):
+```
+rc = mps_forward_port(...)
+if rc == 0: count++
+# rc == 2: silent skip (already active)
+# rc == 1: already logged by mps_forward_port
+```
 
-Options (pick one):
-- **A)** Use `sudo -n kill -0` (`-n` = non-interactive, fails silently if no cached creds) and treat failure as "unknown" status instead of "dead"
-- **B)** Check liveness via `sudo -n ss -tlnp` or `/proc/<pid>/` (Linux-only) instead of `kill -0`
-- **C)** Store the ssh process owner in ports.json and use appropriate kill check
+---
 
-Recommended: **Option A** — minimal change, graceful degradation.
+## Step 4: Rewrite `mps_kill_port_forwards()` — socket-based cleanup
+
+**File:** `lib/common.sh` — `mps_kill_port_forwards()` (lines 1617-1656)
+
+Replace PID-based kill loop with:
+
+```
+For each entry in .ports.json:
+    read socket path and sudo flag
+    if sudo: sudo ssh -O exit -S <socket>
+    else: ssh -O exit -S <socket>
+    rm -f <socket> (cleanup stale socket file)
+```
+
+No need for `_mps_is_ssh_pid()` or `kill -0` — `ssh -O exit` is a no-op on dead sockets (fails silently).
+
+---
+
+## Step 5: Update `_port_list()` — socket-based liveness
+
+**File:** `commands/port.sh` — `_port_list()` (lines 112-174)
+
+Replace PID-based liveness checks (lines 153-164) with:
+
+```
+Read socket path and sudo flag from .ports.json entry
+if sudo: sudo -n ssh -O check -S <socket>
+else: ssh -O check -S <socket>
+alive → "active" (green)
+dead → "dead" (red)
+sudo -n failed (expired cache) → "unknown" (yellow)
+```
+
+Update display columns: replace `PID` with `STATUS` only (PID is no longer tracked). Or keep the column but show `—` since we don't store PIDs anymore.
+
+---
+
+## Step 6: Remove `_mps_is_ssh_pid()`
+
+**File:** `lib/common.sh` — lines 1396-1405
+
+Delete entirely. No callers remain after Steps 2-4. The function existed solely to guard against stale PIDs — control sockets make this unnecessary.
+
+---
+
+## Step 7: Update `mps_reset_port_forwards()`
+
+**File:** `lib/common.sh` — `mps_reset_port_forwards()` (lines 1659-1670)
+
+Add socket file cleanup after killing forwards and removing `.ports.json`. Glob `~/.mps/sockets/<short_name>-*.sock` and remove any remaining socket files (catches edge case where `.ports.json` was deleted but sockets remain):
 
 ```bash
-# Before
-if sudo kill -0 "$pid" 2>/dev/null; then
-
-# After
-if sudo -n kill -0 "$pid" 2>/dev/null; then
+local sock
+for sock in "${HOME}/.mps/sockets/${short_name}-"*.sock; do
+    [[ -e "$sock" ]] && rm -f "$sock"
+done
 ```
 
-And display `unknown` (yellow) instead of `dead` (red) when `sudo -n` fails due to expired credentials. Same fix for the duplicate-detection path in `mps_forward_port`.
+---
 
-### Tertiary: Duplicate detection (`lib/common.sh:1526-1537`)
+## Step 8: Update `commands/destroy.sh` — socket cleanup
 
-Same PID mismatch affects `_mps_is_ssh_pid` check. After the primary fix, the correct PID will be stored, so this resolves automatically. However, the `sudo kill -0` call at line 1529 should also use `sudo -n` for the same reason.
+**File:** `commands/destroy.sh` — lines 75-81
 
-## Files to Change
-
-| File | Lines | Change |
-|------|-------|--------|
-| `lib/common.sh` | 1566-1570 | `tail -1` → `head -1` |
-| `lib/common.sh` | 1528-1529 | `sudo kill -0` → `sudo -n kill -0` |
-| `commands/port.sh` | 155 | `sudo kill -0` → `sudo -n kill -0` + `unknown` status |
-
-## Verification
-
-After fix, rerun the privileged port lifecycle test:
+After `mps_kill_port_forwards` and removing `.ports.json`, also clean up socket files:
 
 ```bash
-mps create
-mps ssh-config --name <name>
-mps port forward --privileged <name> 80:80
-mps port forward --privileged <name> 443:443
-mps port forward <name> 3000:3000
-
-# Verify PIDs match actual ssh processes
-cat ~/.mps/instances/<name>.ports.json | jq '."80".pid'
-sudo pgrep -af "ssh.*-L.*80:localhost:80"
-# Recorded PID should match the ssh process PID
-
-# Verify port list shows "active" for all three
-mps port list
-
-# Verify port list works without sudo creds
-sudo -k
-mps port list
-# Privileged ports should show "unknown" (not prompt for password)
-
-mps down --name <name>
-mps destroy --force --name <name>
+local sock
+for sock in "${HOME}/.mps/sockets/${short_name}-"*.sock; do
+    [[ -e "$sock" ]] && rm -f "$sock"
+done
 ```
+
+Consider extracting a shared helper `mps_cleanup_port_sockets()` if this pattern repeats.
+
+---
+
+## Step 9: Lint and update testing plan
+
+Run `make lint` (shellcheck + lint-bash32 + all other linters). Fix all errors before proceeding.
+
+Review `.planning/FIX-PRIVILEGED-PORT-PID-TESTS.md` — add, remove, or adjust test cases based on:
+- What was actually implemented (socket paths, output format changes)
+- Edge cases discovered during implementation
+- Behaviors that changed from the original plan
+
+---
+
+## Files modified
+
+| File | Change |
+|------|--------|
+| `lib/common.sh` | New `mps_port_socket()`, rewrite `mps_forward_port()` (socket dedup + launch + tracking + return codes), rewrite `mps_kill_port_forwards()` (socket exit), update `mps_auto_forward_ports()` (handle return 2), update `mps_reset_port_forwards()` (socket cleanup), remove `_mps_is_ssh_pid()` |
+| `commands/port.sh` | Update `_port_forward()` (handle return 2 — warn on already-mapped), rewrite `_port_list()` liveness checks (socket-based) |
+| `commands/destroy.sh` | Add socket file cleanup |
+
+## Functions unchanged
+
+- `mps_ports_file()` — still returns `.ports.json` path
+- `mps_collect_port_specs()` — collects specs from config/metadata, unchanged
+- Port forward calls in `commands/create.sh`, `commands/up.sh`, `commands/down.sh` — unchanged (they call `mps_auto_forward_ports` / `mps_reset_port_forwards`)
