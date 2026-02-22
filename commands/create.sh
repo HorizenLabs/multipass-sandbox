@@ -163,6 +163,11 @@ cmd_create() {
 
     # Primary mount (passed as --mount to multipass launch)
     if [[ -n "${MPS_MOUNT_SOURCE:-}" && -n "${MPS_MOUNT_TARGET:-}" ]]; then
+        # Rule 2 check only for auto-mount (CWD is virtually always under $HOME)
+        if [[ "${MPS_MOUNT_SOURCE}" == "${HOME:-}" ]]; then
+            mps_log_warn "Mounting your entire home directory exposes dotfiles (.ssh, .gnupg, etc.) inside the VM."
+            mps_log_warn "Consider mounting a project subdirectory instead, or use --no-mount."
+        fi
         extra_args+=(--mount "${MPS_MOUNT_SOURCE}:${MPS_MOUNT_TARGET}")
         mps_log_debug "Primary mount: ${MPS_MOUNT_SOURCE} -> ${MPS_MOUNT_TARGET}"
     fi
@@ -176,6 +181,7 @@ cmd_create() {
         if [[ "$mount_src" != /* ]]; then
             mount_src="$(cd "$mount_src" 2>/dev/null && pwd)" || mps_die "Mount source does not exist: ${mount_src}"
         fi
+        mps_validate_mount_source "$mount_src"
         extra_args+=(--mount "${mount_src}:${mount_dst}")
         mps_log_debug "Extra mount: ${mount_src} -> ${mount_dst}"
     done
@@ -186,6 +192,8 @@ cmd_create() {
     if [[ -n "$config_mounts" ]]; then
         local cfg_mount
         for cfg_mount in $config_mounts; do
+            local cfg_src="${cfg_mount%%:*}"
+            mps_validate_mount_source "$cfg_src"
             extra_args+=(--mount "$cfg_mount")
             mps_log_debug "Config mount: ${cfg_mount}"
         done
@@ -233,31 +241,8 @@ cmd_create() {
             '{name: $name, version: null, arch: null, sha256: null, source: "stock"}')"
     fi
 
-    # Mounts array
-    local mounts_json="[]"
-    if [[ -n "${MPS_MOUNT_SOURCE:-}" && -n "${MPS_MOUNT_TARGET:-}" ]]; then
-        mounts_json="$(jq -n --arg src "$MPS_MOUNT_SOURCE" --arg tgt "$MPS_MOUNT_TARGET" \
-            '[{"source": $src, "target": $tgt, "auto": true}]')"
-    fi
-    local extra_mount
-    for extra_mount in ${arg_extra_mounts[@]+"${arg_extra_mounts[@]}"}; do
-        local mount_src="${extra_mount%%:*}"
-        local mount_dst="${extra_mount#*:}"
-        if [[ "$mount_src" != /* ]]; then
-            mount_src="$(cd "$mount_src" 2>/dev/null && pwd)" || continue
-        fi
-        mounts_json="$(echo "$mounts_json" | jq --arg src "$mount_src" --arg tgt "$mount_dst" \
-            '. + [{"source": $src, "target": $tgt, "auto": false}]')"
-    done
-    if [[ -n "$config_mounts" ]]; then
-        local cfg_mount
-        for cfg_mount in $config_mounts; do
-            local cfg_src="${cfg_mount%%:*}"
-            local cfg_dst="${cfg_mount#*:}"
-            mounts_json="$(echo "$mounts_json" | jq --arg src "$cfg_src" --arg tgt "$cfg_dst" \
-                '. + [{"source": $src, "target": $tgt, "auto": false}]')"
-        done
-    fi
+    # Workdir for metadata (the auto-mount target path)
+    local workdir="${MPS_MOUNT_TARGET:-}"
 
     # Port forwards array
     local pf_json="[]"
@@ -273,7 +258,7 @@ cmd_create() {
         tf_json="$(echo "$tf_json" | jq --arg t "$tf_spec" '. + [$t]')"
     done
 
-    mps_save_instance_meta "$short_name" "$image_json" "$mounts_json" "$pf_json" "$tf_json"
+    mps_save_instance_meta "$short_name" "$image_json" "$workdir" "$pf_json" "$tf_json"
 
     # ---- Auto-forward ports (from MPS_PORTS config + --port flags) ----
     mps_auto_forward_ports "$instance_name" "$short_name"

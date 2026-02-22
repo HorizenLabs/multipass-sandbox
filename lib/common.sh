@@ -451,11 +451,11 @@ mps_resolve_workdir() {
     local meta_file
     meta_file="$(mps_instance_meta "$(mps_short_name "$instance_name")")"
     if [[ -f "$meta_file" ]]; then
-        local mount_target=""
-        mount_target="$(_mps_read_meta_json "$meta_file" '.mounts[] | select(.auto) | .target')"
-        if [[ -n "$mount_target" ]]; then
-            mps_log_debug "Using mount target as workdir: ${mount_target}"
-            echo "$mount_target"
+        local workdir=""
+        workdir="$(_mps_read_meta_json "$meta_file" '.workdir')"
+        if [[ -n "$workdir" ]]; then
+            mps_log_debug "Using workdir from metadata: ${workdir}"
+            echo "$workdir"
             return
         fi
     fi
@@ -1015,7 +1015,7 @@ mps_image_meta() {
 mps_save_instance_meta() {
     local name="$1"
     local image_json="${2:-null}"
-    local mounts_json="${3:-[]}"
+    local workdir="${3:-}"
     local port_forwards_json="${4:-[]}"
     local transfers_json="${5:-[]}"
     local meta_file
@@ -1032,7 +1032,7 @@ mps_save_instance_meta() {
         --arg disk "${MPS_DISK:-${MPS_DEFAULT_DISK:-20G}}" \
         --arg cloud_init "${MPS_CLOUD_INIT:-${MPS_DEFAULT_CLOUD_INIT:-default}}" \
         --argjson image "$image_json" \
-        --argjson mounts "$mounts_json" \
+        --arg workdir "$workdir" \
         --argjson port_forwards "$port_forwards_json" \
         --argjson transfers "$transfers_json" \
         '{
@@ -1044,7 +1044,7 @@ mps_save_instance_meta() {
             disk: $disk,
             cloud_init: $cloud_init,
             image: $image,
-            mounts: $mounts,
+            workdir: (if $workdir == "" then null else $workdir end),
             ssh: null,
             port_forwards: $port_forwards,
             transfers: $transfers
@@ -1149,6 +1149,107 @@ mps_parse_extra_mounts() {
     done
 
     echo "${result[*]}"
+}
+
+# Validate mount source path against security rules.
+# Called after resolving to absolute path.
+# Returns 0 on success, dies on hard block, warns on soft issues.
+mps_validate_mount_source() {
+    local source_path="$1"
+    local home_dir="${HOME:-}"
+
+    # Rule 1: Block mounts outside $HOME
+    if [[ -n "$home_dir" ]]; then
+        case "$source_path" in
+            "${home_dir}"|"${home_dir}"/*)
+                # Inside $HOME — OK
+                ;;
+            *)
+                mps_die "Mount source must be within your home directory (${home_dir})."
+                ;;
+        esac
+    fi
+
+    # Rule 2: Warn on mounting $HOME directly
+    if [[ "$source_path" == "$home_dir" ]]; then
+        mps_log_warn "Mounting your entire home directory exposes dotfiles (.ssh, .gnupg, etc.) inside the VM."
+        mps_log_warn "Consider mounting a project subdirectory instead, or use --no-mount."
+    fi
+
+    # Rule 3: Warn on hidden paths on Linux (Snap may block)
+    local os
+    os="$(mps_detect_os)"
+    if [[ "$os" == "linux" ]]; then
+        local basename
+        basename="$(basename "$source_path")"
+        case "$basename" in
+            .*)
+                mps_log_warn "Snap may block mounting hidden paths directly. Consider mounting the parent directory instead."
+                ;;
+        esac
+    fi
+}
+
+# Resolve the set of persistent mounts for an instance.
+# Reads workdir from metadata and MPS_MOUNTS from the full config cascade:
+# current env (already loaded) -> project .mps.env -> ~/.mps/config -> defaults.env.
+# Outputs space-separated "source:target" pairs to stdout.
+# Usage: _mps_resolve_project_mounts <short_name>
+_mps_resolve_project_mounts() {
+    local short_name="$1"
+    local -a persistent=()
+
+    # Read workdir from metadata
+    local meta_file
+    meta_file="$(mps_instance_meta "$short_name")"
+    local workdir=""
+    if [[ -f "$meta_file" ]]; then
+        workdir="$(_mps_read_meta_json "$meta_file" '.workdir')"
+    fi
+
+    # Auto-mount: workdir maps to itself (identity on Linux/macOS)
+    if [[ -n "$workdir" ]]; then
+        persistent+=("${workdir}:${workdir}")
+    fi
+
+    # Config mounts: try MPS_MOUNTS from current cascade first
+    local config_mounts="${MPS_MOUNTS:-}"
+
+    # If MPS_MOUNTS not set in current env and workdir is known,
+    # grep it from the project's .mps.env and global config (don't source)
+    if [[ -z "$config_mounts" && -n "$workdir" ]]; then
+        local project_env="${workdir}/.mps.env"
+        if [[ -f "$project_env" ]]; then
+            config_mounts="$(grep -E '^MPS_MOUNTS=' "$project_env" 2>/dev/null | head -1 | sed 's/^MPS_MOUNTS=//' | sed 's/^["'"'"']//; s/["'"'"']$//')" || true
+        fi
+    fi
+    if [[ -z "$config_mounts" ]]; then
+        local global_config="${HOME}/.mps/config"
+        if [[ -f "$global_config" ]]; then
+            config_mounts="$(grep -E '^MPS_MOUNTS=' "$global_config" 2>/dev/null | head -1 | sed 's/^MPS_MOUNTS=//' | sed 's/^["'"'"']//; s/["'"'"']$//')" || true
+        fi
+    fi
+    if [[ -z "$config_mounts" ]]; then
+        local defaults_env="${MPS_ROOT}/config/defaults.env"
+        if [[ -f "$defaults_env" ]]; then
+            config_mounts="$(grep -E '^MPS_MOUNTS=' "$defaults_env" 2>/dev/null | head -1 | sed 's/^MPS_MOUNTS=//' | sed 's/^["'"'"']//; s/["'"'"']$//')" || true
+        fi
+    fi
+
+    # Parse config mounts
+    if [[ -n "$config_mounts" ]]; then
+        local mount
+        for mount in $config_mounts; do
+            local src="${mount%%:*}"
+            local dst="${mount#*:}"
+            if [[ "$src" != /* && -n "$workdir" ]]; then
+                src="$(cd "${workdir}/$src" 2>/dev/null && pwd)" || continue
+            fi
+            persistent+=("${src}:${dst}")
+        done
+    fi
+
+    echo "${persistent[*]}"
 }
 
 # ---------- Cloud-init Resolution ----------

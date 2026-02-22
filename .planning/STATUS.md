@@ -49,8 +49,7 @@ First round of alpha-tester feedback across macOS and Linux.
 - [x] Add lightweight CLI version update check (`_mps_check_cli_update()`, `mps-release.json`, `MPS_CHECK_UPDATES`)
 - [x] Re-publish corrected sidecars/manifest for affected images on B2
 - [x] Refactor instance metadata & port tracking to JSON
-- [ ] Refactor mount system — implementation (see `.planning/MOUNT-REFACTOR.md`)
-- [ ] Refactor mount system — automated verification (see `.planning/MOUNT-REFACTOR-TESTS.md`)
+- [x] Refactor mount system — implementation and automated verification (28/28 tests pass)
 - [ ] Refactor SSH port forward lifecycle (control sockets) — implementation (see `.planning/FIX-PRIVILEGED-PORT-PID.md`)
 - [ ] Refactor SSH port forward lifecycle (control sockets) — automated verification (see `.planning/FIX-PRIVILEGED-PORT-PID-TESTS.md`)
 - [ ] Add instance staleness detection

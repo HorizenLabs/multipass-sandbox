@@ -152,17 +152,64 @@ cmd_status() {
     mounts="$(echo "$raw" | jq -r "${info_base}.mounts // empty")"
 
     if [[ -n "$mounts" && "$mounts" != "null" && "$mounts" != "{}" ]]; then
+        # Resolve origins if instance is running
+        local short_name
+        short_name="$(mps_short_name "$instance_name")"
+        local workdir=""
+        local meta_file
+        meta_file="$(mps_instance_meta "$short_name")"
+        if [[ -f "$meta_file" ]]; then
+            workdir="$(_mps_read_meta_json "$meta_file" '.workdir')"
+        fi
+
+        local persistent_mounts=""
+        local -a config_targets=()
+        if [[ "$state" == "Running" ]]; then
+            persistent_mounts="$(_mps_resolve_project_mounts "$short_name")"
+            if [[ -n "$persistent_mounts" ]]; then
+                local pmount
+                for pmount in $persistent_mounts; do
+                    local ptgt="${pmount#*:}"
+                    if [[ "$ptgt" != "$workdir" ]]; then
+                        config_targets+=("$ptgt")
+                    fi
+                done
+            fi
+        fi
+
         printf "  ${_color_bold}%-16s${_color_reset}" "Mounts:"
         local first=true
-        echo "$mounts" | jq -r 'to_entries[] | "\(.value.source_path) => \(.key)"' | \
-        while IFS= read -r mount_line; do
+        local guest_path
+        while IFS= read -r guest_path; do
+            [[ -z "$guest_path" ]] && continue
+            local source_path
+            source_path="$(echo "$mounts" | jq -r ".[\"${guest_path}\"].source_path // empty" 2>/dev/null)"
+            local mount_line="${source_path} => ${guest_path}"
+
+            # Derive origin annotation for running instances
+            if [[ "$state" == "Running" ]]; then
+                local origin="adhoc"
+                if [[ -n "$workdir" && "$guest_path" == "$workdir" ]]; then
+                    origin="auto"
+                else
+                    local ctgt
+                    for ctgt in ${config_targets[@]+"${config_targets[@]}"}; do
+                        if [[ "$guest_path" == "$ctgt" ]]; then
+                            origin="config"
+                            break
+                        fi
+                    done
+                fi
+                mount_line="${mount_line} (${origin})"
+            fi
+
             if [[ "$first" == "true" ]]; then
                 printf " %s\n" "$mount_line"
                 first=false
             else
                 printf "  %-16s %s\n" "" "$mount_line"
             fi
-        done
+        done < <(echo "$mounts" | jq -r 'keys[]' 2>/dev/null)
     fi
 
     # ---- Docker status (only if running) ----

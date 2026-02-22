@@ -132,34 +132,75 @@ cmd_up() {
     esac
 }
 
-# Restore mounts after starting a stopped/suspended instance.
-# Multipass native mounts persist across stop/start, but this handles
-# cases where mounts were added or the instance was created with --no-mount
-# and the user now wants mounts.
+# Restore all persistent mounts after starting a stopped/suspended instance.
+# Persistent = CWD auto-mount + MPS_MOUNTS from config cascade.
+# Multipass native mounts persist across stop/start, but adhoc mounts are
+# cleaned up in mps down, so only persistent mounts survive the cycle.
 _up_restore_mounts() {
     local instance_name="$1"
     local arg_path="$2"
     local arg_no_mount="$3"
 
-    if [[ "$arg_no_mount" == "true" ]]; then
-        return 0
+    # Query Multipass for existing mounts (single call)
+    local mount_info=""
+    mount_info="$(mp_info "$instance_name" 2>/dev/null | jq -r ".info[\"${instance_name}\"].mounts // empty" 2>/dev/null)" || true
+
+    # Auto-mount: restore CWD mount if not --no-mount
+    if [[ "$arg_no_mount" != "true" ]]; then
+        mps_resolve_mount "$arg_path"
+
+        if [[ -n "${MPS_MOUNT_SOURCE:-}" && -n "${MPS_MOUNT_TARGET:-}" ]]; then
+            # Rule 2: warn if mounting $HOME
+            if [[ "${MPS_MOUNT_SOURCE}" == "${HOME:-}" ]]; then
+                mps_log_warn "Mounting your entire home directory exposes dotfiles (.ssh, .gnupg, etc.) inside the VM."
+                mps_log_warn "Consider mounting a project subdirectory instead, or use --no-mount."
+            fi
+
+            if [[ -n "$mount_info" ]] && echo "$mount_info" | jq -e ".[\"${MPS_MOUNT_TARGET}\"]" &>/dev/null; then
+                mps_log_debug "Auto-mount at '${MPS_MOUNT_TARGET}' already present."
+            else
+                mps_log_info "Mounting project directory..."
+                mp_mount "$MPS_MOUNT_SOURCE" "$instance_name" "$MPS_MOUNT_TARGET" || \
+                    mps_log_warn "Could not mount '${MPS_MOUNT_SOURCE}'. You can mount manually with: multipass mount ${MPS_MOUNT_SOURCE} ${instance_name}:${MPS_MOUNT_TARGET}"
+            fi
+        fi
     fi
 
-    # Resolve the primary mount
-    mps_resolve_mount "$arg_path"
+    # Config mounts: resolve via _mps_resolve_project_mounts (handles cross-dir)
+    local short_name
+    short_name="$(mps_short_name "$instance_name")"
+    local persistent_mounts
+    persistent_mounts="$(_mps_resolve_project_mounts "$short_name")"
 
-    if [[ -n "${MPS_MOUNT_SOURCE:-}" && -n "${MPS_MOUNT_TARGET:-}" ]]; then
-        # Check if mount already exists by inspecting instance info
-        local mount_info
-        mount_info="$(mp_info "$instance_name" 2>/dev/null | jq -r ".info[\"${instance_name}\"].mounts // empty" 2>/dev/null)" || true
-
-        if [[ -n "$mount_info" ]] && echo "$mount_info" | jq -e ".[\"${MPS_MOUNT_TARGET}\"]" &>/dev/null; then
-            mps_log_debug "Mount at '${MPS_MOUNT_TARGET}' already present."
-        else
-            mps_log_info "Mounting project directory..."
-            mp_mount "$MPS_MOUNT_SOURCE" "$instance_name" "$MPS_MOUNT_TARGET" || \
-                mps_log_warn "Could not mount '${MPS_MOUNT_SOURCE}'. You can mount manually with: multipass mount ${MPS_MOUNT_SOURCE} ${instance_name}:${MPS_MOUNT_TARGET}"
+    if [[ -n "$persistent_mounts" ]]; then
+        # Read workdir to skip the auto-mount entry (already handled above)
+        local meta_file
+        meta_file="$(mps_instance_meta "$short_name")"
+        local workdir=""
+        if [[ -f "$meta_file" ]]; then
+            workdir="$(_mps_read_meta_json "$meta_file" '.workdir')"
         fi
+
+        local pmount
+        for pmount in $persistent_mounts; do
+            local cfg_src="${pmount%%:*}"
+            local cfg_dst="${pmount#*:}"
+
+            # Skip auto-mount (workdir) — already handled above
+            if [[ -n "$workdir" && "$cfg_dst" == "$workdir" ]]; then
+                continue
+            fi
+
+            mps_validate_mount_source "$cfg_src"
+
+            if [[ -n "$mount_info" ]] && echo "$mount_info" | jq -e ".[\"${cfg_dst}\"]" &>/dev/null; then
+                mps_log_debug "Config mount at '${cfg_dst}' already present."
+            else
+                mps_log_info "Restoring config mount: ${cfg_src} -> ${cfg_dst}"
+                mp_mount "$cfg_src" "$instance_name" "$cfg_dst" || \
+                    mps_log_warn "Could not mount '${cfg_src}'. Add to MPS_MOUNTS in .mps.env for persistence."
+            fi
+        done
     fi
 }
 

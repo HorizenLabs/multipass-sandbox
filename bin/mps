@@ -53,6 +53,7 @@ ${_color_bold}Commands:${_color_reset}
     status [--name <name>]      Show detailed sandbox status
     ssh-config [--name <name>]  Generate SSH config for VS Code integration
     image <subcommand>          Manage sandbox images (list, pull, import, remove)
+    mount <subcommand>          Manage mounts (add, remove, list)
     port <subcommand>           Manage port forwarding
 
 ${_color_bold}Options:${_color_reset}
