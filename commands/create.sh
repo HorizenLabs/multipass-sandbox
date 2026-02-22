@@ -123,10 +123,10 @@ cmd_create() {
     local effective_template="${arg_cloud_init:-${MPS_CLOUD_INIT:-${MPS_DEFAULT_CLOUD_INIT:-default}}}"
 
     # ---- Resolve instance name ----
-    # Auto-name: mps-<folder>-<template>-<profile>
+    # Auto-name: mps-<folder>-<template>
     # Override: --name flag or MPS_NAME config
     local instance_name
-    instance_name="$(mps_resolve_name "$arg_name" "${MPS_MOUNT_SOURCE:-}" "$effective_template" "$effective_profile")"
+    instance_name="$(mps_resolve_name "$arg_name" "${MPS_MOUNT_SOURCE:-}" "$effective_template")"
     mps_log_debug "Resolved instance name: ${instance_name}"
 
     # ---- Check instance does not already exist ----
@@ -335,7 +335,7 @@ ${_color_bold}Arguments:${_color_reset}
     path        Host directory to mount (default: current directory)
 
 ${_color_bold}Naming:${_color_reset}
-    Auto-generated: mps-<folder>-<template>-<profile>
+    Auto-generated: mps-<folder>-<template>
     Override with --name or MPS_NAME in .mps.env
 
 ${_color_bold}Flags:${_color_reset}

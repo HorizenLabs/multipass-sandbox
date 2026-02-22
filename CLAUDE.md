@@ -53,7 +53,7 @@ Internal CLI tool for spinning up isolated VM-based development environments usi
 
 ## Key Conventions
 
-- **Auto-naming**: `mps-<folder-basename>-<template>-<profile>` (e.g., `mps-myproject-default-lite`)
+- **Auto-naming**: `mps-<folder-basename>-<template>` (e.g., `mps-myproject-default`)
   - Override with `--name` flag or `MPS_NAME` in `.mps.env`
   - Long names truncated with short hash suffix (max 40 chars for Multipass)
   - `--no-mount` without `--name` errors (can't derive folder name)

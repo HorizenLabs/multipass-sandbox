@@ -91,13 +91,13 @@ Common flags across commands: `-n` (`--name`), `-f` (`--force`), `-w` (`--workdi
 
 ## Auto-Naming
 
-Sandboxes are automatically named based on your project directory, cloud-init template, and profile:
+Sandboxes are automatically named based on your project directory and cloud-init template:
 
 ```
-<folder>-<template>-<profile>
+<folder>-<template>
 ```
 
-For example, running `mps up` from `~/projects/myapp` produces `myapp-default-lite`.
+For example, running `mps up` from `~/projects/myapp` produces `myapp-default`.
 
 - Override with `--name <name>` flag or `MPS_NAME` in `.mps.env`
 - Long names are truncated with a short hash suffix for uniqueness
@@ -279,7 +279,7 @@ The shipped `default` template (`templates/cloud-init/default.yaml`) enables Hor
 
 Create a `#cloud-config` YAML file and place it in one of these locations:
 
-1. **Project-shared** (`<project>/.mps/<name>.yaml`): Checked into git, shared by the team. Set `MPS_CLOUD_INIT=.mps/<name>.yaml` in `.mps.env`. Use a descriptive name — it flows into auto-naming (e.g., `dev.yaml` → `myproject-dev-lite`). The `.mps/` directory keeps MPS config out of the project root.
+1. **Project-shared** (`<project>/.mps/<name>.yaml`): Checked into git, shared by the team. Set `MPS_CLOUD_INIT=.mps/<name>.yaml` in `.mps.env`. Use a descriptive name — it flows into auto-naming (e.g., `dev.yaml` → `myproject-dev`). The `.mps/` directory keeps MPS config out of the project root.
 2. **Personal** (`~/.mps/cloud-init/<name>.yaml`): Personal defaults, not in any repo. Reference by name (e.g., `--cloud-init personal`) or set `MPS_DEFAULT_CLOUD_INIT=<name>` in `~/.mps/config`.
 3. **MPS built-in** (`templates/cloud-init/<name>.yaml`): For templates shipped with MPS itself.
 4. **Any file path** (e.g., `--cloud-init ~/configs/dev-setup.yaml`)

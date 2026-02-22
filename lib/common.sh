@@ -36,7 +36,7 @@ _mps_download_file() {
             --summary-interval=0 \
             -d "$(dirname "$dest")" \
             -o "$(basename "$dest")" \
-            "$url"
+            "$url" >&2
     else
         curl --progress-bar -fSL "$url" -o "$dest"
     fi
@@ -289,12 +289,13 @@ _mps_compute_resources() {
 # Maximum length for Multipass instance names
 MPS_MAX_INSTANCE_NAME_LEN=40
 
-# Generate the auto-name: mps-<folder>-<template>-<profile>
+# Generate the auto-name: mps-<folder>-<template>
+# Profile is a resource sizing knob, not an identity component — excluded from
+# the name so that changing the profile doesn't orphan an existing instance.
 # Truncates the folder portion and appends a short hash if too long.
 mps_auto_name() {
     local mount_source="${1:-}"
     local raw_template="${2:-${MPS_CLOUD_INIT:-${MPS_DEFAULT_CLOUD_INIT:-default}}}"
-    local profile="${3:-${MPS_PROFILE:-${MPS_DEFAULT_PROFILE:-lite}}}"
     local prefix="${MPS_INSTANCE_PREFIX:-mps}"
 
     # Strip path and extension from template name (e.g., ".mps/cloud-init.yaml" → "cloud-init")
@@ -314,7 +315,7 @@ mps_auto_name() {
     folder="$(echo "$folder" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g; s/--*/-/g; s/^-//; s/-$//')"
 
     # Build the full name
-    local suffix="${template}-${profile}"
+    local suffix="${template}"
     local full_name="${prefix}-${folder}-${suffix}"
 
     # Truncate if too long
@@ -349,7 +350,6 @@ mps_resolve_name() {
     local explicit_name="${1:-}"
     local mount_source="${2:-}"
     local template="${3:-}"
-    local profile="${4:-}"
 
     # 1. Explicit --name flag
     if [[ -n "$explicit_name" ]]; then
@@ -367,7 +367,7 @@ mps_resolve_name() {
 
     # 3. Auto-name from mount path
     if [[ -n "$mount_source" ]]; then
-        mps_auto_name "$mount_source" "$template" "$profile"
+        mps_auto_name "$mount_source" "$template"
         return
     fi
 
@@ -403,8 +403,7 @@ mps_resolve_instance_name() {
         instance_name="$(mps_instance_name "$arg_name")"
     else
         instance_name="$(mps_resolve_name "" "$(pwd)" \
-            "${MPS_CLOUD_INIT:-${MPS_DEFAULT_CLOUD_INIT:-default}}" \
-            "${MPS_PROFILE:-${MPS_DEFAULT_PROFILE:-lite}}")"
+            "${MPS_CLOUD_INIT:-${MPS_DEFAULT_CLOUD_INIT:-default}}")"
     fi
     mps_log_debug "Resolved instance name: ${instance_name}"
     echo "$instance_name"

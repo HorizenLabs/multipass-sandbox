@@ -19,7 +19,6 @@ cmd_up() {
     local arg_path=""
     local arg_no_mount=false
     local arg_cloud_init=""
-    local arg_profile=""
     local -a original_args=("$@")
 
     # ---- Parse arguments (lightweight — just enough to resolve name/path) ----
@@ -34,11 +33,7 @@ cmd_up() {
                 arg_cloud_init="$2"
                 shift 2
                 ;;
-            --profile)
-                arg_profile="$2"
-                shift 2
-                ;;
-            --image|--cpus|--memory|--mem|--disk|--mount|--port|--transfer)
+            --image|--profile|--cpus|--memory|--mem|--disk|--mount|--port|--transfer)
                 # Flags with values — skip the value too
                 shift 2
                 ;;
@@ -72,10 +67,9 @@ cmd_up() {
 
     # ---- Resolve instance name ----
     local effective_template="${arg_cloud_init:-${MPS_CLOUD_INIT:-${MPS_DEFAULT_CLOUD_INIT:-default}}}"
-    local effective_profile="${arg_profile:-${MPS_PROFILE:-${MPS_DEFAULT_PROFILE:-lite}}}"
 
     local instance_name
-    instance_name="$(mps_resolve_name "$arg_name" "${MPS_MOUNT_SOURCE:-}" "$effective_template" "$effective_profile")"
+    instance_name="$(mps_resolve_name "$arg_name" "${MPS_MOUNT_SOURCE:-}" "$effective_template")"
     mps_log_debug "Resolved instance name: ${instance_name}"
 
     # ---- Check current state ----
@@ -273,7 +267,7 @@ ${_color_bold}Arguments:${_color_reset}
     path        Host directory to mount (default: current directory)
 
 ${_color_bold}Naming:${_color_reset}
-    Auto-generated: mps-<folder>-<template>-<profile>
+    Auto-generated: mps-<folder>-<template>
     Override with --name or MPS_NAME in .mps.env
 
 ${_color_bold}Flags:${_color_reset}
