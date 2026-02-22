@@ -444,6 +444,18 @@ mps_require_running() {
     fi
 }
 
+# Validate instance is running, warn about staleness, and re-establish port
+# forwards.  Echoes short_name to stdout; all logging goes to stderr.
+mps_prepare_running_instance() {
+    local instance_name="$1"
+    mps_require_running "$instance_name"
+    local short_name
+    short_name="$(mps_short_name "$instance_name")"
+    _mps_warn_instance_staleness "$short_name"
+    mps_auto_forward_ports "$instance_name" "$short_name" "Re-established"
+    echo "$short_name"
+}
+
 # ---------- Workdir Resolution ----------
 
 mps_resolve_workdir() {
@@ -1562,6 +1574,18 @@ mps_port_socket() {
     local dir="${HOME}/.mps/sockets"
     mkdir -p "$dir"
     echo "${dir}/${short_name}-${host_port}.sock"
+}
+
+# Return the number of active port forwards for an instance (echoes "0" if none).
+mps_port_forward_count() {
+    local short_name="$1"
+    local pf_file
+    pf_file="$(mps_ports_file "$short_name")"
+    if [[ -f "$pf_file" ]]; then
+        jq 'length' "$pf_file" 2>/dev/null || echo "0"
+    else
+        echo "0"
+    fi
 }
 
 # Gather port specs from MPS_PORTS config and instance metadata.

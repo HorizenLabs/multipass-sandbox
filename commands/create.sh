@@ -309,12 +309,8 @@ cmd_create() {
     if [[ -n "${MPS_MOUNT_SOURCE:-}" ]]; then
         printf "  %-14s %s -> %s\n" "Mount:" "$MPS_MOUNT_SOURCE" "$MPS_MOUNT_TARGET"
     fi
-    local port_fwd_count=0
-    local pf_file
-    pf_file="$(mps_ports_file "$short_name")"
-    if [[ -f "$pf_file" ]]; then
-        port_fwd_count="$(jq 'length' "$pf_file" 2>/dev/null)" || port_fwd_count=0
-    fi
+    local port_fwd_count
+    port_fwd_count="$(mps_port_forward_count "$short_name")"
     if [[ $port_fwd_count -gt 0 ]]; then
         printf "  %-14s %s\n" "Ports:" "${port_fwd_count} forwarded"
     fi

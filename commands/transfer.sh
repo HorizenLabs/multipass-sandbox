@@ -56,16 +56,9 @@ cmd_transfer() {
     local instance_name
     instance_name="$(mps_resolve_instance_name "$arg_name")"
 
-    # ---- Check instance is running ----
-    mps_require_running "$instance_name"
-
-    # ---- Instance staleness check ----
+    # ---- Prepare running instance (state check, staleness, port forwards) ----
     local short_name
-    short_name="$(mps_short_name "$instance_name")"
-    _mps_warn_instance_staleness "$short_name"
-
-    # ---- Ensure port forwards are alive ----
-    mps_auto_forward_ports "$instance_name" "$short_name" "Re-established"
+    short_name="$(mps_prepare_running_instance "$instance_name")"
 
     # ---- Separate sources and destination ----
     local -a sources=("${file_args[@]:0:${#file_args[@]}-1}")

@@ -67,7 +67,8 @@ cmd_list() {
         '.[] | [.name, .state, (.ipv4 // [""])[0], .release] | @tsv' | \
     while IFS=$'\t' read -r full_name state ipv4 image; do
         # Strip the mps- prefix for display
-        local short_name="${full_name#${prefix}-}"
+        local short_name
+        short_name="$(mps_short_name "$full_name")"
 
         # Use em dash for missing IP
         if [[ -z "$ipv4" ]]; then

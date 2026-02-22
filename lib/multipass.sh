@@ -199,6 +199,19 @@ mp_umount() {
     multipass umount "${instance_name}:${target}" 2>/dev/null || true
 }
 
+# Get mounts JSON object for an instance.  Returns empty string if no mounts
+# (normalises "null", "{}", and empty).  Caller checks [[ -n "$result" ]].
+mp_get_mounts() {
+    local instance_name="$1"
+    local raw
+    raw="$(mp_info "$instance_name" 2>/dev/null | jq -r ".info[\"${instance_name}\"].mounts // empty" 2>/dev/null)" || true
+    if [[ -z "$raw" || "$raw" == "null" || "$raw" == "{}" ]]; then
+        echo ""
+        return 0
+    fi
+    echo "$raw"
+}
+
 # ---------- File Transfer ----------
 
 mp_transfer() {

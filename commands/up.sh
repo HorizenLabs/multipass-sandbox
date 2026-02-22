@@ -177,7 +177,7 @@ _up_restore_mounts() {
 
     # Query Multipass for existing mounts (single call)
     local mount_info=""
-    mount_info="$(mp_info "$instance_name" 2>/dev/null | jq -r ".info[\"${instance_name}\"].mounts // empty" 2>/dev/null)" || true
+    mount_info="$(mp_get_mounts "$instance_name")"
 
     # Auto-mount: restore CWD mount if not --no-mount
     if [[ "$arg_no_mount" != "true" ]]; then
@@ -247,12 +247,8 @@ _up_show_info() {
     local ip=""
     ip="$(mp_ipv4 "$instance_name" 2>/dev/null)" || true
 
-    local port_fwd_count=0
-    local pf_file
-    pf_file="$(mps_ports_file "$short_name")"
-    if [[ -f "$pf_file" ]]; then
-        port_fwd_count="$(jq 'length' "$pf_file" 2>/dev/null)" || port_fwd_count=0
-    fi
+    local port_fwd_count
+    port_fwd_count="$(mps_port_forward_count "$short_name")"
 
     echo ""
     printf "  %-14s %s\n" "Instance:" "$short_name"

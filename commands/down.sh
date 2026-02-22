@@ -85,9 +85,9 @@ _down_cleanup_adhoc_mounts() {
 
     # Get current mounts from Multipass
     local mount_info=""
-    mount_info="$(mp_info "$instance_name" 2>/dev/null | jq -r ".info[\"${instance_name}\"].mounts // empty" 2>/dev/null)" || true
+    mount_info="$(mp_get_mounts "$instance_name")"
 
-    if [[ -z "$mount_info" || "$mount_info" == "null" || "$mount_info" == "{}" ]]; then
+    if [[ -z "$mount_info" ]]; then
         return 0
     fi
 

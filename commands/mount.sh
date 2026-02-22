@@ -82,7 +82,7 @@ _mount_add() {
 
     # Check if mount already exists
     local mount_info=""
-    mount_info="$(mp_info "$instance_name" 2>/dev/null | jq -r ".info[\"${instance_name}\"].mounts // empty" 2>/dev/null)" || true
+    mount_info="$(mp_get_mounts "$instance_name")"
 
     if [[ -n "$mount_info" ]] && echo "$mount_info" | jq -e ".[\"${mount_dst}\"]" &>/dev/null; then
         mps_log_info "Mount at '${mount_dst}' is already present."
@@ -125,7 +125,7 @@ _mount_remove() {
 
     # Verify mount exists
     local mount_info=""
-    mount_info="$(mp_info "$instance_name" 2>/dev/null | jq -r ".info[\"${instance_name}\"].mounts // empty" 2>/dev/null)" || true
+    mount_info="$(mp_get_mounts "$instance_name")"
 
     if [[ -z "$mount_info" ]] || ! echo "$mount_info" | jq -e ".[\"${guest_path}\"]" &>/dev/null; then
         mps_die "No mount found at guest path '${guest_path}'"
@@ -175,9 +175,9 @@ _mount_list() {
 
     # Get current mounts from Multipass
     local mount_info=""
-    mount_info="$(mp_info "$instance_name" 2>/dev/null | jq -r ".info[\"${instance_name}\"].mounts // empty" 2>/dev/null)" || true
+    mount_info="$(mp_get_mounts "$instance_name")"
 
-    if [[ -z "$mount_info" || "$mount_info" == "null" || "$mount_info" == "{}" ]]; then
+    if [[ -z "$mount_info" ]]; then
         echo "No mounts."
         return 0
     fi
