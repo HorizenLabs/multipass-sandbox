@@ -31,6 +31,7 @@ _mps_download_file() {
     if command -v aria2c &>/dev/null; then
         aria2c -x 8 -s 8 \
             --file-allocation=none \
+            --allow-overwrite=true \
             --console-log-level=warn \
             --summary-interval=0 \
             -d "$(dirname "$dest")" \
