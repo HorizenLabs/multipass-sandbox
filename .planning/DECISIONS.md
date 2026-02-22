@@ -54,6 +54,11 @@ Backblaze B2 for storage, Cloudflare proxy for public serving. Files at bucket r
 - SHA256 checksums verified on pull; local cache at `~/.mps/cache/images/`
 - `file_size` (bytes) stored in manifest arch entries for autoindex display
 - Static `index.html` pages generated from manifest after every publish (root, per-flavor, per-version)
+- B2 credentials (`B2_APPLICATION_KEY_ID`, `B2_APPLICATION_KEY`) passed as env vars at runtime. Old image file versions cleaned up; manifest versions kept for audit trail.
+- Each image upload produces a `.meta.json` sidecar (sha256, build_date, file_size, x-mps metadata) uploaded atomically alongside the image. Clients fetch `.meta.json` for immediate SHA256 verification without waiting for manifest.
+- **CI flow**: `publish.sh --upload-only` uploads images + `.sha256` + `.meta.json` to B2, then purges CF cache. Fan-in job runs `update-manifest.sh` (downloads `.meta.json` sidecars, single manifest read-modify-write). Zero race window.
+- **Local flow**: `publish.sh` (no flag) does upload + manifest update in one shot.
+- **Manifest v2**: `schema_version: 2`, `generated_at` timestamp. No `url` field in arch entries (deterministic: `<name>/<version>/<arch>.img`). Empty v2 manifest seeded on first publish.
 
 ## Image Flavor Metadata
 
