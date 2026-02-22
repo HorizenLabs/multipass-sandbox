@@ -54,15 +54,28 @@ First round of alpha-tester feedback across macOS and Linux.
 - [x] Lazy port forward re-establishment (ensure on exec/shell/transfer/port-list)
 - [x] Add instance staleness detection
 - [x] Normalize user-facing messages to show short names (strip `mps-` prefix)
+- [ ] Scan for dead code paths and unused variables after refactoring work
 - [ ] Documentation updates: intended user flow and customization suggestions
 - [ ] Triage and fix additional alpha-tester findings
 
-## Phase 10 — Testing: NOT STARTED
+## Phase 10 — Bash Completion: NOT STARTED
+
+Self-describing tab-completion for all commands, subcommands, flags, and dynamic values (instance names, profiles, images). Uses a `mps __complete` hidden subcommand so the completion script never needs manual updates when the CLI API changes.
+
+- [ ] Add `_complete_<cmd>()` metadata functions to all 13 command files
+- [ ] Add `__complete` fast-path dispatcher to `bin/mps`
+- [ ] Create `completions/mps.bash` (thin generic completion script)
+- [ ] Update `install.sh` / `uninstall.sh` for completion symlink
+- [ ] Add `completions/` to Makefile lint targets
+
+> Full plan: `.planning/BASH-COMPLETION.md`
+
+## Phase 11 — Testing: NOT STARTED
 
 - [ ] BATS test suite for lib/common.sh, lib/multipass.sh, and command scripts
 - [ ] Wire tests into GitHub Actions CI (lint + test on push/PR)
 
-## Phase 11 — PowerShell Parity (Windows): NOT STARTED
+## Phase 12 — PowerShell Parity (Windows): NOT STARTED
 
 - [ ] `bin/mps.ps1`
 - [ ] `lib/common.ps1`
