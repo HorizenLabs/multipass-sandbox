@@ -56,7 +56,7 @@ First round of alpha-tester feedback across macOS and Linux.
 - [x] Normalize user-facing messages to show short names (strip `mps-` prefix)
 - [x] Scan for dead code paths and unused variables after refactoring work
 - [x] Move SSH key helpers from lib/common.sh to commands/ssh-config.sh (exclusive caller)
-- [ ] Documentation updates: intended user flow and customization suggestions
+- [x] Documentation updates: intended user flow and customization suggestions
 - [ ] Triage and fix additional alpha-tester findings
 
 ## Phase 10 — Bash Completion: NOT STARTED
