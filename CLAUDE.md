@@ -68,7 +68,7 @@ Internal CLI tool for spinning up isolated VM-based development environments usi
   - Override with `--name` flag or `MPS_NAME` in `.mps.env`
   - Long names truncated with short hash suffix (max 40 chars for Multipass)
   - `--no-mount` without `--name` errors (can't derive folder name)
-- Config cascade: `config/defaults.env` → `~/.mps/config` → `.mps.env` → profile → auto-scaling → CLI flags. No `ENV_VAR=x mps cmd` overrides — use `~/.mps/config` or `.mps.env` to test config knobs. Key config keys: `MPS_CHECK_UPDATES` (CLI update check, default true), `MPS_IMAGE_CHECK_UPDATES` (image staleness check, default true), `MPS_PORTS` (space-separated `host:guest` pairs, auto-forwarded on up/create).
+- Config cascade: `config/defaults.env` → `~/.mps/config` → `.mps.env` → profile → auto-scaling → CLI flags. No `ENV_VAR=x mps cmd` overrides — use `~/.mps/config` or `.mps.env` to test config knobs. Key config keys: `MPS_CHECK_UPDATES` (CLI update check, default true), `MPS_IMAGE_CHECK_UPDATES` (image and instance staleness checks, default true), `MPS_PORTS` (space-separated `host:guest` pairs, auto-forwarded on up/create).
 - **Default profile**: `lite` (auto-scales CPU/memory from host hardware fractions with min/cap)
 - **Profiles**: micro (1/8 CPU, 1/16 mem), lite (1/4, 1/6), standard (1/3, 1/4), heavy (1/2, 1/3)
 - **Image metadata**: `x-mps:` blocks in layer YAMLs define disk_size, min_profile, min_disk/memory/cpus
@@ -166,6 +166,7 @@ The Makefile detects host uid:gid and the entrypoint uses setpriv to step down f
 - **checkmake quirks**: `minphony` only parses the first line of `.PHONY` declarations — keep `test` and `clean` on the first line. `maxbodylength` default max is 15 lines per target body (configured in `checkmake.ini`).
 - **Local verification**: `multipass` and `jq` are installed on the dev machine — run `mps` commands directly to verify changes.
 - **End-to-end verification**: After implementing changes to command files (`commands/*.sh`) or core libraries (`lib/*.sh`), run the verification steps from the plan against a live VM on the host — not just `make lint`. If the plan includes a test script, execute it. Create a temporary instance (e.g., `--profile micro --name <test-name>`) and clean it up with `mps destroy` afterward.
+- **Automated verification in plans**: Plans must always include an automated verification script — never manual testing steps. The script should create temporary instances, assert expected behavior, and clean up afterward.
 
 ## Planning & Status
 

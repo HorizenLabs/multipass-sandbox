@@ -139,6 +139,10 @@ cmd_status() {
 
     echo ""
 
+    # ---- Short name (used by staleness + mounts) ----
+    local short_name
+    short_name="$(mps_short_name "$instance_name")"
+
     if [[ -n "$image" ]]; then
         local image_info="$image"
         if [[ -n "$image_hash" ]]; then
@@ -147,14 +151,34 @@ cmd_status() {
         printf "  ${_color_bold}%-16s${_color_reset} %s\n" "Image:" "$image_info"
     fi
 
+    # ---- Image Status ----
+    local instance_staleness=""
+    instance_staleness="$(_mps_check_instance_staleness "$short_name" 2>/dev/null)" || true
+    case "$instance_staleness" in
+        up-to-date)
+            printf "  ${_color_bold}%-16s${_color_reset} %b\n" "Image Status:" "${_color_green}up-to-date${_color_reset}"
+            ;;
+        stale:manifest)
+            printf "  ${_color_bold}%-16s${_color_reset} %b\n" "Image Status:" "${_color_yellow}stale (rebuild available, not yet pulled)${_color_reset}"
+            ;;
+        stale)
+            printf "  ${_color_bold}%-16s${_color_reset} %b\n" "Image Status:" "${_color_yellow}stale (rebuild available)${_color_reset}"
+            ;;
+        update:manifest:*)
+            local new_ver="${instance_staleness#update:manifest:}"
+            printf "  ${_color_bold}%-16s${_color_reset} %b\n" "Image Status:" "${_color_yellow}update available (${new_ver}, not yet pulled)${_color_reset}"
+            ;;
+        update:*)
+            local new_ver="${instance_staleness#update:}"
+            printf "  ${_color_bold}%-16s${_color_reset} %b\n" "Image Status:" "${_color_yellow}update available (${new_ver})${_color_reset}"
+            ;;
+    esac
+
     # ---- Mounts ----
     local mounts
     mounts="$(echo "$raw" | jq -r "${info_base}.mounts // empty")"
 
     if [[ -n "$mounts" && "$mounts" != "null" && "$mounts" != "{}" ]]; then
-        # Resolve origins if instance is running
-        local short_name
-        short_name="$(mps_short_name "$instance_name")"
         local workdir=""
         local meta_file
         meta_file="$(mps_instance_meta "$short_name")"

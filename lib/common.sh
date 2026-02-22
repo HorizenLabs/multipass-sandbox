@@ -787,6 +787,15 @@ _mps_fetch_manifest() {
     _mps_remote_fetch "${base_url}/manifest.json" "$(mps_cache_dir)/manifest.json"
 }
 
+# Read cached manifest.json from disk (no network). Returns manifest on stdout.
+# Returns 1 if no cached manifest exists.
+_mps_read_cached_manifest() {
+    local cache_file
+    cache_file="$(mps_cache_dir)/manifest.json"
+    [[ -f "$cache_file" ]] || return 1
+    cat "$cache_file"
+}
+
 # Compare local .meta.json SHA256 vs remote .meta.json sidecar (HEAD + body fallback).
 # Prints one of: up-to-date, stale, update:<ver>, unknown.
 _mps_check_image_staleness() {
@@ -893,6 +902,146 @@ _mps_warn_image_staleness() {
         update:*)
             local new_ver="${status#update:}"
             mps_log_warn "Image '${name}:${version}' is outdated. Version ${new_ver} is available. Run 'mps image pull ${name}' to update."
+            ;;
+    esac
+    return 0
+}
+
+# ---------- Instance Staleness Detection ----------
+
+# Check if an instance is stale vs its locally cached image.
+# Compares instance metadata SHA256 against cached image .meta.json.
+# Returns (stdout): up-to-date, stale, update:<new_ver>, unknown
+_mps_check_instance_staleness() {
+    local short_name="$1"
+    local meta_file
+    meta_file="$(mps_instance_meta "$short_name")"
+    [[ -f "$meta_file" ]] || { echo "unknown"; return 0; }
+
+    local img_name img_version img_arch img_sha256 img_source
+    img_name="$(_mps_read_meta_json "$meta_file" '.image.name')"
+    img_version="$(_mps_read_meta_json "$meta_file" '.image.version')"
+    img_arch="$(_mps_read_meta_json "$meta_file" '.image.arch')"
+    img_sha256="$(_mps_read_meta_json "$meta_file" '.image.sha256')"
+    img_source="$(_mps_read_meta_json "$meta_file" '.image.source')"
+
+    # Can't compare stock images or missing sha256
+    if [[ "$img_source" == "stock" || -z "$img_sha256" ]]; then
+        echo "unknown"
+        return 0
+    fi
+
+    # Need name/version/arch to locate cached image
+    if [[ -z "$img_name" || -z "$img_version" || -z "$img_arch" ]]; then
+        echo "unknown"
+        return 0
+    fi
+
+    # Read cached image .meta.json
+    local cache_meta
+    cache_meta="$(mps_cache_dir)/images/${img_name}/${img_version}/${img_arch}.meta.json"
+    if [[ ! -f "$cache_meta" ]]; then
+        echo "unknown"
+        return 0
+    fi
+
+    local cached_sha256=""
+    cached_sha256="$(_mps_read_meta_json "$cache_meta" '.sha256')"
+
+    # Check for newer SemVer version in local cache (only for SemVer tags)
+    local has_update=""
+    if [[ "$img_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        local image_dir
+        image_dir="$(mps_cache_dir)/images/${img_name}"
+        if [[ -d "$image_dir" ]]; then
+            local best_version=""
+            best_version="$(_mps_resolve_latest_version "$image_dir" "$img_arch")"
+            if [[ -n "$best_version" && "$best_version" != "local" ]] && _mps_semver_gt "$best_version" "$img_version"; then
+                has_update="$best_version"
+            fi
+        fi
+    fi
+
+    # Priority: update > stale > up-to-date
+    if [[ -n "$has_update" ]]; then
+        echo "update:${has_update}"
+        return 0
+    fi
+
+    if [[ -n "$cached_sha256" && "$img_sha256" != "$cached_sha256" ]]; then
+        echo "stale"
+        return 0
+    fi
+
+    # ---- Manifest-based enhancement (no network) ----
+    local manifest=""
+    manifest="$(_mps_read_cached_manifest)" || true
+
+    if [[ -n "$manifest" ]]; then
+        # Newer version in manifest?
+        if [[ "$img_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            local manifest_latest=""
+            manifest_latest="$(echo "$manifest" | jq -r ".images[\"${img_name}\"].latest // empty")"
+            if [[ -n "$manifest_latest" && "$manifest_latest" != "$img_version" ]] \
+                && _mps_semver_gt "$manifest_latest" "$img_version"; then
+                echo "update:manifest:${manifest_latest}"
+                return 0
+            fi
+        fi
+
+        # Rebuild detection via manifest SHA256
+        local manifest_sha256=""
+        manifest_sha256="$(echo "$manifest" | jq -r \
+            ".images[\"${img_name}\"].versions[\"${img_version}\"][\"${img_arch}\"].sha256 // empty")"
+        if [[ -n "$manifest_sha256" && "$img_sha256" != "$manifest_sha256" ]]; then
+            echo "stale:manifest"
+            return 0
+        fi
+    fi
+
+    echo "up-to-date"
+    return 0
+}
+
+# High-level wrapper: check instance staleness and emit warnings.
+# Respects MPS_IMAGE_CHECK_UPDATES opt-out. Silent on up-to-date/unknown/failure.
+_mps_warn_instance_staleness() {
+    local short_name="$1"
+    local skip_manifest="${2:-}"
+
+    # Opt-out check
+    [[ "${MPS_IMAGE_CHECK_UPDATES:-true}" == "true" ]] || return 0
+
+    local status=""
+    status="$(_mps_check_instance_staleness "$short_name")" || return 0
+
+    # Suppress manifest-sourced warnings when caller already handles image staleness
+    if [[ "$skip_manifest" == "--skip-manifest" ]]; then
+        case "$status" in
+            stale:manifest|update:manifest:*) return 0 ;;
+        esac
+    fi
+
+    local meta_file
+    meta_file="$(mps_instance_meta "$short_name")"
+    local img_name img_version
+    img_name="$(_mps_read_meta_json "$meta_file" '.image.name')"
+    img_version="$(_mps_read_meta_json "$meta_file" '.image.version')"
+
+    case "$status" in
+        stale:manifest)
+            mps_log_warn "Sandbox '${short_name}' was created from an older build of ${img_name}:${img_version}. Update with: mps image pull ${img_name}:${img_version} && mps destroy --name ${short_name} && mps up"
+            ;;
+        stale)
+            mps_log_warn "Sandbox '${short_name}' was created from an older build of ${img_name}:${img_version}. Recreate with: mps destroy --name ${short_name} && mps up"
+            ;;
+        update:manifest:*)
+            local new_ver="${status#update:manifest:}"
+            mps_log_warn "Sandbox '${short_name}' uses ${img_name}:${img_version} but ${new_ver} is available. Update with: mps image pull ${img_name} && mps destroy --name ${short_name} && mps up"
+            ;;
+        update:*)
+            local new_ver="${status#update:}"
+            mps_log_warn "Sandbox '${short_name}' uses ${img_name}:${img_version} but ${new_ver} is available locally. Recreate with: mps destroy --name ${short_name} && mps up"
             ;;
     esac
     return 0

@@ -183,7 +183,7 @@ MPS_NO_AUTOMOUNT=false
 | `MPS_NO_AUTOMOUNT` | `false` | Disable automatic CWD mount |
 | `MPS_SSH_KEY` | (auto-detect) | SSH key path (auto-detect: ed25519 > ecdsa > rsa) |
 | `MPS_IMAGE_BASE_URL` | `https://mpsandbox.horizenlabs.io` | Image registry URL |
-| `MPS_IMAGE_CHECK_UPDATES` | `true` | Check for image updates on create/up |
+| `MPS_IMAGE_CHECK_UPDATES` | `true` | Check for image and instance staleness updates |
 | `MPS_INSTANCE_PREFIX` | `mps` | Prefix for auto-generated instance names |
 | `MPS_DEBUG` | `false` | Enable debug logging (`--debug` flag) |
 | `MPS_B2_BUCKET` | `mpsandbox` | Backblaze B2 bucket (build/publish only) |
@@ -397,7 +397,7 @@ mps image remove base:1.0.0
 mps image remove --all
 ```
 
-Images are checked for updates automatically on `mps create` and `mps up`. Disable with `MPS_IMAGE_CHECK_UPDATES=false`.
+Images are checked for updates automatically on `mps create` and `mps up`. Running sandboxes are also checked for staleness (rebuilt image pulled, or newer version available locally) on `mps up`, `mps shell`, `mps exec`, `mps status`, `mps transfer`, and `mps ssh-config`. Disable all image/instance update checks with `MPS_IMAGE_CHECK_UPDATES=false`.
 
 ### Building Images Locally
 

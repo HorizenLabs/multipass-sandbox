@@ -68,6 +68,9 @@ cmd_ssh_config() {
     # ---- Check instance exists and is running ----
     mps_require_running "$instance_name"
 
+    # ---- Instance staleness check ----
+    _mps_warn_instance_staleness "$short_name"
+
     # ---- Resolve key, inject into VM, get private key path ----
     local ssh_key
     ssh_key="$(mps_ensure_ssh_key "$instance_name" "$short_name" "$arg_ssh_key")"

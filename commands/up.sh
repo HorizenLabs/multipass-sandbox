@@ -104,11 +104,20 @@ cmd_up() {
             short_name="$(mps_short_name "$instance_name")"
             mps_reset_port_forwards "$instance_name" "$short_name" --auto-forward
 
+            # Staleness checks (image + instance)
+            _up_staleness_checks "$short_name"
+
             _up_show_info "$instance_name"
             ;;
 
         Running)
             mps_log_info "Instance '${instance_name}' is already running."
+
+            # Staleness checks (image + instance)
+            local short_name
+            short_name="$(mps_short_name "$instance_name")"
+            _up_staleness_checks "$short_name"
+
             _up_show_info "$instance_name"
             ;;
 
@@ -123,6 +132,9 @@ cmd_up() {
             short_name="$(mps_short_name "$instance_name")"
             mps_reset_port_forwards "$instance_name" "$short_name" --auto-forward
 
+            # Staleness checks (image + instance)
+            _up_staleness_checks "$short_name"
+
             _up_show_info "$instance_name"
             ;;
 
@@ -130,6 +142,32 @@ cmd_up() {
             mps_die "Instance '${instance_name}' is in unexpected state: ${state}"
             ;;
     esac
+}
+
+# Run image + instance staleness checks for existing instances.
+# Image staleness: checks if a newer image exists remotely (bug fix — was missing).
+# Instance staleness: checks if the local cached image has changed since creation.
+_up_staleness_checks() {
+    local short_name="$1"
+    local meta_file
+    meta_file="$(mps_instance_meta "$short_name")"
+    [[ -f "$meta_file" ]] || return 0
+
+    # Image staleness (remote check) — construct file:// URL from instance metadata
+    local img_name img_version img_arch
+    img_name="$(_mps_read_meta_json "$meta_file" '.image.name')"
+    img_version="$(_mps_read_meta_json "$meta_file" '.image.version')"
+    img_arch="$(_mps_read_meta_json "$meta_file" '.image.arch')"
+    if [[ -n "$img_name" && -n "$img_version" && -n "$img_arch" ]]; then
+        local img_path
+        img_path="$(mps_cache_dir)/images/${img_name}/${img_version}/${img_arch}.img"
+        if [[ -f "$img_path" ]]; then
+            _mps_warn_image_staleness "file://${img_path}"
+        fi
+    fi
+
+    # Instance staleness (local check — skip manifest warnings since image staleness above covers them)
+    _mps_warn_instance_staleness "$short_name" --skip-manifest
 }
 
 # Restore all persistent mounts after starting a stopped/suspended instance.

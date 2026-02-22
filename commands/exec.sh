@@ -63,9 +63,12 @@ cmd_exec() {
     # ---- Check instance is running ----
     mps_require_running "$instance_name"
 
-    # ---- Ensure port forwards are alive ----
+    # ---- Instance staleness check ----
     local short_name
     short_name="$(mps_short_name "$instance_name")"
+    _mps_warn_instance_staleness "$short_name"
+
+    # ---- Ensure port forwards are alive ----
     mps_auto_forward_ports "$instance_name" "$short_name" "Re-established"
 
     # ---- Determine working directory ----
