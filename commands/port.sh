@@ -95,16 +95,16 @@ _port_forward() {
     local state
     state="$(mp_instance_state "$instance_name")"
     if [[ "$state" != "Running" ]]; then
-        mps_die "Instance '$name' is not running (state: $state). Start it with: mps up $name"
+        mps_die "Instance '$name' is not running (state: $state). Start it with: mps up --name $name"
     fi
 
-    mps_log_info "Forwarding localhost:${host_port} → ${instance_name}:${guest_port}..."
+    mps_log_info "Forwarding localhost:${host_port} → ${name}:${guest_port}..."
 
     local rc=0
     mps_forward_port "$instance_name" "$name" "${host_port}:${guest_port}" "$privileged" || rc=$?
     case $rc in
-        0) mps_log_info "Port forward active: localhost:${host_port} → ${instance_name}:${guest_port}" ;;
-        2) mps_log_warn "Port localhost:${host_port} is already forwarded to ${instance_name}:${guest_port}" ;;
+        0) mps_log_info "Port forward active: localhost:${host_port} → ${name}:${guest_port}" ;;
+        2) mps_log_warn "Port localhost:${host_port} is already forwarded to ${name}:${guest_port}" ;;
         *) mps_die "Failed to establish port forward" ;;
     esac
 }

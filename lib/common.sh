@@ -421,21 +421,25 @@ mps_cache_dir() {
 
 mps_require_exists() {
     local instance_name="$1"
-    local suffix="${2:-Create it with: mps up --name $(mps_short_name "$instance_name")}"
+    local _display
+    _display="$(mps_short_name "$instance_name")"
+    local suffix="${2:-Create it with: mps up --name ${_display}}"
     if ! mp_instance_exists "$instance_name"; then
-        mps_die "Instance '${instance_name}' does not exist. ${suffix}"
+        mps_die "Instance '${_display}' does not exist. ${suffix}"
     fi
 }
 
 mps_require_running() {
     local instance_name="$1"
+    local _display
+    _display="$(mps_short_name "$instance_name")"
     local state
     state="$(mp_instance_state "$instance_name")"
     if [[ "$state" == "nonexistent" ]]; then
-        mps_die "Instance '${instance_name}' does not exist. Create it with: mps up --name $(mps_short_name "$instance_name")"
+        mps_die "Instance '${_display}' does not exist. Create it with: mps up --name ${_display}"
     fi
     if [[ "$state" != "Running" ]]; then
-        mps_die "Instance '${instance_name}' is not running (state: ${state}). Start it with: mps up --name $(mps_short_name "$instance_name")"
+        mps_die "Instance '${_display}' is not running (state: ${state}). Start it with: mps up --name ${_display}"
     fi
 }
 
@@ -1030,18 +1034,18 @@ _mps_warn_instance_staleness() {
 
     case "$status" in
         stale:manifest)
-            mps_log_warn "Sandbox '${short_name}' was created from an older build of ${img_name}:${img_version}. Update with: mps image pull ${img_name}:${img_version} && mps destroy --name ${short_name} && mps up"
+            mps_log_warn "Sandbox '${short_name}' was created from an older build of ${img_name}:${img_version}. Update with: mps image pull ${img_name}:${img_version} && mps destroy --name ${short_name} && mps up --name ${short_name}"
             ;;
         stale)
-            mps_log_warn "Sandbox '${short_name}' was created from an older build of ${img_name}:${img_version}. Recreate with: mps destroy --name ${short_name} && mps up"
+            mps_log_warn "Sandbox '${short_name}' was created from an older build of ${img_name}:${img_version}. Recreate with: mps destroy --name ${short_name} && mps up --name ${short_name}"
             ;;
         update:manifest:*)
             local new_ver="${status#update:manifest:}"
-            mps_log_warn "Sandbox '${short_name}' uses ${img_name}:${img_version} but ${new_ver} is available. Update with: mps image pull ${img_name} && mps destroy --name ${short_name} && mps up"
+            mps_log_warn "Sandbox '${short_name}' uses ${img_name}:${img_version} but ${new_ver} is available. Update with: mps image pull ${img_name} && mps destroy --name ${short_name} && mps up --name ${short_name}"
             ;;
         update:*)
             local new_ver="${status#update:}"
-            mps_log_warn "Sandbox '${short_name}' uses ${img_name}:${img_version} but ${new_ver} is available locally. Recreate with: mps destroy --name ${short_name} && mps up"
+            mps_log_warn "Sandbox '${short_name}' uses ${img_name}:${img_version} but ${new_ver} is available locally. Recreate with: mps destroy --name ${short_name} && mps up --name ${short_name}"
             ;;
     esac
     return 0
@@ -1603,11 +1607,11 @@ mps_inject_ssh_key() {
     local tmp_dest
     tmp_dest="$(multipass exec "$instance_name" -- mktemp /tmp/mps_pubkey_XXXXXXXX.pub)"
     if ! multipass transfer "$pubkey_path" "${instance_name}:${tmp_dest}"; then
-        mps_die "Failed to transfer SSH public key to '${instance_name}'"
+        mps_die "Failed to transfer SSH public key to '${short_name}'"
     fi
     if ! multipass exec "$instance_name" -- bash -c \
         "mkdir -p ~/.ssh && chmod 700 ~/.ssh && cat '${tmp_dest}' >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys && rm -f '${tmp_dest}'"; then
-        mps_die "Failed to inject SSH key into '${instance_name}'"
+        mps_die "Failed to inject SSH key into '${short_name}'"
     fi
 
     # Record in instance metadata via jq read-modify-write
@@ -1741,7 +1745,7 @@ mps_forward_port() {
     local ip
     ip="$(mp_ipv4 "$instance_name")" || true
     if [[ -z "$ip" ]]; then
-        mps_log_warn "Cannot determine IP for '${instance_name}' — skipping port ${port_spec}"
+        mps_log_warn "Cannot determine IP for '${short_name}' — skipping port ${port_spec}"
         return 1
     fi
 

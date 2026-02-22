@@ -79,13 +79,15 @@ cmd_up() {
     mps_log_debug "Resolved instance name: ${instance_name}"
 
     # ---- Check current state ----
+    local short_name
+    short_name="$(mps_short_name "$instance_name")"
     local state
     state="$(mp_instance_state "$instance_name")"
     mps_log_debug "Instance state: ${state}"
 
     case "$state" in
         nonexistent)
-            mps_log_info "Instance '${instance_name}' does not exist. Creating..."
+            mps_log_info "Instance '${short_name}' does not exist. Creating..."
             # Delegate to cmd_create with all original arguments
             # shellcheck source=create.sh
             source "${MPS_ROOT}/commands/create.sh"
@@ -93,15 +95,13 @@ cmd_up() {
             ;;
 
         Stopped)
-            mps_log_info "Instance '${instance_name}' is stopped. Starting..."
+            mps_log_info "Instance '${short_name}' is stopped. Starting..."
             mp_start "$instance_name"
 
             # Re-establish mounts if needed
             _up_restore_mounts "$instance_name" "$arg_path" "$arg_no_mount"
 
             # Re-establish port forwards (kill stale, then auto-forward)
-            local short_name
-            short_name="$(mps_short_name "$instance_name")"
             mps_reset_port_forwards "$instance_name" "$short_name" --auto-forward
 
             # Staleness checks (image + instance)
@@ -111,25 +111,21 @@ cmd_up() {
             ;;
 
         Running)
-            mps_log_info "Instance '${instance_name}' is already running."
+            mps_log_info "Instance '${short_name}' is already running."
 
             # Staleness checks (image + instance)
-            local short_name
-            short_name="$(mps_short_name "$instance_name")"
             _up_staleness_checks "$short_name"
 
             _up_show_info "$instance_name"
             ;;
 
         Suspended)
-            mps_log_info "Instance '${instance_name}' is suspended. Starting..."
+            mps_log_info "Instance '${short_name}' is suspended. Starting..."
             mp_start "$instance_name"
 
             _up_restore_mounts "$instance_name" "$arg_path" "$arg_no_mount"
 
             # Re-establish port forwards (kill stale, then auto-forward)
-            local short_name
-            short_name="$(mps_short_name "$instance_name")"
             mps_reset_port_forwards "$instance_name" "$short_name" --auto-forward
 
             # Staleness checks (image + instance)
@@ -139,7 +135,7 @@ cmd_up() {
             ;;
 
         *)
-            mps_die "Instance '${instance_name}' is in unexpected state: ${state}"
+            mps_die "Instance '${short_name}' is in unexpected state: ${state}"
             ;;
     esac
 }
@@ -199,7 +195,7 @@ _up_restore_mounts() {
             else
                 mps_log_info "Mounting project directory..."
                 mp_mount "$MPS_MOUNT_SOURCE" "$instance_name" "$MPS_MOUNT_TARGET" || \
-                    mps_log_warn "Could not mount '${MPS_MOUNT_SOURCE}'. You can mount manually with: multipass mount ${MPS_MOUNT_SOURCE} ${instance_name}:${MPS_MOUNT_TARGET}"
+                    mps_log_warn "Could not mount '${MPS_MOUNT_SOURCE}'. You can mount manually with: mps mount add $(mps_short_name "$instance_name") ${MPS_MOUNT_SOURCE}:${MPS_MOUNT_TARGET}"
             fi
         fi
     fi
@@ -259,7 +255,7 @@ _up_show_info() {
     fi
 
     echo ""
-    printf "  %-14s %s\n" "Instance:" "$instance_name"
+    printf "  %-14s %s\n" "Instance:" "$short_name"
     if [[ -n "$ip" ]]; then
         printf "  %-14s %s\n" "IP:" "$ip"
     fi

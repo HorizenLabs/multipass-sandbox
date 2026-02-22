@@ -49,22 +49,22 @@ cmd_down() {
     mps_require_exists "$instance_name" "Nothing to stop."
 
     # ---- Check current state ----
+    local short_name
+    short_name="$(mps_short_name "$instance_name")"
     local state
     state="$(mp_instance_state "$instance_name")"
     mps_log_debug "Instance state: ${state}"
 
     if [[ "$state" == "Stopped" ]]; then
-        mps_log_info "Instance '${instance_name}' is already stopped."
+        mps_log_info "Instance '${short_name}' is already stopped."
         return 0
     fi
 
     if [[ "$state" != "Running" && "$state" != "Suspended" ]]; then
-        mps_die "Instance '${instance_name}' is in unexpected state: ${state}"
+        mps_die "Instance '${short_name}' is in unexpected state: ${state}"
     fi
 
     # ---- Kill port forwards ----
-    local short_name
-    short_name="$(mps_short_name "$instance_name")"
     mps_reset_port_forwards "$instance_name" "$short_name"
 
     # ---- Clean up adhoc mounts ----

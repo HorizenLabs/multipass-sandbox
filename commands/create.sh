@@ -133,7 +133,7 @@ cmd_create() {
     if mp_instance_exists "$instance_name"; then
         local short
         short="$(mps_short_name "$instance_name")"
-        mps_die "Instance '${instance_name}' already exists. Use 'mps up' to start it, or 'mps destroy --name ${short}' first."
+        mps_die "Instance '${short}' already exists. Use 'mps up' to start it, or 'mps destroy --name ${short}' first."
     fi
 
     # ---- Resolve cloud-init ----
@@ -288,7 +288,7 @@ cmd_create() {
                 mps_die "Transfer source is not a file or directory: ${host_src}"
             fi
 
-            mps_log_info "Transferring '${host_src}' -> '${instance_name}:${guest_dst}'..."
+            mps_log_info "Transferring '${host_src}' -> '${short_name}:${guest_dst}'..."
             mp_transfer -r -p "$host_src" "${instance_name}:${guest_dst}"
             transfer_count=$((transfer_count + 1))
         done
@@ -298,9 +298,9 @@ cmd_create() {
     local ip=""
     ip="$(mp_ipv4 "$instance_name" 2>/dev/null)" || true
 
-    mps_log_info "Sandbox '${instance_name}' is ready."
+    mps_log_info "Sandbox '${short_name}' is ready."
     echo ""
-    printf "  %-14s %s\n" "Instance:" "$instance_name"
+    printf "  %-14s %s\n" "Instance:" "$short_name"
     printf "  %-14s %s\n" "Image:" "$image_spec"
     printf "  %-14s %s\n" "Profile:" "$effective_profile"
     printf "  %-14s %s\n" "vCPUs:" "$cpus"

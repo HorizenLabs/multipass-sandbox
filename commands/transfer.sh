@@ -117,9 +117,9 @@ cmd_transfer() {
     # ---- Execute transfer ----
     local src_count=${#sources[@]}
     if [[ "$guest_dst" == "true" ]]; then
-        mps_log_info "Transferring ${src_count} path(s) host -> ${instance_name}..."
+        mps_log_info "Transferring ${src_count} path(s) host -> ${short_name}..."
     else
-        mps_log_info "Transferring from ${instance_name} -> host..."
+        mps_log_info "Transferring from ${short_name} -> host..."
     fi
 
     mp_transfer -r -p ${resolved_args[@]+"${resolved_args[@]}"}

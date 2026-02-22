@@ -79,14 +79,14 @@ cmd_ssh_config() {
     local ssh_ip
     ssh_ip="$(mp_ipv4 "$instance_name")"
     if [[ -z "$ssh_ip" ]]; then
-        mps_die "Could not determine IP address for '${instance_name}'"
+        mps_die "Could not determine IP address for '${short_name}'"
     fi
 
     # ---- Build config block ----
     local ssh_user="ubuntu"
     local config_block
     config_block="$(cat <<EOF
-Host ${instance_name}
+Host ${short_name}
     HostName ${ssh_ip}
     User ${ssh_user}
     IdentityFile ${ssh_key}
