@@ -95,6 +95,12 @@ cmd_list() {
     done
 }
 
+_complete_list() {
+    case "${1:-}" in
+        flags) echo "--json --help -h" ;;
+    esac
+}
+
 _list_usage() {
     cat <<EOF
 ${_color_bold}mps list${_color_reset} — List all sandboxes

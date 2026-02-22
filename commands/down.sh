@@ -123,6 +123,13 @@ _down_cleanup_adhoc_mounts() {
     done < <(echo "$mount_info" | jq -r 'keys[]' 2>/dev/null)
 }
 
+_complete_down() {
+    case "${1:-}" in
+        flags)       echo "--name -n --force -f --help -h" ;;
+        flag-values) case "${2:-}" in --name|-n) echo "__instances__" ;; esac ;;
+    esac
+}
+
 _down_usage() {
     cat <<EOF
 ${_color_bold}mps down${_color_reset} — Stop a running sandbox

@@ -238,6 +238,23 @@ _mount_list() {
 
 # ---------- usage ----------
 
+_complete_mount() {
+    case "${1:-}" in
+        subcmds) echo "add remove list" ;;
+        flags)
+            case "${2:-}" in
+                add)    echo "--name -n --help -h" ;;
+                remove) echo "--name -n --help -h" ;;
+                list)   echo "--name -n --help -h" ;;
+                *)      echo "--help -h" ;;
+            esac ;;
+        flag-values)
+            case "${2:-}" in
+                --name|-n) echo "__instances__" ;;
+            esac ;;
+    esac
+}
+
 _mount_usage() {
     cat <<EOF
 ${_color_bold}mps mount${_color_reset} — Manage sandbox mounts

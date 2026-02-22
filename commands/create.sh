@@ -324,6 +324,19 @@ cmd_create() {
     mps_log_info "Connect with: mps shell --name ${short_name}"
 }
 
+_complete_create() {
+    case "${1:-}" in
+        flags) echo "--name -n --image --cpus --memory --mem --disk --cloud-init --profile --mount --port --transfer --no-mount --help -h" ;;
+        flag-values)
+            case "${2:-}" in
+                --name|-n)    echo "__instances__" ;;
+                --profile)    echo "__profiles__" ;;
+                --image)      echo "__images__" ;;
+                --cloud-init) echo "__cloud_init__" ;;
+            esac ;;
+    esac
+}
+
 _create_usage() {
     cat <<EOF
 ${_color_bold}mps create${_color_reset} — Create a new sandbox

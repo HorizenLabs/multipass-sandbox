@@ -58,6 +58,13 @@ cmd_shell() {
     mp_shell "$instance_name" "$workdir"
 }
 
+_complete_shell() {
+    case "${1:-}" in
+        flags)       echo "--name -n --workdir -w --help -h" ;;
+        flag-values) case "${2:-}" in --name|-n) echo "__instances__" ;; esac ;;
+    esac
+}
+
 _shell_usage() {
     cat <<EOF
 ${_color_bold}mps shell${_color_reset} — Open an interactive shell in a sandbox

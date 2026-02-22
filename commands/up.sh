@@ -256,6 +256,19 @@ _up_show_info() {
     mps_log_info "Connect with: mps shell --name ${short_name}"
 }
 
+_complete_up() {
+    case "${1:-}" in
+        flags) echo "--name -n --image --cpus --memory --mem --disk --cloud-init --profile --mount --port --transfer --no-mount --help -h" ;;
+        flag-values)
+            case "${2:-}" in
+                --name|-n)    echo "__instances__" ;;
+                --profile)    echo "__profiles__" ;;
+                --image)      echo "__images__" ;;
+                --cloud-init) echo "__cloud_init__" ;;
+            esac ;;
+    esac
+}
+
 _up_usage() {
     cat <<EOF
 ${_color_bold}mps up${_color_reset} — Create (if needed) and start a sandbox

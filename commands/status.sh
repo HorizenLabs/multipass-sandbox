@@ -282,6 +282,13 @@ _status_human_bytes() {
     fi
 }
 
+_complete_status() {
+    case "${1:-}" in
+        flags)       echo "--name -n --json --help -h" ;;
+        flag-values) case "${2:-}" in --name|-n) echo "__instances__" ;; esac ;;
+    esac
+}
+
 _status_usage() {
     cat <<EOF
 ${_color_bold}mps status${_color_reset} — Show detailed sandbox status

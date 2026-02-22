@@ -2,6 +2,18 @@
 # shellcheck disable=SC2154  # color vars defined in lib/common.sh
 # commands/port.sh — mps port [forward|list]
 
+_complete_port() {
+    case "${1:-}" in
+        subcmds) echo "forward list" ;;
+        flags)
+            case "${2:-}" in
+                forward) echo "--privileged --help -h" ;;
+                list)    echo "--help -h" ;;
+                *)       echo "--help -h" ;;
+            esac ;;
+    esac
+}
+
 _port_usage() {
     cat <<EOF
 ${_color_bold}Usage:${_color_reset} mps port <subcommand> [options]

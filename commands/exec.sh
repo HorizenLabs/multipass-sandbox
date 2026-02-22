@@ -72,6 +72,13 @@ cmd_exec() {
     mp_exec "$instance_name" "$workdir" ${user_cmd[@]+"${user_cmd[@]}"}
 }
 
+_complete_exec() {
+    case "${1:-}" in
+        flags)       echo "--name -n --workdir -w --help -h" ;;
+        flag-values) case "${2:-}" in --name|-n) echo "__instances__" ;; esac ;;
+    esac
+}
+
 _exec_usage() {
     cat <<EOF
 ${_color_bold}mps exec${_color_reset} — Execute a command in a sandbox

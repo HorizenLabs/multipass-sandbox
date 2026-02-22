@@ -17,6 +17,145 @@ MPS_ROOT="$(cd -P "$(dirname "$_mps_source")/.." && pwd)"
 unset _mps_source _mps_dir
 export MPS_ROOT
 
+# ---------- Fast-path: tab-completion (skip config/deps/update check) ----------
+
+_mps_dispatch_complete() {
+    local action="${1:-}"
+    shift 2>/dev/null || true
+
+    case "$action" in
+        commands)
+            # List command names from commands/*.sh basenames
+            local f
+            for f in "${MPS_ROOT}"/commands/*.sh; do
+                [[ -f "$f" ]] || continue
+                local name
+                name="$(basename "$f" .sh)"
+                echo "$name"
+            done
+            ;;
+        instances)
+            # Dynamic: query multipass for mps- prefixed instance short names
+            local prefix="${MPS_INSTANCE_PREFIX:-mps}"
+            if command -v multipass &>/dev/null && command -v jq &>/dev/null; then
+                multipass list --format json 2>/dev/null | \
+                    jq -r --arg pfx "${prefix}-" \
+                    '.list[]? | select(.name | startswith($pfx)) | .name | ltrimstr($pfx)' 2>/dev/null
+            fi
+            ;;
+        profiles)
+            # Static: profile names from templates/profiles/*.env
+            local f
+            for f in "${MPS_ROOT}"/templates/profiles/*.env; do
+                [[ -f "$f" ]] || continue
+                basename "$f" .env
+            done
+            ;;
+        images)
+            # Image flavor names from layers + cached images
+            local seen=""
+            local f
+            for f in "${MPS_ROOT}"/images/layers/*.yaml; do
+                [[ -f "$f" ]] || continue
+                local name
+                name="$(basename "$f" .yaml)"
+                echo "$name"
+                seen="${seen} ${name}"
+            done
+            # Also include cached image names not in layers
+            local cache_dir="${HOME}/.mps/cache/images"
+            if [[ -d "$cache_dir" ]]; then
+                local d
+                for d in "$cache_dir"/*/; do
+                    [[ -d "$d" ]] || continue
+                    local name
+                    name="$(basename "$d")"
+                    case " ${seen} " in
+                        *" ${name} "*) ;;
+                        *) echo "$name" ;;
+                    esac
+                done
+            fi
+            ;;
+        cloud_init)
+            # Template names from project + personal cloud-init dirs
+            local f
+            for f in "${MPS_ROOT}"/templates/cloud-init/*.yaml; do
+                [[ -f "$f" ]] || continue
+                basename "$f" .yaml
+            done
+            local user_dir="${HOME}/.mps/cloud-init"
+            if [[ -d "$user_dir" ]]; then
+                for f in "$user_dir"/*.yaml; do
+                    [[ -f "$f" ]] || continue
+                    basename "$f" .yaml
+                done
+            fi
+            ;;
+        *)
+            # Command-level completion: flags, subcmds, flag-values
+            # action is the command name; remaining args are the query
+            local cmd="$action"
+            local query="${1:-}"
+            shift 2>/dev/null || true
+
+            # Normalize command name for function lookup (ssh-config -> ssh_config)
+            local func_name="_complete_${cmd//-/_}"
+
+            # Source the command file to get its _complete_* function
+            local cmd_script="${MPS_ROOT}/commands/${cmd}.sh"
+            [[ -f "$cmd_script" ]] || return 0
+
+            # shellcheck source=/dev/null
+            source "$cmd_script"
+
+            # Check function exists
+            if ! declare -f "$func_name" &>/dev/null; then
+                return 0
+            fi
+
+            # Dispatch: flags, subcmds, flag-values
+            case "$query" in
+                flags)
+                    # For subcommand-aware commands: mps __complete image flags pull
+                    "$func_name" flags "${1:-}"
+                    ;;
+                subcmds)
+                    "$func_name" subcmds
+                    ;;
+                flag-values)
+                    # mps __complete <cmd> flag-values <flag>
+                    # or: mps __complete <cmd> <subcmd> flag-values <flag>
+                    "$func_name" flag-values "${1:-}"
+                    ;;
+                *)
+                    # query might be a subcommand: mps __complete image pull flags
+                    local subcmd="$query"
+                    local sub_query="${1:-}"
+                    shift 2>/dev/null || true
+                    case "$sub_query" in
+                        flags)
+                            "$func_name" flags "$subcmd"
+                            ;;
+                        flag-values)
+                            "$func_name" flag-values "${1:-}"
+                            ;;
+                        *)
+                            # Unknown query — no output
+                            ;;
+                    esac
+                    ;;
+            esac
+            ;;
+    esac
+}
+
+if [[ "${1:-}" == "__complete" ]]; then
+    shift
+    _mps_dispatch_complete "$@"
+    exit 0
+fi
+
 # Read version from VERSION file (single source of truth)
 MPS_VERSION="$(cat "${MPS_ROOT}/VERSION" 2>/dev/null || echo "unknown")"
 MPS_VERSION="${MPS_VERSION%$'\n'}"

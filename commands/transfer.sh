@@ -141,6 +141,13 @@ _transfer_resolve_path() {
     fi
 }
 
+_complete_transfer() {
+    case "${1:-}" in
+        flags)       echo "--name -n --help -h" ;;
+        flag-values) case "${2:-}" in --name|-n) echo "__instances__" ;; esac ;;
+    esac
+}
+
 _transfer_usage() {
     cat <<EOF
 ${_color_bold}mps transfer${_color_reset} — Transfer files between host and sandbox

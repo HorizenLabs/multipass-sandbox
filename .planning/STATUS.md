@@ -30,18 +30,7 @@ A blockchain software development company needs an internal tool to spin up isol
 - **Phase 7 — CI/CD Pipeline**: GitHub Actions (ci, images, release, update-submodule), GPG tag verification, CF cache invalidation, Slack notifications, actionlint
 - **Phase 8 — Update Documentation**: README, help messages, GitHub templates, CODEOWNERS
 - **Phase 9 — User Acceptance Testing (Alpha)**: Bash 3.2 compat linting, mount/port/metadata refactors, instance staleness detection, CLI update check, installer fixes, dead code audits, documentation updates
-
-## Phase 10 — Bash Completion: NOT STARTED
-
-Self-describing tab-completion for all commands, subcommands, flags, and dynamic values (instance names, profiles, images). Uses a `mps __complete` hidden subcommand so the completion script never needs manual updates when the CLI API changes.
-
-- [ ] Add `_complete_<cmd>()` metadata functions to all 13 command files
-- [ ] Add `__complete` fast-path dispatcher to `bin/mps`
-- [ ] Create `completions/mps.bash` (thin generic completion script)
-- [ ] Update `install.sh` / `uninstall.sh` for completion symlink
-- [ ] Add `completions/` to Makefile lint targets
-
-> Full plan: `.planning/BASH-COMPLETION.md`
+- **Phase 10 — Bash Completion**: Self-describing tab-completion via `mps __complete` hidden subcommand. `_complete_<cmd>()` metadata functions in all 13 command files, `completions/mps.bash` thin generic script, installer/uninstaller support, Makefile lint integration. Dynamic completion for instance names, profiles, images, cloud-init templates.
 
 ## Phase 11 — Testing: NOT STARTED
 

@@ -218,6 +218,17 @@ EOF
     fi
 }
 
+_complete_ssh_config() {
+    case "${1:-}" in
+        flags)       echo "--name -n --ssh-key --print --append --help -h" ;;
+        flag-values)
+            case "${2:-}" in
+                --name|-n)  echo "__instances__" ;;
+                --ssh-key)  echo "__files__" ;;
+            esac ;;
+    esac
+}
+
 _ssh_config_usage() {
     cat <<EOF
 ${_color_bold}mps ssh-config${_color_reset} — Configure SSH access for a sandbox

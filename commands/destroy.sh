@@ -91,6 +91,13 @@ cmd_destroy() {
     mps_log_info "Sandbox '${short_name}' destroyed."
 }
 
+_complete_destroy() {
+    case "${1:-}" in
+        flags)       echo "--name -n --force -f --help -h" ;;
+        flag-values) case "${2:-}" in --name|-n) echo "__instances__" ;; esac ;;
+    esac
+}
+
 _destroy_usage() {
     cat <<EOF
 ${_color_bold}mps destroy${_color_reset} — Remove a sandbox permanently
