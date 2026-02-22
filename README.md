@@ -369,6 +369,8 @@ Forwards bind to `localhost` only — they are not exposed on external network i
 mps port forward --privileged mydev 80:80
 ```
 
+> **Note:** Auto-forwarding (via `MPS_PORTS` or `--port` metadata) skips privileged ports for safety — it never triggers a `sudo` prompt automatically. If you have privileged ports configured, `mps up` will warn and print the exact `mps port forward --privileged` command to run manually.
+
 Ports are automatically cleaned up on `mps down` and `mps destroy`.
 
 ## Pre-built Images

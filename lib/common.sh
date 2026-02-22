@@ -1493,22 +1493,19 @@ mps_ensure_ssh_key() {
 
 # ---------- Port Forwarding Helpers ----------
 
-# Verify a PID belongs to an ssh process before signaling it.
-_mps_is_ssh_pid() {
-    local pid="$1" use_sudo="$2"
-    local pname
-    if [[ "$use_sudo" == "true" ]]; then
-        pname="$(sudo ps -o comm= -p "$pid" 2>/dev/null)" || return 1
-    else
-        pname="$(ps -o comm= -p "$pid" 2>/dev/null)" || return 1
-    fi
-    [[ "$pname" == "ssh" ]]
-}
-
 # Return the path to the .ports tracking file for an instance
 mps_ports_file() {
     local short_name="$1"
     echo "$(mps_state_dir)/${short_name}.ports.json"
+}
+
+# Return the control socket path for a given instance + host port.
+# Sockets live in ~/.mps/sockets/, separate from instance metadata.
+mps_port_socket() {
+    local short_name="$1" host_port="$2"
+    local dir="${HOME}/.mps/sockets"
+    mkdir -p "$dir"
+    echo "${dir}/${short_name}-${host_port}.sock"
 }
 
 # Gather port specs from MPS_PORTS config and instance metadata.
@@ -1552,9 +1549,11 @@ mps_collect_port_specs() {
     done
 }
 
-# Forward a single port via SSH tunnel.
+# Forward a single port via SSH tunnel using a control socket.
 # Args: instance_name short_name port_spec [--privileged]
-# Returns 0 on success, 1 on failure (warns but never dies).
+# Returns: 0 = tunnel newly established
+#          2 = already active (dedup skip)
+#          1 = error (warns but never dies)
 mps_forward_port() {
     local instance_name="$1"
     local short_name="$2"
@@ -1613,34 +1612,27 @@ mps_forward_port() {
         return 1
     fi
 
-    # Check for existing active tunnel on same host port
-    local ports_file
-    ports_file="$(mps_ports_file "$short_name")"
-    if [[ -f "$ports_file" ]]; then
-        local _fpid="" _fsudo=false
-        _fpid="$(_mps_read_meta_json "$ports_file" ".[\"${host_port}\"].pid")"
-        if [[ -n "$_fpid" ]]; then
-            local _fsudo_val=""
-            _fsudo_val="$(_mps_read_meta_json "$ports_file" ".[\"${host_port}\"].sudo")"
-            [[ "$_fsudo_val" == "true" ]] && _fsudo=true
-            # Verify PID is actually an SSH process before trusting it
-            if _mps_is_ssh_pid "$_fpid" "$_fsudo"; then
-                local _alive=false
-                if [[ "$_fsudo" == "true" ]]; then
-                    sudo kill -0 "$_fpid" 2>/dev/null && _alive=true
-                else
-                    kill -0 "$_fpid" 2>/dev/null && _alive=true
-                fi
-                if [[ "$_alive" == "true" ]]; then
-                    mps_log_debug "Port ${host_port} already forwarded (PID ${_fpid}) — skipping"
-                    return 0
-                fi
-            fi
+    # Check for existing active tunnel via control socket
+    local socket_path
+    socket_path="$(mps_port_socket "$short_name" "$host_port")"
+    if [[ -e "$socket_path" ]]; then
+        local _check_ok=false
+        if [[ "$_use_sudo" == "true" ]]; then
+            # Use sudo -n to avoid password prompts; if cache expired, treat as not forwarded
+            sudo -n ssh -O check -S "$socket_path" dummy 2>/dev/null && _check_ok=true
+        else
+            ssh -O check -S "$socket_path" dummy 2>/dev/null && _check_ok=true
         fi
+        if [[ "$_check_ok" == "true" ]]; then
+            mps_log_debug "Port ${host_port} already forwarded (socket ${socket_path}) — skipping"
+            return 2
+        fi
+        # Stale socket — remove it before re-establishing
+        rm -f "$socket_path"
     fi
 
-    # Build SSH tunnel command
-    local -a ssh_cmd=(ssh -N -f
+    # Build SSH tunnel command with control socket
+    local -a ssh_cmd=(ssh -M -S "$socket_path" -N -f
         -L "${host_port}:localhost:${guest_port}"
         -o StrictHostKeyChecking=accept-new
         -o UserKnownHostsFile=/dev/null
@@ -1662,28 +1654,31 @@ mps_forward_port() {
         return 1
     fi
 
-    # Track PID (sudo-spawned ssh runs as root, needs sudo pgrep)
-    local pid
+    # Verify tunnel is up via control socket
+    local _verify_ok=false
     if [[ "$_use_sudo" == "true" ]]; then
-        pid="$(sudo pgrep -f "ssh.*-L.*${host_port}:localhost:${guest_port}.*${ip}" | tail -1)" || true
+        sudo ssh -O check -S "$socket_path" dummy 2>/dev/null && _verify_ok=true
     else
-        pid="$(pgrep -f "ssh.*-L.*${host_port}:localhost:${guest_port}.*${ip}" | tail -1)" || true
+        ssh -O check -S "$socket_path" dummy 2>/dev/null && _verify_ok=true
     fi
-    if [[ -n "$pid" ]]; then
-        # Read-modify-write JSON ports file
+
+    if [[ "$_verify_ok" == "true" ]]; then
+        # Record in .ports.json (socket path instead of PID)
+        local ports_file
+        ports_file="$(mps_ports_file "$short_name")"
         local current_json="{}"
         [[ -f "$ports_file" ]] && current_json="$(cat "$ports_file")"
         local updated
         updated="$(echo "$current_json" | jq \
             --arg hp "$host_port" \
             --argjson gp "$guest_port" \
-            --argjson pid "$pid" \
+            --arg sock "$socket_path" \
             --argjson sudo "$_use_sudo" \
-            '.[$hp] = {"guest_port": $gp, "pid": $pid, "sudo": $sudo}')"
+            '.[$hp] = {"guest_port": $gp, "socket": $sock, "sudo": $sudo}')"
         _mps_write_json "$ports_file" "$updated"
-        mps_log_debug "Port forward active (PID ${pid}): localhost:${host_port} → ${instance_name}:${guest_port}"
+        mps_log_debug "Port forward active (socket ${socket_path}): localhost:${host_port} → ${instance_name}:${guest_port}"
     else
-        mps_log_warn "Port forward started but could not track PID for ${port_spec}"
+        mps_log_warn "Port forward started but control socket check failed for ${port_spec}"
     fi
     return 0
 }
@@ -1700,12 +1695,13 @@ mps_auto_forward_ports() {
         return 0
     fi
 
-    local spec
+    local spec rc
     while IFS= read -r spec; do
         [[ -z "$spec" ]] && continue
-        if mps_forward_port "$instance_name" "$short_name" "$spec"; then
-            count=$((count + 1))
-        fi
+        rc=0
+        mps_forward_port "$instance_name" "$short_name" "$spec" || rc=$?
+        # Only count newly established tunnels (0); ignore already-active (2) and errors (1)
+        [[ $rc -eq 0 ]] && count=$((count + 1))
     done <<< "$specs"
 
     if [[ $count -gt 0 ]]; then
@@ -1713,7 +1709,7 @@ mps_auto_forward_ports() {
     fi
 }
 
-# Kill all tracked port forwards for an instance.
+# Kill all tracked port forwards for an instance via control sockets.
 # Returns silently if no .ports file exists.
 mps_kill_port_forwards() {
     local short_name="$1"
@@ -1728,32 +1724,36 @@ mps_kill_port_forwards() {
     local entry
     while IFS= read -r entry; do
         [[ -z "$entry" ]] && continue
-        local pid="" use_sudo=false
-        pid="$(echo "$entry" | jq -r '.pid')"
+        local sock="" use_sudo=false
+        sock="$(echo "$entry" | jq -r '.socket')"
         local sudo_val=""
         sudo_val="$(echo "$entry" | jq -r '.sudo')"
         [[ "$sudo_val" == "true" ]] && use_sudo=true
-        if [[ -z "$pid" || "$pid" == "null" ]]; then
+        if [[ -z "$sock" || "$sock" == "null" ]]; then
             continue
         fi
-        # Verify PID is actually an SSH process before killing
-        if ! _mps_is_ssh_pid "$pid" "$use_sudo"; then
-            continue
-        fi
+        # Gracefully shut down the SSH master via control socket
         if [[ "$use_sudo" == "true" ]]; then
-            if sudo kill -0 "$pid" 2>/dev/null; then
-                sudo kill "$pid" 2>/dev/null || true
-                killed=$((killed + 1))
-            fi
-        elif kill -0 "$pid" 2>/dev/null; then
-            kill "$pid" 2>/dev/null || true
-            killed=$((killed + 1))
+            sudo ssh -n -O exit -S "$sock" dummy 2>/dev/null || true
+        else
+            ssh -n -O exit -S "$sock" dummy 2>/dev/null || true
         fi
+        rm -f "$sock"
+        killed=$((killed + 1))
     done < <(jq -c '.[]' "$ports_file" 2>/dev/null)
 
     if [[ $killed -gt 0 ]]; then
         mps_log_debug "Killed ${killed} port forward(s) for '${short_name}'"
     fi
+}
+
+# Clean up any remaining control socket files for an instance.
+mps_cleanup_port_sockets() {
+    local short_name="$1"
+    local sock
+    for sock in "${HOME}/.mps/sockets/${short_name}-"*.sock; do
+        if [[ -e "$sock" ]]; then rm -f "$sock"; fi
+    done
 }
 
 # Reset port forwards: kill existing tunnels, clear tracking file, optionally auto-forward.
@@ -1765,6 +1765,7 @@ mps_reset_port_forwards() {
     local ports_file
     ports_file="$(mps_ports_file "$short_name")"
     rm -f "$ports_file"
+    mps_cleanup_port_sockets "$short_name"
     if [[ "$auto_forward" == "--auto-forward" ]]; then
         mps_auto_forward_ports "$instance_name" "$short_name"
     fi

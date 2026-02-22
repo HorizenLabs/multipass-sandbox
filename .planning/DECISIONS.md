@@ -113,7 +113,7 @@ Explicit import via `mps image import <file>`. Cache at `~/.mps/cache/images/<na
 
 ## SSH Key Management
 
-`mps ssh-config` is the **only** command that injects SSH keys. Key resolution: `--ssh-key` flag → `MPS_SSH_KEY` config → auto-detect from `~/.ssh/` (ed25519 > ecdsa > rsa). Injection is idempotent (`MPS_SSH_INJECTED=true` metadata). `mps port forward` requires SSH pre-configured.
+`mps ssh-config` is the **only** command that injects SSH keys. Key resolution: `--ssh-key` flag → `MPS_SSH_KEY` config → auto-detect from `~/.ssh/` (ed25519 > ecdsa > rsa). Injection is idempotent (`.ssh.injected: true` in instance JSON metadata). `mps port forward` requires SSH pre-configured.
 
 ## Git Tagging Strategy
 

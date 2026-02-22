@@ -100,11 +100,13 @@ _port_forward() {
 
     mps_log_info "Forwarding localhost:${host_port} → ${instance_name}:${guest_port}..."
 
-    if ! mps_forward_port "$instance_name" "$name" "${host_port}:${guest_port}" "$privileged"; then
-        mps_die "Failed to establish port forward"
-    fi
-
-    mps_log_info "Port forward active: localhost:${host_port} → ${instance_name}:${guest_port}"
+    local rc=0
+    mps_forward_port "$instance_name" "$name" "${host_port}:${guest_port}" "$privileged" || rc=$?
+    case $rc in
+        0) mps_log_info "Port forward active: localhost:${host_port} → ${instance_name}:${guest_port}" ;;
+        2) mps_log_warn "Port localhost:${host_port} is already forwarded to ${instance_name}:${guest_port}" ;;
+        *) mps_die "Failed to establish port forward" ;;
+    esac
 }
 
 # ---------- port list ----------
@@ -125,8 +127,8 @@ _port_list() {
 
     local found=false
 
-    printf "${_color_bold}%-20s %-12s %-12s %-8s %s${_color_reset}\n" \
-        "SANDBOX" "HOST PORT" "GUEST PORT" "PID" "STATUS"
+    printf "${_color_bold}%-20s %-12s %-12s %s${_color_reset}\n" \
+        "SANDBOX" "HOST PORT" "GUEST PORT" "STATUS"
 
     local ports_file
     for ports_file in "$state_dir"/*.ports.json; do
@@ -143,27 +145,30 @@ _port_list() {
         local entry
         while IFS= read -r entry; do
             [[ -z "$entry" ]] && continue
-            local host_port="" guest_port="" pid="" use_sudo=false
+            local host_port="" guest_port="" sock="" use_sudo=false
             host_port="$(echo "$entry" | jq -r '.key')"
             guest_port="$(echo "$entry" | jq -r '.value.guest_port')"
-            pid="$(echo "$entry" | jq -r '.value.pid')"
+            sock="$(echo "$entry" | jq -r '.value.socket')"
             local sudo_val=""
             sudo_val="$(echo "$entry" | jq -r '.value.sudo')"
             [[ "$sudo_val" == "true" ]] && use_sudo=true
             local status
             if [[ "$use_sudo" == "true" ]]; then
-                if sudo kill -0 "$pid" 2>/dev/null; then
+                # Use sudo -n to avoid password prompts on read-only list
+                if sudo -n ssh -n -O check -S "$sock" dummy 2>/dev/null; then
                     status="${_color_green}active${_color_reset}"
+                elif ! sudo -n true 2>/dev/null; then
+                    status="${_color_yellow}unknown${_color_reset}"
                 else
                     status="${_color_red}dead${_color_reset}"
                 fi
-            elif kill -0 "$pid" 2>/dev/null; then
+            elif ssh -n -O check -S "$sock" dummy 2>/dev/null; then
                 status="${_color_green}active${_color_reset}"
             else
                 status="${_color_red}dead${_color_reset}"
             fi
-            printf "%-20s %-12s %-12s %-8s %b\n" \
-                "$sandbox_name" "$host_port" "$guest_port" "${pid:-—}" "$status"
+            printf "%-20s %-12s %-12s %b\n" \
+                "$sandbox_name" "$host_port" "$guest_port" "$status"
             found=true
         done < <(jq -c 'to_entries[]' "$ports_file" 2>/dev/null)
     done

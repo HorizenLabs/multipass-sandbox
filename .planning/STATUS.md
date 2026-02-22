@@ -50,8 +50,7 @@ First round of alpha-tester feedback across macOS and Linux.
 - [x] Re-publish corrected sidecars/manifest for affected images on B2
 - [x] Refactor instance metadata & port tracking to JSON
 - [x] Refactor mount system — implementation and automated verification (28/28 tests pass)
-- [ ] Refactor SSH port forward lifecycle (control sockets) — implementation (see `.planning/FIX-PRIVILEGED-PORT-PID.md`)
-- [ ] Refactor SSH port forward lifecycle (control sockets) — automated verification (see `.planning/FIX-PRIVILEGED-PORT-PID-TESTS.md`)
+- [x] Refactor SSH port forward lifecycle (control sockets) — implementation and automated verification
 - [ ] Add instance staleness detection
 - [ ] Documentation updates: intended user flow and customization suggestions
 - [ ] Triage and fix additional alpha-tester findings
