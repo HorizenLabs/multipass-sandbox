@@ -168,10 +168,10 @@ _mount_list() {
         esac
     done
 
-    # Resolve instance
+    # Resolve instance (exists is enough — multipass reports mounts for stopped instances)
     local instance_name
     instance_name="$(mps_resolve_instance_name "$name")"
-    mps_require_running "$instance_name"
+    mps_require_exists "$instance_name"
 
     # Get current mounts from Multipass
     local mount_info=""

@@ -11,7 +11,7 @@ Internal CLI tool for spinning up isolated VM-based development environments usi
 - **Image builds**: Packer (QCOW2, `.qcow2.img` extension), published to Backblaze B2 (served via Cloudflare)
 - **Image versioning**: SemVer (x.y.z) with `latest` pointer, weekly rebuilds for OS patches
 - **Build/Test**: All run inside Docker containers (`mps-builder` for image builds, `mps-linter` for lint/test, `mps-publisher` for B2 uploads)
-- **Tests**: BATS (planned)
+- **Tests**: BATS (unit + integration in Docker linter container, dual Bash 4+ / 3.2)
 
 ## Project Structure
 
@@ -97,7 +97,9 @@ make build-docker-builder   # Build the builder image (Packer, QEMU — no crede
 make build-docker-publisher # Build the publisher image (b2, jq, yq — credential-isolated)
 make lint             # Run all linters (shellcheck, lint-bash32, hadolint, yamllint, checkmake, packer fmt, py-psscriptanalyzer, actionlint)
 make lint-actions      # Lint GitHub Actions workflows with actionlint
-make test             # Run BATS tests
+make test             # Run all tests (unit + integration) under both Bash versions
+make test-unit        # Run unit tests only (both Bash versions)
+make test-integration # Run integration tests only (both Bash versions)
 make image-base       # Build base VM image (both archs in parallel via sub-make -j2)
 make image-base-amd64 # Build base VM image (amd64 only)
 make image-base-arm64 # Build base VM image (arm64 only)
@@ -134,9 +136,9 @@ The Makefile detects host uid:gid and the entrypoint uses setpriv to step down f
 
 ## Workflow
 
-- After modifying any linted file, run `make lint` before committing. Linted files:
-  - **Bash**: `bin/mps`, `lib/*.sh`, `commands/*.sh`, `images/**/*.sh`, `install.sh`, `uninstall.sh`
-  - **Bash 3.2 compat**: `bin/mps`, `lib/*.sh`, `commands/*.sh`, `install.sh`, `uninstall.sh` (client scripts only — no `images/`)
+- After modifying any linted or tested file, run `make lint` and `make test` before committing. Linted files:
+  - **Bash**: `bin/mps`, `lib/*.sh`, `commands/*.sh`, `completions/*.bash`, `tests/**/*.bats`, `tests/**/*.bash`, `tests/**/*.sh`, `tests/stubs/multipass`, `images/**/*.sh`, `install.sh`, `uninstall.sh`
+  - **Bash 3.2 compat**: `bin/mps`, `lib/*.sh`, `commands/*.sh`, `completions/*.bash`, `tests/**/*.bash`, `tests/**/*.sh`, `tests/stubs/multipass`, `install.sh`, `uninstall.sh` (client scripts only — no `images/` or `*.bats`; BATS 3.2 compat is verified by `make test` which runs under both bash versions)
   - **PowerShell**: `*.ps1`
   - **Dockerfile**: `docker/Dockerfile.builder`, `docker/Dockerfile.linter`, `docker/Dockerfile.publisher`, `docker/Dockerfile.bash32`
   - **Makefile**: `Makefile`

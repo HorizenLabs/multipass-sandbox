@@ -39,8 +39,8 @@ docker run --rm \
 endef
 
 # ---------- File sets ----------
-BASH_SCRIPTS    := $(shell find bin/ lib/ commands/ images/ completions/ -name '*.sh' -o -name '*.bash' -o -name 'mps' 2>/dev/null | grep -v '.ps1') install.sh uninstall.sh
-CLIENT_SCRIPTS  := $(shell find bin/ lib/ commands/ completions/ -name '*.sh' -o -name '*.bash' -o -name 'mps' 2>/dev/null | grep -v '.ps1') install.sh uninstall.sh
+BASH_SCRIPTS    := $(shell find bin/ lib/ commands/ images/ completions/ tests/ -type f \( -name '*.sh' -o -name '*.bash' -o -name '*.bats' -o -name 'mps' -o -name 'multipass' \) 2>/dev/null | grep -v '.ps1') install.sh uninstall.sh
+CLIENT_SCRIPTS  := $(shell find bin/ lib/ commands/ completions/ tests/ -type f \( -name '*.sh' -o -name '*.bash' -o -name 'mps' -o -name 'multipass' \) 2>/dev/null | grep -v '.ps1') install.sh uninstall.sh
 PS_SCRIPTS      := $(shell find . -name '*.ps1' 2>/dev/null)
 YAML_FILES      := $(shell find templates/ images/layers/ .github/ISSUE_TEMPLATE/ -name '*.yaml' -o -name '*.yml' 2>/dev/null)
 HCL_FILES       := $(shell find images/ -name '*.pkr.hcl' 2>/dev/null)
@@ -91,7 +91,9 @@ UPLOAD_PHONY      := $(foreach f,$(FLAVORS),$(foreach a,$(ARCHS),upload-$(f)-$(a
 PUBLISH_PHONY     := $(foreach f,$(FLAVORS),publish-$(f) $(foreach a,$(ARCHS),publish-$(f)-$(a)))
 CLEAN_IMAGE_PHONY := $(foreach f,$(FLAVORS),clean-image-$(f) $(foreach a,$(ARCHS),clean-image-$(f)-$(a)))
 
-.PHONY: all help install uninstall test test-bash4 test-bash32 clean \
+.PHONY: all help install uninstall test test-bash4 test-bash32 clean capture-fixtures \
+	test-unit test-unit-bash4 test-unit-bash32 \
+	test-integration test-integration-bash4 test-integration-bash32 \
 	build-docker-builder build-docker-linter build-docker-publisher build-bash32 \
 	lint lint-bash lint-bash32 lint-powershell lint-dockerfile lint-makefile lint-yaml lint-hcl lint-actions \
 	clean-docker-builder clean-docker-linter clean-docker-publisher clean-images \
@@ -160,16 +162,39 @@ uninstall: ## Uninstall mps (remove symlink, cleanup artifacts, runs on host)
 	@./uninstall.sh
 
 # ---------- Test ----------
-test: test-bash4 test-bash32 ## Run BATS tests under Bash 4+ and Bash 3.2
+test: test-bash4 test-bash32 ## Run all tests (unit + integration) under both Bash versions
+test-unit: test-unit-bash4 test-unit-bash32 ## Run unit tests only
+test-integration: test-integration-bash4 test-integration-bash32 ## Run integration tests only
 
-test-bash4: $(LINTER_STAMP) ## Run BATS tests under Bash 4+
-	$(DOCKER_RUN) bats tests/
+test-bash4: $(LINTER_STAMP)
+	$(DOCKER_RUN) bats tests/unit/ tests/integration/
 
-test-bash32: $(LINTER_STAMP) ## Run BATS tests under Bash 3.2
+test-bash32: $(LINTER_STAMP)
 	$(DOCKER_RUN) bash -c '\
 		mkdir -p /tmp/bash32-shim && \
 		ln -sf /usr/local/bin/bash-3.2 /tmp/bash32-shim/bash && \
-		PATH="/tmp/bash32-shim:$$PATH" bats tests/'
+		PATH="/tmp/bash32-shim:$$PATH" bats tests/unit/ tests/integration/'
+
+test-unit-bash4: $(LINTER_STAMP)
+	$(DOCKER_RUN) bats tests/unit/
+
+test-unit-bash32: $(LINTER_STAMP)
+	$(DOCKER_RUN) bash -c '\
+		mkdir -p /tmp/bash32-shim && \
+		ln -sf /usr/local/bin/bash-3.2 /tmp/bash32-shim/bash && \
+		PATH="/tmp/bash32-shim:$$PATH" bats tests/unit/'
+
+test-integration-bash4: $(LINTER_STAMP)
+	$(DOCKER_RUN) bats tests/integration/
+
+test-integration-bash32: $(LINTER_STAMP)
+	$(DOCKER_RUN) bash -c '\
+		mkdir -p /tmp/bash32-shim && \
+		ln -sf /usr/local/bin/bash-3.2 /tmp/bash32-shim/bash && \
+		PATH="/tmp/bash32-shim:$$PATH" bats tests/integration/'
+
+capture-fixtures: ## Capture fresh multipass JSON fixtures (requires multipass on host)
+	bash tests/capture-fixtures.sh
 
 # ---------- Lint (all) ----------
 lint: lint-bash lint-bash32 lint-powershell lint-dockerfile lint-makefile lint-yaml lint-hcl lint-actions ## Run all linters

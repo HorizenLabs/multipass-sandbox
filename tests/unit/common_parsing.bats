@@ -2,7 +2,7 @@
 # Tests for parsing/conversion functions in lib/common.sh:
 #   _mps_parse_size_mb, _mps_semver_gt, _mps_is_mps_image
 
-load test_helper
+load ../test_helper
 
 # ================================================================
 # _mps_parse_size_mb

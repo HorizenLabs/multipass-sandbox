@@ -5,7 +5,7 @@
 #   mps_check_image_requirements, _mps_resolve_latest_version,
 #   mps_save_instance_meta, mps_resolve_workdir, _mps_read_cached_manifest
 
-load test_helper
+load ../test_helper
 
 setup() {
     setup_temp_dir

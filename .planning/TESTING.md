@@ -4,7 +4,8 @@
 
 - **BATS** (Bash Automated Testing System) v1.13.0
 - Tests run inside Docker linter container: `make test`
-- Test files: `tests/*.bats`, shared helper: `tests/test_helper.bash`
+- Test files: `tests/unit/*.bats` (unit), `tests/integration/*.bats` (integration)
+- Shared helper: `tests/test_helper.bash`
 
 ## Test Tiers
 
@@ -14,7 +15,7 @@
 | **Integration** | Commands with mocked multipass/network | Docker (linter) | Bash 4+ AND Bash 3.2 | Medium |
 | **E2E** | Full VM lifecycle, real multipass + KVM | Native host (CI or local) | Host bash | Slow |
 
-Only **Unit** tests exist today. Integration and E2E tiers are planned.
+Unit and initial integration tests exist today. Further integration and E2E tiers are planned.
 
 ## Dual-Interpreter Testing
 
@@ -50,10 +51,20 @@ Mock boundary is the `multipass` binary, not the `mp_*` wrapper functions. A stu
 placed on `PATH` dispatches based on arguments and returns canned JSON/exit codes. This tests
 both `lib/multipass.sh` parsing and `commands/*.sh` orchestration in one shot.
 
-Fixtures should be captured from real `multipass` output:
-- `multipass list --format json` — include both mps-prefixed and non-mps VMs to test filtering
-- `multipass info <name> --format json` — various states (Running, Stopped, Deleted)
-- `multipass mount`, `multipass exec` — exit codes and error messages
+Fixtures are captured from real `multipass` output via `make capture-fixtures` (runs
+`tests/capture-fixtures.sh` on host). The stub lives at `tests/stubs/multipass` and is
+placed on `PATH` ahead of the real binary during tests. Fixture scenarios:
+- `running-mounted/` — primary Running+2 mounts, secondary Stopped, foreign Running
+- `suspended/` — primary Suspended, secondary Stopped, foreign Running
+- `all-stopped/` — primary Stopped, secondary Stopped, foreign Running
+- `synthetic/` — derived Starting/Deleted/Unknown states (patched from running-mounted)
+- `version.json`, `error-nonexistent.stderr` — standalone fixtures
+
+Stub environment variables control behavior:
+- `MOCK_MP_FIXTURES_DIR` — scenario directory
+- `MOCK_MP_CALL_LOG` — invocation log for lifecycle assertions
+- `MOCK_MP_EXIT_CODE` / `MOCK_MP_<CMD>_EXIT` — configurable exit codes
+- `MOCK_MP_EXEC_OUTPUT` / `MOCK_MP_EXEC_EXIT` / `MOCK_MP_DOCKER_VERSION` — exec responses
 
 ### Integration: Network functions
 
@@ -154,19 +165,28 @@ Image download testing (if included) uses real CDN — acceptable at CI network 
 | `mps_kill_port_forwards` | E2E | SSH socket teardown |
 | `mps_reset_port_forwards` | E2E | Wrapper |
 
-### Not Yet Covered: `lib/multipass.sh`
+### Covered: `lib/multipass.sh` (Stub Smoke Tests)
 
-All functions are thin wrappers around the `multipass` CLI.
+Integration tests using the mock `multipass` stub and captured JSON fixtures.
+
+| Function | Test File | Notes |
+|----------|-----------|-------|
+| `mp_list_all` | `stub_smoke.bats` | Filters to mps-prefixed instances (excludes `fixture-foreign`) |
+| `mp_state` | `stub_smoke.bats` | Running and Stopped states from fixture |
+| `mp_instance_exists` | `stub_smoke.bats` | Known instance (exit 0), unknown (exit non-zero) |
+| `mp_get_mounts` | `stub_smoke.bats` | Mounted instance (2 mounts), unmounted (empty) |
+| `mp_ipv4` | `stub_smoke.bats` | Returns valid IP from fixture |
+
+### Not Yet Covered: `lib/multipass.sh`
 
 | Function | Suggested Tier | Notes |
 |----------|---------------|-------|
-| `mp_info`, `mp_info_field`, `mp_state`, `mp_ipv4` | Integration | Mock JSON responses |
-| `mp_list_all` | Integration | Mock JSON — test mps-prefix filtering |
-| `mp_instance_exists`, `mp_instance_state` | Integration | Mock exit codes + JSON |
+| `mp_info`, `mp_info_field` | Integration | Tested indirectly via `mp_state`/`mp_ipv4`/`mp_get_mounts`; direct tests could assert full JSON structure |
+| `mp_instance_state` | Integration | Wraps `mp_instance_exists` + `mp_state`; test "nonexistent" fallback path |
 | `mp_launch` | E2E | |
 | `mp_start`, `mp_stop`, `mp_delete` | E2E | |
 | `mp_exec`, `mp_shell` | E2E | |
-| `mp_mount`, `mp_umount`, `mp_get_mounts` | E2E | |
+| `mp_mount`, `mp_umount` | E2E | |
 | `mp_transfer` | E2E | |
 | `mp_wait_cloud_init` | E2E | |
 | `mp_docker_status` | E2E | |
@@ -216,19 +236,20 @@ Remaining command-level test tiers:
 
 ## Test Counts
 
-| File | Tests |
-|------|-------|
-| `cmd_parsing.bats` | 105 |
-| `common_parsing.bats` | 21 |
-| `common_naming.bats` | 38 |
-| `common_logging.bats` | 8 |
-| `common_config.bats` | 12 |
-| `common_resources.bats` | 17 |
-| `common_paths.bats` | 15 |
-| `common_meta.bats` | 56 |
-| `common_ports.bats` | 15 |
-| `common_utils.bats` | 15 |
-| `completion.bats` | 44 |
-| **Total** | **346** |
+| File | Tests | Tier | Directory |
+|------|-------|------|-----------|
+| `cmd_parsing.bats` | 105 | Unit | `tests/unit/` |
+| `common_parsing.bats` | 21 | Unit | `tests/unit/` |
+| `common_naming.bats` | 38 | Unit | `tests/unit/` |
+| `common_logging.bats` | 8 | Unit | `tests/unit/` |
+| `common_config.bats` | 12 | Unit | `tests/unit/` |
+| `common_resources.bats` | 17 | Unit | `tests/unit/` |
+| `common_paths.bats` | 15 | Unit | `tests/unit/` |
+| `common_meta.bats` | 56 | Unit | `tests/unit/` |
+| `common_ports.bats` | 15 | Unit | `tests/unit/` |
+| `common_utils.bats` | 15 | Unit | `tests/unit/` |
+| `completion.bats` | 44 | Unit | `tests/unit/` |
+| `stub_smoke.bats` | 20 | Integration | `tests/integration/` |
+| **Total** | **366** | | |
 
 *Last updated: 2026-02-23*

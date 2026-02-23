@@ -3,7 +3,7 @@
 #   mps_ports_file, mps_port_socket, mps_port_forward_count,
 #   mps_collect_port_specs
 
-load test_helper
+load ../test_helper
 
 setup() {
     setup_temp_dir

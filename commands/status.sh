@@ -69,7 +69,7 @@ cmd_status() {
     ipv4="$(echo "$raw" | jq -r "${info_base}.ipv4[0] // empty")"
 
     local cpus
-    cpus="$(echo "$raw" | jq -r "${info_base}.cpus // empty")"
+    cpus="$(echo "$raw" | jq -r "${info_base}.cpu_count // empty")"
 
     local memory_used
     memory_used="$(echo "$raw" | jq -r "${info_base}.memory.used // empty")"
@@ -78,10 +78,10 @@ cmd_status() {
     memory_total="$(echo "$raw" | jq -r "${info_base}.memory.total // empty")"
 
     local disk_used
-    disk_used="$(echo "$raw" | jq -r "${info_base}.disk.used // empty")"
+    disk_used="$(echo "$raw" | jq -r "${info_base}.disks.sda1.used // empty")"
 
     local disk_total
-    disk_total="$(echo "$raw" | jq -r "${info_base}.disk.total // empty")"
+    disk_total="$(echo "$raw" | jq -r "${info_base}.disks.sda1.total // empty")"
 
     local image
     image="$(echo "$raw" | jq -r "${info_base}.image_release // empty")"

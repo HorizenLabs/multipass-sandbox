@@ -4,7 +4,7 @@
 #   mps_resolve_mount_source, mps_resolve_mount, mps_validate_mount_source,
 #   mps_parse_extra_mounts
 
-load test_helper
+load ../test_helper
 
 setup() {
     setup_temp_dir
@@ -83,7 +83,7 @@ teardown() {
 }
 
 @test "mps_resolve_mount: explicit path overrides automount opt-out" {
-    MPS_NO_AUTOMOUNT=true
+    export MPS_NO_AUTOMOUNT=true
     mps_resolve_mount "${TEST_TEMP_DIR}"
     [[ "$MPS_MOUNT_SOURCE" == "${TEST_TEMP_DIR}" ]]
 }
@@ -127,7 +127,7 @@ teardown() {
 
 @test "mps_parse_extra_mounts: parses multiple mount specs" {
     mkdir -p "${TEST_TEMP_DIR}/a" "${TEST_TEMP_DIR}/b"
-    MPS_MOUNTS="${TEST_TEMP_DIR}/a:/mnt/a ${TEST_TEMP_DIR}/b:/mnt/b"
+    export MPS_MOUNTS="${TEST_TEMP_DIR}/a:/mnt/a ${TEST_TEMP_DIR}/b:/mnt/b"
     result="$(mps_parse_extra_mounts)"
     [[ "$result" == *"${TEST_TEMP_DIR}/a:/mnt/a"* ]]
     [[ "$result" == *"${TEST_TEMP_DIR}/b:/mnt/b"* ]]

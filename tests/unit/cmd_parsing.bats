@@ -5,7 +5,7 @@
 # logic in each cmd_*() function WITHOUT requiring multipass.
 # Post-parse logic (instance resolution, multipass calls) is stubbed.
 
-load test_helper
+load ../test_helper
 
 # ---------- Stubs ----------
 # Stub functions that commands call after argument parsing.
@@ -70,6 +70,7 @@ setup() {
     # Source all command files
     local f
     for f in "${MPS_ROOT}"/commands/*.sh; do
+        # shellcheck disable=SC1090
         source "$f"
     done
 }

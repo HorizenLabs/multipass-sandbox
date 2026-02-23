@@ -2,7 +2,7 @@
 # Tests for logging functions in lib/common.sh:
 #   mps_log_info, mps_log_warn, mps_log_error, mps_log_debug, mps_die
 
-load test_helper
+load ../test_helper
 
 # ================================================================
 # mps_log_info

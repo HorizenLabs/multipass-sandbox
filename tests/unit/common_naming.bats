@@ -3,7 +3,7 @@
 #   mps_instance_name, mps_short_name, mps_auto_name,
 #   mps_validate_name, mps_resolve_name, mps_resolve_instance_name
 
-load test_helper
+load ../test_helper
 
 setup() {
     setup_temp_dir
@@ -176,7 +176,7 @@ teardown() {
 
 @test "mps_auto_name: ensures name starts with a letter" {
     # If prefix were somehow numeric, the name should get an 'm' prepended
-    MPS_INSTANCE_PREFIX="123" result="$(mps_auto_name "/home/user/myproject" "default")"
+    export MPS_INSTANCE_PREFIX="123"; result="$(mps_auto_name "/home/user/myproject" "default")"
     [[ "$result" =~ ^[a-zA-Z] ]]
 }
 
@@ -190,7 +190,7 @@ teardown() {
 }
 
 @test "mps_resolve_name: MPS_NAME from config takes second priority" {
-    MPS_NAME="fromconfig" result="$(mps_resolve_name "" "/some/path" "default")"
+    export MPS_NAME="fromconfig"; result="$(mps_resolve_name "" "/some/path" "default")"
     unset MPS_NAME
     [[ "$result" == "mps-fromconfig" ]]
 }

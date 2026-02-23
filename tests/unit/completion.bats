@@ -3,7 +3,7 @@
 #   _complete_*() metadata functions in commands/*.sh (13 commands)
 #   _mps_dispatch_complete() dispatcher in bin/mps
 
-load test_helper
+load ../test_helper
 
 setup() {
     setup_temp_dir
@@ -14,6 +14,7 @@ setup() {
     # Source all command files to get _complete_* functions
     local f
     for f in "${MPS_ROOT}"/commands/*.sh; do
+        # shellcheck disable=SC1090
         source "$f"
     done
 }

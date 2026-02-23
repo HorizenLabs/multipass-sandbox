@@ -2,7 +2,7 @@
 # Tests for utility functions in lib/common.sh:
 #   _mps_sha256, _mps_md5, mps_require_cmd
 
-load test_helper
+load ../test_helper
 
 setup() {
     setup_temp_dir

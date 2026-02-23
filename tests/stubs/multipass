@@ -1,0 +1,144 @@
+#!/usr/bin/env bash
+# tests/stubs/multipass — Mock multipass binary for BATS integration tests
+#
+# Place on PATH ahead of the real multipass during tests:
+#   export PATH="${MPS_ROOT}/tests/stubs:${PATH}"
+#
+# Environment variables:
+#   MOCK_MP_FIXTURES_DIR  — scenario dir containing list.json + info-<name>.json
+#   MOCK_MP_CALL_LOG      — file to append all invocations (optional)
+#   MOCK_MP_EXIT_CODE     — default exit code for lifecycle commands (default 0)
+#   MOCK_MP_<CMD>_EXIT    — per-command exit code override (e.g., MOCK_MP_LAUNCH_EXIT)
+#   MOCK_MP_EXEC_OUTPUT   — stdout for generic exec calls
+#   MOCK_MP_EXEC_EXIT     — exit code for exec calls (default 0)
+#   MOCK_MP_DOCKER_VERSION — output for "docker info" exec calls
+
+set -euo pipefail
+
+# ---------- Helpers ----------
+
+_log_call() {
+    if [[ -n "${MOCK_MP_CALL_LOG:-}" ]]; then
+        echo "multipass $*" >> "$MOCK_MP_CALL_LOG"
+    fi
+}
+
+# Resolve exit code: per-command var > blanket default > 0
+# Uses eval for Bash 3.2 compat (no namerefs). Safe — variable name
+# is constructed from a fixed prefix + uppercase command name.
+_resolve_exit() {
+    local cmd_upper
+    cmd_upper="$(echo "$1" | tr '[:lower:]' '[:upper:]')"
+    local var_name="MOCK_MP_${cmd_upper}_EXIT"
+    local val=""
+    eval "val=\"\${${var_name}:-}\""
+    if [[ -n "$val" ]]; then
+        echo "$val"
+        return
+    fi
+    echo "${MOCK_MP_EXIT_CODE:-0}"
+}
+
+# ---------- Argument parsing ----------
+
+if [[ $# -eq 0 ]]; then
+    echo "Usage: multipass <command>" >&2
+    exit 1
+fi
+
+cmd="$1"
+shift
+
+_log_call "$cmd" "$@"
+
+# ---------- Dispatch ----------
+
+case "$cmd" in
+
+    list)
+        # Expect: multipass list --format json
+        dir="${MOCK_MP_FIXTURES_DIR:-}"
+        if [[ -z "$dir" || ! -f "${dir}/list.json" ]]; then
+            echo '{"list":[]}'
+        else
+            cat "${dir}/list.json"
+        fi
+        exit 0
+        ;;
+
+    info)
+        # Expect: multipass info <name> --format json
+        name="$1"
+        dir="${MOCK_MP_FIXTURES_DIR:-}"
+        fixture="${dir}/info-${name}.json"
+        if [[ -z "$dir" || ! -f "$fixture" ]]; then
+            echo "info failed: instance \"${name}\" does not exist" >&2
+            exit 2
+        fi
+        cat "$fixture"
+        exit 0
+        ;;
+
+    version)
+        # Check scenario dir first, then parent fixtures dir
+        dir="${MOCK_MP_FIXTURES_DIR:-}"
+        if [[ -n "$dir" && -f "${dir}/version.json" ]]; then
+            cat "${dir}/version.json"
+        elif [[ -n "$dir" && -f "$(dirname "$dir")/version.json" ]]; then
+            cat "$(dirname "$dir")/version.json"
+        else
+            echo '{"multipass":"1.14.0","multipassd":"1.14.0"}'
+        fi
+        exit 0
+        ;;
+
+    exec)
+        # Expect: multipass exec <name> [--working-directory <dir>] -- <cmd> [args...]
+        name="$1"
+        shift
+        # Skip --working-directory if present
+        if [[ "${1:-}" == "--working-directory" ]]; then
+            shift 2 || shift $#
+        fi
+        # Skip the -- separator
+        if [[ "${1:-}" == "--" ]]; then
+            shift
+        fi
+
+        exec_exit="${MOCK_MP_EXEC_EXIT:-0}"
+
+        # Check for docker info pattern
+        if [[ "${1:-}" == "docker" && "${2:-}" == "info" ]]; then
+            if [[ -n "${MOCK_MP_DOCKER_VERSION:-}" ]]; then
+                echo "$MOCK_MP_DOCKER_VERSION"
+                exit 0
+            fi
+            exit 1
+        fi
+
+        # Check for cloud-init status pattern
+        if [[ "${1:-}" == "cloud-init" && "${2:-}" == "status" ]]; then
+            exit "$exec_exit"
+        fi
+
+        # Generic exec
+        if [[ -n "${MOCK_MP_EXEC_OUTPUT:-}" ]]; then
+            echo "$MOCK_MP_EXEC_OUTPUT"
+        fi
+        exit "$exec_exit"
+        ;;
+
+    shell)
+        exit 0
+        ;;
+
+    start|stop|delete|launch|suspend|mount|umount|transfer)
+        exit "$(_resolve_exit "$cmd")"
+        ;;
+
+    *)
+        echo "Unknown command: $cmd" >&2
+        exit 1
+        ;;
+
+esac

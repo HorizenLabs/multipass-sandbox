@@ -1,0 +1,39 @@
+{
+  "errors": [],
+  "info": {
+    "mps-fixture-primary": {
+      "cpu_count": "",
+      "disks": {
+        "sda1": {}
+      },
+      "image_hash": "2f9acc20a381cde6fa678672e20a1408d2b3f346531b9026df2a935c37d2de20",
+      "image_release": "24.04 LTS",
+      "ipv4": [],
+      "load": [],
+      "memory": {},
+      "mounts": {
+        "/mnt/test-a": {
+          "gid_mappings": [
+            "1000:default"
+          ],
+          "source_path": "/home/cronic/mps-fixture-mount-a",
+          "uid_mappings": [
+            "1000:default"
+          ]
+        },
+        "/mnt/test-b": {
+          "gid_mappings": [
+            "1000:default"
+          ],
+          "source_path": "/home/cronic/mps-fixture-mount-b",
+          "uid_mappings": [
+            "1000:default"
+          ]
+        }
+      },
+      "release": "",
+      "snapshot_count": "0",
+      "state": "Suspended"
+    }
+  }
+}

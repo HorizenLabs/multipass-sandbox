@@ -6,7 +6,8 @@
 
 # Resolve MPS_ROOT relative to this helper (tests/ lives one level below root)
 TEST_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-export MPS_ROOT="$(cd "${TEST_DIR}/.." && pwd)"
+MPS_ROOT="$(cd "${TEST_DIR}/.." && pwd)"
+export MPS_ROOT
 
 # Stub out MPS_VERSION (normally read from VERSION file by bin/mps)
 export MPS_VERSION="0.0.0-test"

@@ -2,7 +2,7 @@
 # Tests for configuration functions in lib/common.sh:
 #   _mps_load_env_file, _mps_apply_profile, mps_load_config
 
-load test_helper
+load ../test_helper
 
 setup() {
     setup_temp_dir

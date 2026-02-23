@@ -2,7 +2,7 @@
 # Tests for resource validation and auto-scaling in lib/common.sh:
 #   mps_validate_resources, _mps_compute_resources
 
-load test_helper
+load ../test_helper
 
 # ================================================================
 # mps_validate_resources

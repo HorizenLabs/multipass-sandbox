@@ -1,0 +1,32 @@
+{
+  "errors": [],
+  "info": {
+    "fixture-foreign": {
+      "cpu_count": "1",
+      "disks": {
+        "sda1": {
+          "total": "5116440064",
+          "used": "2090968576"
+        }
+      },
+      "image_hash": "2f9acc20a381cde6fa678672e20a1408d2b3f346531b9026df2a935c37d2de20",
+      "image_release": "24.04 LTS",
+      "ipv4": [
+        "10.179.45.173"
+      ],
+      "load": [
+        0.29,
+        0.1,
+        0.03
+      ],
+      "memory": {
+        "total": 474648576,
+        "used": 162717696
+      },
+      "mounts": {},
+      "release": "Ubuntu 24.04.4 LTS",
+      "snapshot_count": "0",
+      "state": "Running"
+    }
+  }
+}
