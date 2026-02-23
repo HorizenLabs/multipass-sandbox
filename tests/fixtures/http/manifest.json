@@ -1,0 +1,17 @@
+{
+  "schema_version": 2,
+  "images": {
+    "base": {
+      "latest": "1.1.0",
+      "versions": {
+        "1.0.0": {
+          "amd64": { "sha256": "aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111" },
+          "arm64": { "sha256": "bbbb2222bbbb2222bbbb2222bbbb2222bbbb2222bbbb2222bbbb2222bbbb2222" }
+        },
+        "1.1.0": {
+          "amd64": { "sha256": "cccc3333cccc3333cccc3333cccc3333cccc3333cccc3333cccc3333cccc3333" }
+        }
+      }
+    }
+  }
+}

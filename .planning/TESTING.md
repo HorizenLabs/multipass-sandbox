@@ -69,12 +69,19 @@ Stub environment variables control behavior:
 ### Integration: Network functions
 
 For manifest fetches, staleness checks, CLI update checks (`_mps_fetch_manifest`,
-`_mps_check_image_staleness`, `_mps_check_cli_update`):
-- Option A: Stub `curl`/`aria2c` the same way as `multipass`
-- Option B: Local HTTP server (python3 one-liner) serving fixture files — more realistic
+`_mps_check_image_staleness`, `_mps_check_cli_update`): a lightweight local HTTP server
+(python3 `http.server`) serves fixture files on localhost. This tests real `curl`/`aria2c`
+code paths — HTTP status codes, `HEAD` requests, conditional GET (`If-Modified-Since`),
+headers — without needing separate binary stubs for each download tool.
 
-Staleness checks are HTTP HEAD requests against small `.meta.json` sidecars, not full image
-downloads. No need to download multi-GB images for integration tests.
+Implementation:
+- `tests/stubs/http_server.py` — small script using `http.server`, serves a configurable
+  fixture directory, supports HEAD + GET + conditional responses, binds to `127.0.0.1:0`
+  (OS-assigned port), prints port to stdout on ready
+- Tests override `MPS_CDN_BASE_URL` (or equivalent) to `http://127.0.0.1:<port>`
+- Setup starts the server in background, captures PID + port; teardown kills PID
+- Fixtures: manifest JSON, `.meta.json` sidecars, `mps-release.json` — small files,
+  no multi-GB image downloads needed (staleness checks use HTTP HEAD against sidecars)
 
 ### E2E: Real everything
 
@@ -142,21 +149,21 @@ Image download testing (if included) uses real CDN — acceptable at CI network 
 | `_mps_sha256` | `common_utils.bats` | Hash file, includes filename, stdin, different content, 64 hex chars |
 | `_mps_md5` | `common_utils.bats` | Hash file, includes filename, 32 hex chars, different content |
 | `mps_require_cmd` | `common_utils.bats` | Existing cmd, silent success, missing cmd, multipass message, jq message, generic message |
-| `_mps_download_file` | Integration | Calls aria2c/curl — mock or local HTTP server |
+| `_mps_download_file` | `network.bats` | aria2c path (3 tests), curl fallback (3 tests), -d/-o flag correctness (1 test) |
+| `_mps_remote_is_fresh` | `network.bats` | 304 fresh, 200 stale, missing ref, unreachable server |
+| `_mps_remote_fetch` | `network.bats` | First fetch, 304 cache hit, 200 update, network failure ± cache, mkdir |
+| `_mps_fetch_manifest` | `network.bats` | Fetch, empty URL, cache file, cached fallback |
+| `_mps_check_image_staleness` | `network.bats` | up-to-date, stale, update, 304 fast path, non-SemVer, no meta, manifest fallback |
+| `_mps_warn_image_staleness` | `network.bats` | Rebuild warning, update warning, silent cases (up-to-date, opt-out, non-SemVer) |
+| `_mps_check_instance_staleness` | `network.bats` | up-to-date, stale, update, stale:manifest, update:manifest, stock, no metadata |
+| `_mps_warn_instance_staleness` | `network.bats` | Stale warning, update warning, --skip-manifest, opt-out |
+| `_mps_check_cli_update` | `network.bats` | Remote newer, 24h TTL cache, opt-out, non-SemVer, empty URL |
+| `_mps_cli_update_warn` | `network.bats` | Update available, force-push detection (temp git repo), missing cache, non-git |
 | `mps_check_deps` | Integration | Requires multipass+jq on PATH |
 | `mps_require_exists` | Integration | Calls `mp_instance_exists` (mocked multipass) |
 | `mps_require_running` | Integration | Calls `mp_instance_state` (mocked multipass) |
 | `mps_resolve_image` | Integration | Filesystem + auto-pull + arch detection |
 | `_mps_pull_image` | Integration | Network (manifest + download + checksum) |
-| `_mps_remote_is_fresh` | Integration | HTTP HEAD — mock curl or local server |
-| `_mps_remote_fetch` | Integration | HTTP conditional GET |
-| `_mps_fetch_manifest` | Integration | Network wrapper |
-| `_mps_check_image_staleness` | Integration | Manifest + meta files + possibly network |
-| `_mps_warn_image_staleness` | Integration | Wrapper over staleness check |
-| `_mps_check_instance_staleness` | Integration | Instance + image metadata |
-| `_mps_warn_instance_staleness` | Integration | Wrapper |
-| `_mps_check_cli_update` | Integration | Network (mps-release.json) + git |
-| `_mps_cli_update_warn` | Integration | JSON + git merge-base |
 | `_mps_resolve_project_mounts` | Integration | Metadata + config file parsing |
 | `mps_prepare_running_instance` | E2E | require_running + staleness + port forwards |
 | `mps_confirm` | Skip | Interactive stdin — not automatable |
@@ -177,19 +184,45 @@ Integration tests using the mock `multipass` stub and captured JSON fixtures.
 | `mp_get_mounts` | `stub_smoke.bats` | Mounted instance (2 mounts), unmounted (empty) |
 | `mp_ipv4` | `stub_smoke.bats` | Returns valid IP from fixture |
 
-### Not Yet Covered: `lib/multipass.sh`
+### Covered: `lib/multipass.sh` (Lifecycle, Execution, Mount, Transfer)
 
-| Function | Suggested Tier | Notes |
-|----------|---------------|-------|
-| `mp_info`, `mp_info_field` | Integration | Tested indirectly via `mp_state`/`mp_ipv4`/`mp_get_mounts`; direct tests could assert full JSON structure |
-| `mp_instance_state` | Integration | Wraps `mp_instance_exists` + `mp_state`; test "nonexistent" fallback path |
-| `mp_launch` | E2E | |
-| `mp_start`, `mp_stop`, `mp_delete` | E2E | |
-| `mp_exec`, `mp_shell` | E2E | |
-| `mp_mount`, `mp_umount` | E2E | |
-| `mp_transfer` | E2E | |
-| `mp_wait_cloud_init` | E2E | |
-| `mp_docker_status` | E2E | |
+Integration tests using the mock `multipass` stub with call-log assertions and configurable exit codes.
+
+| Function | Test File | Notes |
+|----------|-----------|-------|
+| `mp_info` | `mp_lifecycle.bats` | Full JSON for known instance; dies on unknown |
+| `mp_info_field` | `mp_lifecycle.bats` | Field extraction (state, image_release); empty for missing |
+| `mp_instance_state` | `mp_lifecycle.bats` | Returns state for existing; "nonexistent" for unknown |
+| `mp_launch` | `mp_lifecycle.bats` | Arg construction via call log, defaults, cloud-init, extras, failure |
+| `mp_start` | `mp_lifecycle.bats` | Call log, success message, dies on failure |
+| `mp_stop` | `mp_lifecycle.bats` | No --force by default, --force when true, dies on failure |
+| `mp_delete` | `mp_lifecycle.bats` | --purge by default, omit when false, dies on failure |
+| `mp_exec` | `mp_lifecycle.bats` | -- separator, --working-directory, output forwarding, exit code |
+| `mp_shell` | `mp_lifecycle.bats` | `multipass shell` without workdir; `exec bash -c cd` with workdir |
+| `mp_mount` | `mp_lifecycle.bats` | source instance:target format; returns 1 on failure (not die) |
+| `mp_umount` | `mp_lifecycle.bats` | instance:target format; swallows failure silently |
+| `mp_transfer` | `mp_lifecycle.bats` | Correct args, multiple sources, <2 args dies, failure dies |
+| `mp_wait_cloud_init` | `mp_lifecycle.bats` | cloud-init status --wait; warns but doesn't die on failure |
+| `mp_docker_status` | `mp_lifecycle.bats` | Version string when available; "not running" when unavailable |
+
+### Covered: `lib/common.sh` Network Functions
+
+Integration tests using a local Python3 HTTP server (`tests/stubs/http_server.py`) serving
+fixture files on localhost. Tests both aria2c and curl download paths, HTTP conditional GET
+(`If-Modified-Since`/304), manifest fetching, staleness detection, and CLI update checks.
+
+| Function | Test File | Notes |
+|----------|-----------|-------|
+| `_mps_remote_is_fresh` | `network.bats` | 304 fresh, 200 stale, missing ref, unreachable |
+| `_mps_remote_fetch` | `network.bats` | First fetch, 304 cache, 200 update, failure ± cache, mkdir |
+| `_mps_download_file` | `network.bats` | aria2c (3), curl fallback (3), `-d`/`-o` flag (1) |
+| `_mps_fetch_manifest` | `network.bats` | Fetch, empty URL, cache, cached fallback |
+| `_mps_check_image_staleness` | `network.bats` | up-to-date, stale, update, 304 fast, non-SemVer, no meta, manifest fallback |
+| `_mps_warn_image_staleness` | `network.bats` | Rebuild, update, silent (fresh/opt-out/non-SemVer) |
+| `_mps_check_instance_staleness` | `network.bats` | up-to-date, stale, update, stale:manifest, update:manifest, stock, no metadata |
+| `_mps_warn_instance_staleness` | `network.bats` | Stale, update, --skip-manifest, opt-out |
+| `_mps_check_cli_update` | `network.bats` | Newer version, 24h TTL, opt-out, non-SemVer, empty URL |
+| `_mps_cli_update_warn` | `network.bats` | Update available, force-push (temp git repo), missing cache, non-git |
 
 ### Covered: Bash Completion (`_complete_*()` + `__complete` dispatcher)
 
@@ -204,7 +237,40 @@ These are pure functions (no I/O, no external deps) — unit-tested by sourcing 
 | `flag-values` magic tokens: `--profile` → `__profiles__`, `--image` → `__images__`, etc. | `completion.bats` | 8 tests — verify routing, not exhaustive per-flag |
 | `__complete` dispatcher: commands/profiles/images/cloud_init token collection | `completion.bats` | Temp dirs for HOME-based paths, real repo for project paths |
 | `__complete` dispatcher: command-level routing + edge cases | `completion.bats` | Subprocess invocation, hyphen normalization, unknown cmd |
-| `__complete instances` | Integration | Requires live multipass — deferred to integration tier |
+| `__complete instances` | `completion_instances.bats` | Integration: subprocess, multipass stub, prefix filtering, missing tools, custom prefix |
+
+### Covered: `__complete instances` (Integration)
+
+Subprocess tests invoking `bin/mps __complete instances`. The `__complete` early-exit path never
+sources `lib/common.sh`, so setup is minimal — multipass stub + fixtures only.
+
+| Scope | Test File | Notes |
+|-------|-----------|-------|
+| Returns short names for mps-prefixed instances | `completion_instances.bats` | Strips `mps-` prefix from fixture names |
+| Excludes non-mps-prefixed instances | `completion_instances.bats` | `fixture-foreign` not in output |
+| One name per line, correct count | `completion_instances.bats` | 2 lines for 2 mps-prefixed instances |
+| Empty instance list → empty output | `completion_instances.bats` | `{"list":[]}` fixture, exit 0 |
+| Missing multipass → graceful empty | `completion_instances.bats` | Restricted PATH, exit 0 |
+| Missing jq → graceful empty | `completion_instances.bats` | Restricted PATH, exit 0 |
+| Custom `MPS_INSTANCE_PREFIX` | `completion_instances.bats` | `fixture` prefix → returns `foreign` |
+| Call log contains `list --format json` | `completion_instances.bats` | Verifies stub invocation |
+
+### Covered: `bin/mps` Entry Point (`main()` dispatch)
+
+Subprocess tests invoking `bin/mps` directly. Full path: `lib/common.sh` sourced, `mps_load_config`
+called. `MPS_CHECK_UPDATES=false` prevents network access; multipass stub on PATH for `mps_check_deps`.
+
+| Scope | Test File | Notes |
+|-------|-----------|-------|
+| `--help` / `-h` shows usage | `entry_point.bats` | Exit 0, contains `Usage:` and `Commands:` |
+| `--version` / `-v` shows version | `entry_point.bats` | Exit 0, matches VERSION file content |
+| No args → exit 1 with usage | `entry_point.bats` | Global dispatch, not command-level |
+| `--debug` enables debug logging | `entry_point.bats` | Stderr contains `[mps DEBUG]` |
+| Path traversal rejected (`../etc`) | `entry_point.bats` | Regex validation `^[a-z][-a-z]*$` |
+| Uppercase rejected (`Create`) | `entry_point.bats` | Same regex |
+| Dot-prefix rejected (`.hidden`) | `entry_point.bats` | Same regex |
+| Unknown valid-format command | `entry_point.bats` | `nonexistent-cmd` → exit 1, usage |
+| Command-specific `--help` dispatches | `entry_point.bats` | `list --help` → `--json` in output |
 
 ### Covered: `commands/*.sh` Argument Parsing
 
@@ -226,11 +292,59 @@ These are pure functions (no I/O, no external deps) — unit-tested by sourcing 
 Multipass-dependent functions are stubbed at file scope (`mp_*`, `mps_require_*`, etc.)
 so tests exercise only parsing and validation logic.
 
-### Not Yet Covered: `commands/*.sh`
+### Covered: `commands/*.sh` Orchestration Logic (Batch 1)
 
-Remaining command-level test tiers:
-- **Orchestration logic** — integration-testable with multipass stub
-- **Full workflows** — E2E only
+Integration tests that let most functions flow through to real code backed by the multipass
+stub + fixture data. Only network, SSH, and interactive functions are stubbed. Tests verify
+the full wiring: argument resolution → state checks → `mp_*` calls → metadata I/O → output.
+
+| Command | Test File | Tests | Notes |
+|---------|-----------|-------|-------|
+| `cmd_list` | `cmd_query.bats` | 7 | Formatted table, state text, IP, `--json`, empty list, call log, image column |
+| `cmd_status` | `cmd_query.bats` | 8 | Detailed info, `--json`, image hash, staleness, mount origins, docker, stopped skip, nonexistent |
+| `cmd_down` | `cmd_lifecycle.bats` | 7 | Stop, `--force`, already-stopped, nonexistent, port reset, adhoc mount cleanup, success message |
+| `cmd_destroy` | `cmd_lifecycle.bats` | 7 | Purge, metadata removal, ports file, SSH config, nonexistent, `--force`, success message |
+| `cmd_create` | `cmd_lifecycle.bats` | 10 | Launch+cloud-init+meta, call log args, metadata JSON, explicit name, `--no-mount`, `--profile`, already-exists, summary, auto-mount, sidecar extraction |
+| `cmd_up` | `cmd_lifecycle.bats` | 8 | Nonexistent→create, stopped→start, running→noop, suspended→start, mount restore, IP output, instance name, unexpected state |
+| `cmd_shell` | `cmd_exec.bats` | 5 | Call log, `--workdir`, metadata workdir, nonexistent, not running |
+| `cmd_exec` | `cmd_exec.bats` | 5 | `--` separator, `--workdir`, metadata workdir, exit code forwarding, not running |
+| `cmd_transfer` | `cmd_exec.bats` | 5 | Host→guest, guest→host, not-running error, direction message, prepare check |
+| `cmd_mount` | `cmd_exec.bats` | 6 | List with origins, no mounts, add, already-mounted, remove, nonexistent mount |
+
+**Stub strategy**: Unlike `cmd_parsing.bats` (which stubs ALL `mp_*`/`mps_*` to isolate parsing),
+orchestration tests let most functions flow through backed by the multipass stub. Only network,
+SSH, and interactive functions are stubbed: `mps_resolve_image`, `mps_auto_forward_ports`,
+`mps_forward_port`, `mps_reset_port_forwards`, `mps_kill_port_forwards`,
+`mps_cleanup_port_sockets`, `mps_confirm`, `mps_check_image_requirements`,
+`_mps_fetch_manifest`, `_mps_warn_image_staleness`, `_mps_warn_instance_staleness`,
+`_mps_check_instance_staleness`.
+
+### Covered: `commands/*.sh` Orchestration Logic (Batch 2)
+
+Commands requiring additional setup: SSH tooling (`openssh-client` in linter image), keypair
+fixtures (real `ssh-keygen`), cache filesystem, and multipass stub extension (`mktemp` pattern).
+
+| Command | Test File | Tests | Notes |
+|---------|-----------|-------|-------|
+| `cmd_port forward` | `cmd_port.bats` | 8 | Happy path, already-forwarded (rc=2), not running, nonexistent, missing spec, `--privileged`, success message, missing args |
+| `cmd_port list` | `cmd_port.bats` | 7 | Header columns, entries from `.ports.json`, filter by name, no forwards, dead socket, multiple sandboxes, re-establish dead |
+| `_ssh_config_resolve_pubkey` | `cmd_ssh_config.bats` | 5 | Auto-detect ed25519, prefer ed25519 over rsa, explicit path (private→.pub), missing key, explicit .pub |
+| `_ssh_config_inject_key` | `cmd_ssh_config.bats` | 3 | Call log (mktemp+transfer+bash -c), metadata update, skip if already injected |
+| `cmd_ssh_config` | `cmd_ssh_config.bats` | 5 | Config block content, `--append` file, `--print --append`, file permissions (600), not running |
+| `cmd_image list` | `cmd_image.bats` | 5 | Columns, empty cache, STATUS with manifest, no STATUS without manifest, pulled vs imported |
+| `cmd_image import` | `cmd_image.bats` | 9 | Cache path, auto-detect name, auto-detect arch, `.meta.json` SHA256, `.sha256` sidecar verify, checksum mismatch, `--name/--tag/--arch` overrides, file not found, summary output |
+| `cmd_image pull` | `cmd_image.bats` | 3 | Calls `_mps_pull_image`, up-to-date skip, `--force` bypass |
+| `cmd_image remove` | `cmd_image.bats` | 8 | Specific version, `--arch` only, `--all`, empty parent cleanup, `--force`, not found, all versions, preview |
+
+**Stub strategy**: Same base stubs as batch 1. Additional setup: `openssh-client` installed in
+linter Docker image provides real `ssh-keygen` for keypair generation and real `ssh -O check` for
+socket probing. `_mps_fetch_manifest` returns fixture manifest JSON (not fail). `_mps_pull_image`
+and `_mps_check_image_staleness` stubbed. Multipass stub extended with `mktemp` pattern for
+ssh-config key injection flow.
+
+### Not Yet Covered: Full Workflows
+
+- **Full workflows** — E2E only (real VMs, real mounts, real port forwards)
 
 ---
 
@@ -250,6 +364,16 @@ Remaining command-level test tiers:
 | `common_utils.bats` | 15 | Unit | `tests/unit/` |
 | `completion.bats` | 44 | Unit | `tests/unit/` |
 | `stub_smoke.bats` | 20 | Integration | `tests/integration/` |
-| **Total** | **366** | | |
+| `mp_lifecycle.bats` | 40 | Integration | `tests/integration/` |
+| `network.bats` | 53 | Integration | `tests/integration/` |
+| `cmd_query.bats` | 15 | Integration | `tests/integration/` |
+| `cmd_lifecycle.bats` | 32 | Integration | `tests/integration/` |
+| `cmd_exec.bats` | 21 | Integration | `tests/integration/` |
+| `cmd_port.bats` | 15 | Integration | `tests/integration/` |
+| `cmd_ssh_config.bats` | 13 | Integration | `tests/integration/` |
+| `cmd_image.bats` | 25 | Integration | `tests/integration/` |
+| `completion_instances.bats` | 8 | Integration | `tests/integration/` |
+| `entry_point.bats` | 11 | Integration | `tests/integration/` |
+| **Total** | **599** | | |
 
-*Last updated: 2026-02-23*
+*Last updated: 2026-02-24*

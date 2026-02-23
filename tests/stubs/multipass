@@ -107,6 +107,12 @@ case "$cmd" in
 
         exec_exit="${MOCK_MP_EXEC_EXIT:-0}"
 
+        # Check for mktemp pattern (used by ssh-config key injection)
+        if [[ "${1:-}" == "mktemp" ]]; then
+            echo "/tmp/mps_pubkey_test12345.pub"
+            exit 0
+        fi
+
         # Check for docker info pattern
         if [[ "${1:-}" == "docker" && "${2:-}" == "info" ]]; then
             if [[ -n "${MOCK_MP_DOCKER_VERSION:-}" ]]; then

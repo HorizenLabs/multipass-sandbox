@@ -41,9 +41,22 @@ A blockchain software development company needs an internal tool to spin up isol
 - [x] `commands/*.sh` argument parsing / flag handling — 105 tests in `cmd_parsing.bats` covering --help, unknown flags, missing values, short aliases, subcommand routing, and command-specific validation (exec `--`, transfer direction, port numeric, image import/remove constraints)
 
 ### Integration tests
-- [x] `lib/multipass.sh` — mock `multipass` binary stub returning canned JSON (`mp_list_all`, `mp_state`, `mp_instance_exists`, `mp_get_mounts`, `mp_ipv4`) — 20 tests in `stub_smoke.bats`
-- [ ] `lib/common.sh` network functions — mock `curl`/`aria2c` or local HTTP server (`_mps_download_file`, `_mps_fetch_manifest`, staleness checks, CLI update check)
-- [ ] `commands/*.sh` orchestration logic — multipass stub + fixture data
+- [x] `lib/multipass.sh` info & query wrappers — mock `multipass` stub + canned JSON (`mp_list_all`, `mp_state`, `mp_instance_exists`, `mp_get_mounts`, `mp_ipv4`) — 20 tests in `stub_smoke.bats`
+- [x] `lib/multipass.sh` lifecycle & execution wrappers — `mp_launch`, `mp_start`, `mp_stop`, `mp_delete`, `mp_exec`, `mp_shell`, `mp_mount`, `mp_umount`, `mp_transfer`, `mp_wait_cloud_init`, `mp_docker_status`, `mp_info`/`mp_info_field`, `mp_instance_state` — 40 tests in `mp_lifecycle.bats` (call log assertions, configurable exit codes, failure paths)
+- [x] `lib/common.sh` network functions — local python3 HTTP server serving fixture files (`_mps_download_file`, `_mps_fetch_manifest`, staleness checks, CLI update check) — 53 tests in `network.bats`
+- [x] `commands/*.sh` orchestration logic (batch 1) — `list`, `status`, `create`, `up`, `down`, `destroy`, `shell`, `exec`, `transfer`, `mount` — 60 tests across 3 files (`cmd_query.bats`, `cmd_lifecycle.bats`, `cmd_exec.bats`)
+- [x] `commands/*.sh` orchestration logic (batch 2) — `port`, `ssh-config`, `image` — 53 tests across 3 files (`cmd_port.bats`, `cmd_ssh_config.bats`, `cmd_image.bats`). openssh-client in linter image, real ssh-keygen, multipass stub mktemp pattern.
+- [x] `completions/` — `__complete instances` with multipass stub (dynamic instance name completion) — 8 tests in `completion_instances.bats`
+- [x] `bin/mps` entry point — subprocess tests for `main()` dispatch — 11 tests in `entry_point.bats` (`--help`, `-h`, `--version`, `-v`, no args, `--debug`, path traversal, uppercase, dot-prefix, unknown command, command-specific `--help`)
+
+### Code coverage
+- [ ] Add kcov to linter Docker image (single binary, no Ruby dep)
+- [ ] `make test-coverage` target: run BATS through kcov with `--include-path=lib/,bin/,commands/`
+- [ ] Merge Bash 4+ and 3.2 coverage runs (`kcov --merge`)
+- [ ] Cobertura XML output for CI integration (Codecov / GitHub Actions summary)
+
+### e2e tests locally
+- [ ] TODO
 
 ### CI integration
 - [ ] Wire `make test` into GitHub Actions CI (lint + test on push/PR)
@@ -58,4 +71,19 @@ A blockchain software development company needs an internal tool to spin up isol
 
 ## Known Issues / TODO
 
-None currently tracked.
+### Test quality audit findings (2026-02-24)
+
+Tests that are tautological or explicitly acknowledge they don't test what they claim:
+
+1. **cmd_lifecycle.bats:342 — cmd_up mount restore**: Comment in test admits the `all-stopped` fixture has pre-existing mounts in JSON, so the restore logic sees them as "already present" and skips re-mounting. The mount-restore code path is never exercised. Needs a fixture with empty mounts.
+2. **cmd_query.bats:161 — cmd_status staleness display**: `_mps_check_instance_staleness` is hardcoded to `echo "up-to-date"`, then the test asserts output contains "up-to-date". Tautological — no staleness logic is tested.
+3. **cmd_image.bats:287,299 — image pull/staleness**: Both `_mps_check_image_staleness` and `_mps_pull_image` are stubbed. Tests assert the stubs were called but no actual staleness comparison (SHA256, version) or download/cache logic runs.
+4. **cmd_parsing.bats:750 — --no-mount error path**: Comment says "tested in E2E" but no E2E test exists. The `mps_die` inside command substitution doesn't propagate, so the unit test can't cover it.
+
+Tests with assertions too weak to catch regressions:
+
+5. **cmd_parsing.bats:391-415 — short flag aliases**: Five tests use only `[[ "$output" != *"Unknown flag"* ]]` (negative assertion). A regression that silently ignores the flag would still pass.
+6. **cmd_parsing.bats:433,480 — `--` separator**: Tests only check `status -eq 0` against no-op stubs (`mp_exec`, `mp_transfer`). Any parsing result produces exit 0.
+7. **common_config.bats:120 — config loading**: Pre-sets `MPS_CPUS=2` / `MPS_MEMORY=2G` to "skip compute", bypassing the auto-scaling code path that is the more complex logic.
+8. **cmd_lifecycle.bats:106,182 — port reset/kill**: Stubs create marker files; tests assert markers exist. No argument or behavior validation — signature changes in the real functions would go undetected.
+9. **cmd_image.bats:213 — import SHA256**: Checks `.meta.json` contains a `sha256` field but never verifies the hash value matches the actual file content.

@@ -91,7 +91,7 @@ UPLOAD_PHONY      := $(foreach f,$(FLAVORS),$(foreach a,$(ARCHS),upload-$(f)-$(a
 PUBLISH_PHONY     := $(foreach f,$(FLAVORS),publish-$(f) $(foreach a,$(ARCHS),publish-$(f)-$(a)))
 CLEAN_IMAGE_PHONY := $(foreach f,$(FLAVORS),clean-image-$(f) $(foreach a,$(ARCHS),clean-image-$(f)-$(a)))
 
-.PHONY: all help install uninstall test test-bash4 test-bash32 clean capture-fixtures \
+.PHONY: all help install uninstall test clean capture-fixtures \
 	test-unit test-unit-bash4 test-unit-bash32 \
 	test-integration test-integration-bash4 test-integration-bash32 \
 	build-docker-builder build-docker-linter build-docker-publisher build-bash32 \
@@ -162,32 +162,27 @@ uninstall: ## Uninstall mps (remove symlink, cleanup artifacts, runs on host)
 	@./uninstall.sh
 
 # ---------- Test ----------
-test: test-bash4 test-bash32 ## Run all tests (unit + integration) under both Bash versions
+test: test-unit test-integration ## Run all tests (unit + integration) under both Bash versions
 test-unit: test-unit-bash4 test-unit-bash32 ## Run unit tests only
 test-integration: test-integration-bash4 test-integration-bash32 ## Run integration tests only
 
-test-bash4: $(LINTER_STAMP)
-	$(DOCKER_RUN) bats tests/unit/ tests/integration/
-
-test-bash32: $(LINTER_STAMP)
-	$(DOCKER_RUN) bash -c '\
-		mkdir -p /tmp/bash32-shim && \
-		ln -sf /usr/local/bin/bash-3.2 /tmp/bash32-shim/bash && \
-		PATH="/tmp/bash32-shim:$$PATH" bats tests/unit/ tests/integration/'
-
 test-unit-bash4: $(LINTER_STAMP)
+	@echo "==> Unit tests (Bash 4+)"
 	$(DOCKER_RUN) bats tests/unit/
 
 test-unit-bash32: $(LINTER_STAMP)
+	@echo "==> Unit tests (Bash 3.2)"
 	$(DOCKER_RUN) bash -c '\
 		mkdir -p /tmp/bash32-shim && \
 		ln -sf /usr/local/bin/bash-3.2 /tmp/bash32-shim/bash && \
 		PATH="/tmp/bash32-shim:$$PATH" bats tests/unit/'
 
 test-integration-bash4: $(LINTER_STAMP)
+	@echo "==> Integration tests (Bash 4+)"
 	$(DOCKER_RUN) bats tests/integration/
 
 test-integration-bash32: $(LINTER_STAMP)
+	@echo "==> Integration tests (Bash 3.2)"
 	$(DOCKER_RUN) bash -c '\
 		mkdir -p /tmp/bash32-shim && \
 		ln -sf /usr/local/bin/bash-3.2 /tmp/bash32-shim/bash && \
