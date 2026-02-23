@@ -91,7 +91,7 @@ UPLOAD_PHONY      := $(foreach f,$(FLAVORS),$(foreach a,$(ARCHS),upload-$(f)-$(a
 PUBLISH_PHONY     := $(foreach f,$(FLAVORS),publish-$(f) $(foreach a,$(ARCHS),publish-$(f)-$(a)))
 CLEAN_IMAGE_PHONY := $(foreach f,$(FLAVORS),clean-image-$(f) $(foreach a,$(ARCHS),clean-image-$(f)-$(a)))
 
-.PHONY: all help install uninstall test clean \
+.PHONY: all help install uninstall test test-bash4 test-bash32 clean \
 	build-docker-builder build-docker-linter build-docker-publisher build-bash32 \
 	lint lint-bash lint-bash32 lint-powershell lint-dockerfile lint-makefile lint-yaml lint-hcl lint-actions \
 	clean-docker-builder clean-docker-linter clean-docker-publisher clean-images \
@@ -160,8 +160,16 @@ uninstall: ## Uninstall mps (remove symlink, cleanup artifacts, runs on host)
 	@./uninstall.sh
 
 # ---------- Test ----------
-test: $(LINTER_STAMP) ## Run BATS tests inside linter container
+test: test-bash4 test-bash32 ## Run BATS tests under Bash 4+ and Bash 3.2
+
+test-bash4: $(LINTER_STAMP) ## Run BATS tests under Bash 4+
 	$(DOCKER_RUN) bats tests/
+
+test-bash32: $(LINTER_STAMP) ## Run BATS tests under Bash 3.2
+	$(DOCKER_RUN) bash -c '\
+		mkdir -p /tmp/bash32-shim && \
+		ln -sf /usr/local/bin/bash-3.2 /tmp/bash32-shim/bash && \
+		PATH="/tmp/bash32-shim:$$PATH" bats tests/'
 
 # ---------- Lint (all) ----------
 lint: lint-bash lint-bash32 lint-powershell lint-dockerfile lint-makefile lint-yaml lint-hcl lint-actions ## Run all linters
