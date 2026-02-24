@@ -15,7 +15,7 @@
 | **Integration** | Commands with mocked multipass/network | Docker (linter) | Bash 4+ AND Bash 3.2 | Medium |
 | **E2E** | Full VM lifecycle, real multipass + KVM | Native host (CI or local) | Host bash | Slow |
 
-Unit and initial integration tests exist today. Further integration and E2E tiers are planned.
+Unit and integration tests exist today. E2E tier is designed but not yet implemented — see [E2E.md](E2E.md).
 
 ## Dual-Interpreter Testing
 
@@ -30,7 +30,7 @@ Test files themselves must also be Bash 3.2-compatible (no associative arrays, n
 
 | Trigger | Tiers | Budget |
 |---------|-------|--------|
-| PR / push to `main` | Unit + Integration (Bash 4 ∥ Bash 3.2) | <20 min wall time |
+| PR / push to `main` | Unit + Integration (Bash 4+ with coverage ∥ Bash 3.2) | <20 min wall time |
 | `mps/v*` tag (release) | Unit + Integration + E2E | ~2h |
 | `images/v*` tag | Image build + potentially E2E | TBD — E2E could run against x86 artifacts while arm64 builds (~75 min free window) |
 
@@ -38,7 +38,7 @@ Runner sizing TBD based on real-world timing data.
 
 ### E2E Platform Coverage
 
-- **Linux x86**: Solvable — CI runners with KVM (same type as Packer builds) + `snap install multipass`
+- **Linux x86**: Standard GitHub-hosted runners have KVM + `snap install multipass`
 - **macOS**: Skipped — CI runners are VMs, no nested virtualization for Multipass. macOS-specific
   surface (path conversion, mount resolution) is small and covered by unit tests + Bash 3.2 compat.
   Revisit if bare-metal Mac CI (MacStadium/Orka) becomes available.
@@ -87,6 +87,25 @@ Implementation:
 
 No mocking. Real `multipass`, real VMs, real mounts, real port forwards.
 Image download testing (if included) uses real CDN — acceptable at CI network speeds.
+
+## Code Coverage
+
+Lightweight xtrace-based coverage via `BASH_ENV` + `BASH_XTRACEFD` + grep filter (Bash 4+ only).
+No external coverage tool — uses bash's built-in `set -x` with a process substitution pipe to
+grep, keeping only trace lines from project source files. Each bash process re-opens its own
+FD (close-on-exec prevents inheritance across `exec()`).
+
+- `tests/coverage-trap.sh` — `BASH_ENV` script that sets up the xtrace→grep→hits.log pipe
+- `tests/coverage-report.sh` — post-processor generating lcov.info + terminal summary
+- `make test` — all tests with coverage: Bash 4+ instrumented + Bash 3.2 compat, then report
+- Output: `coverage/lcov.info` (for Codecov/CI), terminal summary table
+
+**Line counting**: Only lines that xtrace can trace are counted as executable. Closing
+constructs (`fi`, `done`, `esac`, `}`, `;;`, `else`, `then`, `do`) are excluded — bash
+xtrace never fires for them.
+
+**Coverage applies to all tiers**: The `BASH_ENV` mechanism works with any bash process,
+not just BATS. E2E scripts get coverage for free by exporting the same env vars.
 
 ## Test Isolation
 
@@ -254,6 +273,26 @@ sources `lib/common.sh`, so setup is minimal — multipass stub + fixtures only.
 | Missing jq → graceful empty | `completion_instances.bats` | Restricted PATH, exit 0 |
 | Custom `MPS_INSTANCE_PREFIX` | `completion_instances.bats` | `fixture` prefix → returns `foreign` |
 | Call log contains `list --format json` | `completion_instances.bats` | Verifies stub invocation |
+
+### Covered: `_mps_completions()` Driver (Integration)
+
+In-process tests sourcing `completions/mps.bash`, stubbing `mps` as a bash function, simulating
+tab completions via `COMP_WORDS`/`COMP_CWORD`, and asserting on `COMPREPLY` contents.
+
+| Scope | Test File | Notes |
+|-------|-----------|-------|
+| Top-level completion (commands + global flags) | `completion_driver.bats` | Empty word, prefix filter, `--` filter |
+| Global flag skipping (`--debug`, `--help`) | `completion_driver.bats` | Flag consumed, next word completes commands/flags |
+| Command-level flag completion | `completion_driver.bats` | create, list, down — `--` prefix, all flags |
+| Flag-value resolution (`--name`, `--profile`, `--image`, `--cloud-init`) | `completion_driver.bats` | Magic tokens, short aliases (`-n`), prefix filtering |
+| Subcommand routing (image, mount, port) | `completion_driver.bats` | Subcmd list, prefix filter, `--` filter |
+| Subcommand flag completion | `completion_driver.bats` | `image pull --force`, `port forward --privileged` |
+| Subcommand flag-value resolution | `completion_driver.bats` | `image import --arch`, `mount add --name` |
+| `--` separator stops completion | `completion_driver.bats` | exec with and without `--name` |
+| File completion (`__files__` token) | `completion_driver.bats` | `ssh-config --ssh-key` triggers `compgen -f` |
+| Edge cases | `completion_driver.bats` | Unknown cmd, extra positional, flag-like non-subcmd, multi flag-value |
+| `_init_completion` integration | `completion_driver.bats` | Uses readline helper when available |
+| `complete -p` registration | `completion_driver.bats` | Verifies `_mps_completions` bound to `mps` |
 
 ### Covered: `bin/mps` Entry Point (`main()` dispatch)
 
@@ -430,10 +469,11 @@ Multipass stub for VM discovery, `du` stub, `brew` stub, stdin piping for intera
 | `cmd_image.bats` | 27 | Integration | `tests/integration/` |
 | `resolve_image.bats` | 15 | Integration | `tests/integration/` |
 | `port_forwarding.bats` | 33 | Integration | `tests/integration/` |
+| `completion_driver.bats` | 36 | Integration | `tests/integration/` |
 | `completion_instances.bats` | 8 | Integration | `tests/integration/` |
 | `entry_point.bats` | 11 | Integration | `tests/integration/` |
 | `install.bats` | 31 | Integration | `tests/integration/` |
 | `uninstall.bats` | 26 | Integration | `tests/integration/` |
-| **Total** | **713** | | |
+| **Total** | **749** | | |
 
 *Last updated: 2026-02-24*

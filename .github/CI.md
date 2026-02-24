@@ -16,10 +16,15 @@ The mpsandbox project has a mature, fully containerized build system (Makefile +
 **Runner**: `warp-ubuntu-latest-x64-2x`
 **Concurrency**: Cancel in-progress runs per-ref
 
+**Permissions**: `contents: read`, `pull-requests: write` (for PR coverage comments)
+
 Steps:
 1. `actions/checkout@v4` (no submodules — lint/test don't need them)
 2. `make lint` (builds linter Docker image automatically via stamp dep)
-3. `make test` (skip gracefully if `tests/` doesn't exist yet)
+3. `make test` (runs all tests with coverage; enforces 70% minimum threshold via `coverage-report.sh`)
+4. Coverage job summary — appends `coverage/summary.md` to `$GITHUB_STEP_SUMMARY` (all events)
+5. Coverage PR comment — `zgosalvez/github-actions-report-lcov@v4` posts/updates a coverage summary comment on PRs (`GITHUB_TOKEN`, `minimum-coverage: 70`, `update-comment: true`). PR events only.
+6. Upload `coverage/` directory as artifact (30-day retention)
 
 ## Workflow 2: `images.yml` — Build + Publish
 
@@ -219,7 +224,7 @@ Clients fetch this file (at most once per 24h) to compare against the local `VER
 
 | Workflow | Job | Environment | Secrets Accessible |
 |---|---|---|---|
-| `ci.yml` | `lint-and-test` | *(none)* | SLACK_WEBHOOK_URL |
+| `ci.yml` | `lint-and-test` | *(none)* | SLACK_WEBHOOK_URL, GITHUB_TOKEN (auto, PR comments) |
 | `images.yml` | `resolve` | *(none)* | SLACK_WEBHOOK_URL + MAINTAINER_KEYS var |
 | `images.yml` | `build-amd64` | `build` | B2, CF, deploy key, SLACK_WEBHOOK_URL |
 | `images.yml` | `build-arm64` | `build` | B2, CF, deploy key, SLACK_WEBHOOK_URL |

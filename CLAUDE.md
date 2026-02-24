@@ -19,6 +19,7 @@ Internal CLI tool for spinning up isolated VM-based development environments usi
 - `lib/common.sh` — Logging, config cascade, path conversion, mount resolution, auto-naming, auto-scaling resources
 - `lib/multipass.sh` — Thin wrappers around `multipass` CLI with `--format json` + `jq`
 - `commands/*.sh` — One file per subcommand (create, up, down, destroy, shell, exec, list, status, ssh-config, image, mount, port, transfer), each exports `cmd_<name>()` function
+- `completions/mps.bash` — Bash tab-completion via `_mps_completions()`, installed by `install.sh`
 - `templates/cloud-init/` — Minimal cloud-init templates for VM launch customization
 - `images/layers/` — Composable cloud-init layer files (base, protocol-dev, smart-contract-dev, smart-contract-audit)
 - `images/build.sh` — Image build script (takes flavor arg, merges layers with yq)
@@ -38,6 +39,7 @@ Internal CLI tool for spinning up isolated VM-based development environments usi
 - `.github/actions/verify-gpg-tag/` — Composite action for GPG tag signature verification
 - `vendor/hl-claude-marketplace` — Git submodule: private Claude Code plugin marketplace (relative URL)
 - `.claude/skills/` — Claude Code skills (`audit-docs`: doc staleness audit, `init-template`: cloud-init template generator)
+- `tests/` — BATS test suites (`unit/`, `integration/`), shared `test_helper.bash`, `stubs/` (multipass, ssh, sudo, http_server.py), coverage scripts (`coverage-trap.sh`, `coverage-report.sh`), `tap-summary.sh`, `capture-fixtures.sh`
 - `.planning/` — Implementation plan, architecture decisions, CI design, status tracking
 
 ## Commands
@@ -86,7 +88,7 @@ Internal CLI tool for spinning up isolated VM-based development environments usi
   - `wait -n` — use explicit PID tracking with `wait $pid`
 - **Safe `rm -rf`**: Any `rm -rf` (or `rm -r`) that uses a variable **must** guard with `${var:?}` — e.g., `rm -rf "${dir:?}"`. Prevents catastrophic deletion if the variable is unexpectedly empty. Literal paths (e.g., `rm -rf /tmp/*`) do not need the guard.
 - **Windows/PowerShell**: Deferred to a future phase. `install.ps1` exists as a placeholder.
-- **CI/local parity**: All CI operations (except GitHub-specific actions like creating releases) must be runnable locally via `make` targets. The pattern is: shell script with the logic → Makefile target wrapping it in `docker run` → CI workflow calls `make`. Keep inline shell in YAML to an absolute minimum (env setup, conditionals); never put business logic there.
+- **CI/local parity**: All CI operations (except GitHub-specific actions like creating releases) must be runnable locally via `make` targets. The pattern is: shell script with the logic → Makefile target wrapping it in `docker run` → CI workflow calls `make`. **CI/YAML boundary**: shell scripts own all logic; GitHub Actions YAML is limited to GitHub-specific glue (checkout, permissions, PR comments, artifact upload, notifications). If a step has an `if`/`for`/validation, it belongs in a script — not inline YAML.
 
 ## Build System
 
@@ -97,9 +99,9 @@ make build-docker-builder   # Build the builder image (Packer, QEMU — no crede
 make build-docker-publisher # Build the publisher image (b2, jq, yq — credential-isolated)
 make lint             # Run all linters (shellcheck, lint-bash32, hadolint, yamllint, checkmake, packer fmt, py-psscriptanalyzer, actionlint)
 make lint-actions      # Lint GitHub Actions workflows with actionlint
-make test             # Run all tests (unit + integration) under both Bash versions
-make test-unit        # Run unit tests only (both Bash versions)
-make test-integration # Run integration tests only (both Bash versions)
+make test             # Run all tests with coverage (Bash 4+ instrumented + Bash 3.2 compat)
+make test-unit        # Run unit tests only (both Bash versions, no coverage)
+make test-integration # Run integration tests only (both Bash versions, no coverage)
 make image-base       # Build base VM image (both archs in parallel via sub-make -j2)
 make image-base-amd64 # Build base VM image (amd64 only)
 make image-base-arm64 # Build base VM image (arm64 only)
@@ -114,6 +116,7 @@ make publish-base VERSION=1.0.0        # Local: upload + manifest (both archs)
 make publish-release-meta VERSION=0.3.0 # Publish mps-release.json to B2 (CLI update check)
 make build-bash32                      # Build Bash 3.2.57 binary for compat linting
 make lint-bash32                       # Check client scripts for Bash 3.2 compatibility
+make capture-fixtures                  # Capture fresh multipass JSON fixtures (requires multipass on host)
 make install                           # Install mps (symlink to PATH, runs on host)
 make uninstall        # Uninstall mps (remove symlink, cleanup artifacts, runs on host)
 ```
@@ -138,7 +141,7 @@ The Makefile detects host uid:gid and the entrypoint uses setpriv to step down f
 
 - After modifying any linted or tested file, run `make lint` and `make test` before committing. Linted files:
   - **Bash**: `bin/mps`, `lib/*.sh`, `commands/*.sh`, `completions/*.bash`, `tests/**/*.bats`, `tests/**/*.bash`, `tests/**/*.sh`, `tests/stubs/multipass`, `images/**/*.sh`, `install.sh`, `uninstall.sh`
-  - **Bash 3.2 compat**: `bin/mps`, `lib/*.sh`, `commands/*.sh`, `completions/*.bash`, `tests/**/*.bash`, `tests/**/*.sh`, `tests/stubs/multipass`, `install.sh`, `uninstall.sh` (client scripts only — no `images/` or `*.bats`; BATS 3.2 compat is verified by `make test` which runs under both bash versions)
+  - **Bash 3.2 compat**: `bin/mps`, `lib/*.sh`, `commands/*.sh`, `completions/*.bash`, `tests/**/*.bash`, `tests/**/*.sh` (excluding `coverage-*`), `tests/stubs/multipass`, `install.sh`, `uninstall.sh` (client scripts only — no `images/`, `*.bats`, or `tests/coverage-*`; BATS 3.2 compat is verified by `make test` which runs under both bash versions)
   - **PowerShell**: `*.ps1`
   - **Dockerfile**: `docker/Dockerfile.builder`, `docker/Dockerfile.linter`, `docker/Dockerfile.publisher`, `docker/Dockerfile.bash32`
   - **Makefile**: `Makefile`
@@ -147,15 +150,17 @@ The Makefile detects host uid:gid and the entrypoint uses setpriv to step down f
   - **GitHub Actions**: `.github/workflows/*.yml`
 - Linting requires Docker. The linter image is built automatically if missing (`make lint` depends on the stamp file).
 - Fix all lint errors before committing — do not bypass with `--no-verify` or inline disables unless there is a documented reason.
+- **Test coverage**: `make test` always generates coverage. Minimum threshold is 70% — do not merge changes that drop total coverage below this. Check the coverage summary at the end of `make test` output.
 - **checkmake quirks**: `minphony` only parses the first line of `.PHONY` declarations — keep `test` and `clean` on the first line. `maxbodylength` default max is 15 lines per target body (configured in `checkmake.ini`).
 - **Local verification**: `multipass` and `jq` are installed on the dev machine — run `mps` commands directly to verify changes.
 - **Snap confinement**: Multipass is installed as a snap, which restricts file access to the user's home directory. Use paths under `$HOME` (not `/tmp`) for `mps transfer` tests and temp files that interact with the VM.
 - **End-to-end verification**: After implementing changes to command files (`commands/*.sh`) or core libraries (`lib/*.sh`), run the verification steps from the plan against a live VM on the host — not just `make lint`. If the plan includes a test script, execute it. Create a temporary instance (e.g., `--profile micro --name <test-name>`) and clean it up with `mps destroy` afterward.
 - **Automated verification in plans**: Plans must always include an automated verification script — never manual testing steps. The script should create temporary instances, assert expected behavior, and clean up afterward.
-- **Capture long command output with tee.** For `make test`, `make lint`, etc., always use: `make test 2>&1 | tee /tmp/mps-test.log`. To inspect results (grep for failures, check summaries), use `Read /tmp/mps-test.log` — don't re-run the command just to parse output differently.
+- **Capture long command output with tee.** For `make test`, `make lint`, etc., always use: `make test 2>&1 | tee /tmp/mps-test.log` (with optional chained `| head`, `| tail` as needed. To inspect results (grep for failures, check summaries), use `Read /tmp/mps-test.log` — don't re-run the command just to parse output differently.
 
 ## Planning & Status
 
 - Implementation plan and status: `.planning/STATUS.md`
 - Architecture decisions: `.planning/DECISIONS.md`
+- Testing strategy and coverage map: `.planning/TESTING.md` (E2E design: `.planning/E2E.md`)
 - CI/CD pipeline design: `.github/CI.md`

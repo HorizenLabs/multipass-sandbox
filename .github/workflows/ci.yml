@@ -7,6 +7,10 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+  pull-requests: write
+
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
@@ -22,9 +26,26 @@ jobs:
         run: make lint
 
       - name: Test
-        run: |
-          if [[ -d tests/ ]]; then
-            make test
-          else
-            echo "No tests/ directory yet — skipping."
-          fi
+        run: make test
+
+      - name: Coverage job summary
+        if: "!cancelled() && hashFiles('coverage/summary.md') != ''"
+        run: cat coverage/summary.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Coverage PR comment
+        if: "!cancelled() && github.event_name == 'pull_request' && hashFiles('coverage/lcov.info') != ''"
+        uses: zgosalvez/github-actions-report-lcov@v4
+        with:
+          coverage-files: coverage/lcov.info
+          minimum-coverage: 70
+          artifact-name: code-coverage-report
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          update-comment: true
+
+      - name: Upload coverage artifact
+        if: "!cancelled() && hashFiles('coverage/lcov.info') != ''"
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage/
+          retention-days: 30

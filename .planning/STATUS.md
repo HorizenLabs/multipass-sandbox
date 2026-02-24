@@ -53,16 +53,21 @@ A blockchain software development company needs an internal tool to spin up isol
 - [x] `uninstall.sh` — subprocess tests with fully installed state under fake HOME — 26 tests in `uninstall.bats` (symlink removal, completion cleanup, VM cleanup, SSH config, instance metadata, cache, user config, directory cleanup, summary)
 
 ### Code coverage
-- [ ] Add kcov to linter Docker image (single binary, no Ruby dep)
-- [ ] `make test-coverage` target: run BATS through kcov with `--include-path=lib/,bin/,commands/`
-- [ ] Merge Bash 4+ and 3.2 coverage runs (`kcov --merge`)
-- [ ] Cobertura XML output for CI integration (Codecov / GitHub Actions summary)
+- [x] Lightweight xtrace-based coverage via `BASH_ENV` + `BASH_XTRACEFD` + grep filter (Bash 4+ only)
+- [x] `make test-coverage` target: parallel unit + integration, then report
+- [x] LCOV output (`coverage/lcov.info`) for CI integration (Codecov / GitHub Actions summary)
+- [x] Terminal summary table with per-file and total coverage percentages
 
-### e2e tests locally
+### CI integration of tests + coverage
+- [x] Wire `make test` into GitHub Actions CI (lint + test on push/PR)
+- [x] Wire coverage report into CI (GitHub Actions job summary + PR comments via zgosalvez/github-actions-report-lcov)
+- [x] Enforce 70% minimum coverage threshold in `coverage-report.sh` (fails `make test` if below)
+
+### e2e tests
 - [ ] TODO
 
-### CI integration
-- [ ] Wire `make test` into GitHub Actions CI (lint + test on push/PR)
+### CI integration of e2e tests
+- [ ] TODO
 
 ## Phase 12 — PowerShell Parity (Windows): NOT STARTED
 

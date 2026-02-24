@@ -3,6 +3,8 @@
 #
 # Mode A (sourced): Source install.sh (guard prevents execution), call functions directly.
 # Mode B (subprocess): Run install.sh via bash (guard runs _mps_install_main).
+#
+# shellcheck disable=SC1090  # dynamic source of $INSTALL_SCRIPT is intentional
 
 load ../test_helper
 
@@ -264,6 +266,7 @@ _run_install() {
     export PATH="${stubs_dir}:${PATH}"
     _hide_cmds=(multipass)
     source "$INSTALL_SCRIPT"
+    # shellcheck disable=SC2034  # OS is read by install_dependency()
     OS=unknown
     run install_dependency "multipass"
     [[ "$status" -eq 1 ]]

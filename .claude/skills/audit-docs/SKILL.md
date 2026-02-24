@@ -1,6 +1,6 @@
 ---
 name: audit-docs
-description: Audit planning docs (CLAUDE.md, .planning/*, .github/CI.md) for staleness and context bloat. Run before/after commits.
+description: Audit planning docs (CLAUDE.md, .planning/*, .github/CI.md, .planning/TESTING.md) for staleness and context bloat. Run before/after commits.
 allowed-tools: Read, Glob, Grep, Bash, Task
 ---
 
@@ -15,7 +15,8 @@ Audit documentation for staleness, missing entries, and context window bloat. Re
 | `CLAUDE.md` | Project structure, commands, conventions, build system | Yes (auto) |
 | `.planning/DECISIONS.md` | Architecture decisions, reference tables | Yes (manual) |
 | `.planning/STATUS.md` | Implementation plan, context, phase status and checklists | Yes (manual) |
-| `.github/CI.md` | CI/CD pipeline design (code reviewer reference) | No (skip — audit only when CI changes) |
+| `.planning/TESTING.md` | Testing strategy, coverage map, test counts | No (reference — audit only when tests change) |
+| `.github/CI.md` | CI/CD pipeline design (code reviewer reference) | No (reference — audit only when CI changes) |
 
 ## Audit Steps
 
@@ -94,12 +95,28 @@ Extract `MPS_*` variable names from DECISIONS.md and CLAUDE.md. Verify each exis
 
 Three sources of truth: `commands/*.sh` (exported `cmd_*` functions), `bin/mps` (usage text), CLAUDE.md "Commands" section. All three must agree.
 
-### 11. Phase Status (STATUS.md)
+### 11. Test Coverage Map (TESTING.md)
+
+Only audit when `tests/`, `Makefile`, or `completions/` were touched in the commit range. Skip otherwise.
+
+**Test counts table**: Run `bats --count` (via Docker linter container) for each `.bats` file listed in the "Test Counts" table. Flag mismatches between documented and actual counts. Also flag `.bats` files that exist on disk but are missing from the table.
+
+```
+for f in tests/unit/*.bats tests/integration/*.bats; do
+    docker run --rm -v "$(pwd):/workdir" mps-linter:latest bats --count "$f"
+done
+```
+
+**Coverage sections**: Each "Covered:" section references a test file. Verify those files exist and that no test file lacks a corresponding coverage section.
+
+**Make target references**: Verify any `make` targets mentioned in TESTING.md still exist in the Makefile.
+
+### 12. Phase Status (STATUS.md)
 
 - Flag STATUS.md completed items that reference stale file paths
 - Check if "NOT STARTED" phases have had work done (check git log for relevant files)
 
-### 12. Context Optimization
+### 13. Context Optimization
 
 This step monitors doc health for context window efficiency. The session-start docs (CLAUDE.md + .planning/*) are loaded into every conversation.
 
@@ -125,6 +142,10 @@ This step monitors doc health for context window efficiency. The session-start d
 
 ## STATUS.md
 - Issue description
+
+## TESTING.md
+- [Test Counts] file.bats: documented N, actual M
+- [Missing] file.bats exists but has no coverage section
 
 ## Context Optimization
 - [Size] Total: N lines / N KB (over/under budget)
