@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# tests/stubs/sudo — Mock sudo for BATS integration tests
+#
+# Strips sudo (and -n flag) and executes remaining args.
+# Allows _use_sudo=true code paths to work without real privilege escalation.
+
+set -euo pipefail
+
+# Strip -n flag if present
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -n) shift ;;
+        *)  break ;;
+    esac
+done
+
+exec "$@"

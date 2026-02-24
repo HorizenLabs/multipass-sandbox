@@ -167,10 +167,10 @@ Image download testing (if included) uses real CDN — acceptable at CI network 
 | `_mps_resolve_project_mounts` | Integration | Metadata + config file parsing |
 | `mps_prepare_running_instance` | E2E | require_running + staleness + port forwards |
 | `mps_confirm` | Skip | Interactive stdin — not automatable |
-| `mps_forward_port` | E2E | SSH tunnel setup |
-| `mps_auto_forward_ports` | E2E | Wrapper over forward_port |
-| `mps_kill_port_forwards` | E2E | SSH socket teardown |
-| `mps_reset_port_forwards` | E2E | Wrapper |
+| `mps_forward_port` | Integration | SSH stub, validation+happy+failure paths (17 tests) |
+| `mps_auto_forward_ports` | Integration | SSH stub, orchestration (6 tests) |
+| `mps_kill_port_forwards` | Integration | SSH stub, socket teardown (5 tests) |
+| `mps_reset_port_forwards` | Integration | SSH stub, kill+re-establish cycle (5 tests) |
 
 ### Covered: `lib/multipass.sh` (Stub Smoke Tests)
 
@@ -342,6 +342,62 @@ socket probing. `_mps_fetch_manifest` returns fixture manifest JSON (not fail). 
 and `_mps_check_image_staleness` stubbed. Multipass stub extended with `mktemp` pattern for
 ssh-config key injection flow.
 
+### Covered: Port Forwarding Pipeline (Unit A)
+
+Integration tests exercising the full port forwarding orchestration with SSH/sudo stubs on PATH.
+No real SSH server — the `ssh` stub simulates control socket behavior via marker files (`-M -S`
+create, `-O check -S` alive check, `-O exit -S` teardown). The `sudo` stub strips `sudo`/`-n`
+and executes remaining args.
+
+| Function | Test File | Tests | Notes |
+|----------|-----------|-------|-------|
+| `mps_forward_port` (validation) | `port_forwarding.bats` | 8 | Empty spec, non-numeric, port 0, >65535, privileged reject, no IP, no SSH config, missing key |
+| `mps_forward_port` (happy path) | `port_forwarding.bats` | 6 | Tunnel establish, `.ports.json` record, dedup (rc=2), stale socket, sudo/privileged, SSH options |
+| `mps_forward_port` (failure) | `port_forwarding.bats` | 3 | SSH fail, post-verify fail, append to existing |
+| `mps_auto_forward_ports` | `port_forwarding.bats` | 6 | No ports, multi-port, count logging, dedup skip, error continue, custom verb |
+| `mps_kill_port_forwards` | `port_forwarding.bats` | 5 | No file, exit commands, socket cleanup, sudo entries, null socket |
+| `mps_reset_port_forwards` | `port_forwarding.bats` | 5 | Full cleanup, no re-establish, `--auto-forward`, missing file, kill+create cycle |
+
+**Stub scripts**: `tests/stubs/ssh` (SSH control socket mock), `tests/stubs/sudo` (privilege strip).
+**Helper**: `setup_ssh_stub()` in `tests/test_helper.bash`.
+
+Env vars controlling SSH stub: `MOCK_SSH_CALL_LOG`, `MOCK_SSH_TUNNEL_EXIT`,
+`MOCK_SSH_TUNNEL_NO_SOCKET`, `MOCK_SSH_STALE_SOCKETS`.
+
+### Covered: `install.sh` (Installer)
+
+Integration tests with two modes: sourced function tests (guard prevents execution, call
+functions directly with overridden globals) and subprocess tests (run `bash install.sh` with
+`HOME`/`PATH` isolation). Stubs for `snap`, `brew`, `apt-get`, `uname`, `mps`, `multipass`, `sudo`.
+
+| Scope | Test File | Tests | Notes |
+|-------|-----------|-------|-------|
+| `detect_os` | `install.bats` | 3 | Linux, Darwin, unknown via uname stub |
+| `confirm` | `install.bats` | 4 | y, Yes, n, empty |
+| `install_dependency` | `install.bats` | 8 | Found, missing+snap, missing+brew, missing+apt, decline, unknown platform |
+| Directory structure | `install.bats` | 2 | `~/.mps/*`, `~/.ssh/config.d`, `INSTALL_DIR` |
+| Symlink | `install.bats` | 4 | Create, replace, non-symlink error, `MPS_INSTALL_DIR` override |
+| Bash completion | `install.bats` | 4 | Linux, macOS+brew, fallback, zsh hint |
+| PATH check | `install.bats` | 4 | Already on PATH, accept→bashrc, zsh→.zshrc, decline |
+| Missing deps + verify | `install.bats` | 2 | Warns but continues, "Installation complete" |
+
+### Covered: `uninstall.sh` (Uninstaller)
+
+All subprocess tests running `bash uninstall.sh` with fully installed state under fake HOME.
+Multipass stub for VM discovery, `du` stub, `brew` stub, stdin piping for interactive prompts.
+
+| Scope | Test File | Tests | Notes |
+|-------|-----------|-------|-------|
+| Symlink removal | `uninstall.bats` | 4 | Correct target, wrong target, non-symlink, missing |
+| Bash completion | `uninstall.bats` | 3 | Linux, brew, no files |
+| VM cleanup | `uninstall.bats` | 4 | Confirm delete, decline, no VMs, multipass unavailable |
+| SSH config | `uninstall.bats` | 2 | Removes mps-*, preserves others |
+| Instance metadata | `uninstall.bats` | 2 | Removes .json/.env/.ports.json, preserves non-matching |
+| Cache | `uninstall.bats` | 2 | Confirm remove, decline preserve |
+| User config | `uninstall.bats` | 3 | Confirm remove, decline preserve, missing |
+| Directory cleanup | `uninstall.bats` | 2 | Empty ~/.mps removed, non-empty preserved |
+| Summary + misc | `uninstall.bats` | 4 | Lists removed, nothing removed, MPS_INSTALL_DIR override, source dir |
+
 ### Not Yet Covered: Full Workflows
 
 - **Full workflows** — E2E only (real VMs, real mounts, real port forwards)
@@ -356,7 +412,7 @@ ssh-config key injection flow.
 | `common_parsing.bats` | 21 | Unit | `tests/unit/` |
 | `common_naming.bats` | 38 | Unit | `tests/unit/` |
 | `common_logging.bats` | 8 | Unit | `tests/unit/` |
-| `common_config.bats` | 12 | Unit | `tests/unit/` |
+| `common_config.bats` | 13 | Unit | `tests/unit/` |
 | `common_resources.bats` | 17 | Unit | `tests/unit/` |
 | `common_paths.bats` | 15 | Unit | `tests/unit/` |
 | `common_meta.bats` | 56 | Unit | `tests/unit/` |
@@ -366,14 +422,18 @@ ssh-config key injection flow.
 | `stub_smoke.bats` | 20 | Integration | `tests/integration/` |
 | `mp_lifecycle.bats` | 40 | Integration | `tests/integration/` |
 | `network.bats` | 53 | Integration | `tests/integration/` |
-| `cmd_query.bats` | 15 | Integration | `tests/integration/` |
-| `cmd_lifecycle.bats` | 32 | Integration | `tests/integration/` |
+| `cmd_query.bats` | 20 | Integration | `tests/integration/` |
+| `cmd_lifecycle.bats` | 33 | Integration | `tests/integration/` |
 | `cmd_exec.bats` | 21 | Integration | `tests/integration/` |
 | `cmd_port.bats` | 15 | Integration | `tests/integration/` |
 | `cmd_ssh_config.bats` | 13 | Integration | `tests/integration/` |
-| `cmd_image.bats` | 25 | Integration | `tests/integration/` |
+| `cmd_image.bats` | 27 | Integration | `tests/integration/` |
+| `resolve_image.bats` | 15 | Integration | `tests/integration/` |
+| `port_forwarding.bats` | 33 | Integration | `tests/integration/` |
 | `completion_instances.bats` | 8 | Integration | `tests/integration/` |
 | `entry_point.bats` | 11 | Integration | `tests/integration/` |
-| **Total** | **599** | | |
+| `install.bats` | 31 | Integration | `tests/integration/` |
+| `uninstall.bats` | 26 | Integration | `tests/integration/` |
+| **Total** | **713** | | |
 
 *Last updated: 2026-02-24*

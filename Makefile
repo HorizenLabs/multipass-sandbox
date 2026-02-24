@@ -3,6 +3,7 @@
 # for reproducibility between local dev and CI/CD.
 
 SHELL := /bin/bash
+.SHELLFLAGS := -o pipefail -c
 .DEFAULT_GOAL := help
 
 # ---------- Docker builder config ----------
@@ -162,31 +163,36 @@ uninstall: ## Uninstall mps (remove symlink, cleanup artifacts, runs on host)
 	@./uninstall.sh
 
 # ---------- Test ----------
-test: test-unit test-integration ## Run all tests (unit + integration) under both Bash versions
-test-unit: test-unit-bash4 test-unit-bash32 ## Run unit tests only
-test-integration: test-integration-bash4 test-integration-bash32 ## Run integration tests only
+test: $(LINTER_STAMP) ## Run all tests (unit + integration) under both Bash versions
+	+$(MAKE) test-unit-bash4 test-unit-bash32 test-integration-bash4 test-integration-bash32 -j4 --output-sync=target
+
+test-unit: $(LINTER_STAMP) ## Run unit tests only
+	+$(MAKE) test-unit-bash4 test-unit-bash32 -j2 --output-sync=target
+
+test-integration: $(LINTER_STAMP) ## Run integration tests only
+	+$(MAKE) test-integration-bash4 test-integration-bash32 -j2 --output-sync=target
 
 test-unit-bash4: $(LINTER_STAMP)
 	@echo "==> Unit tests (Bash 4+)"
-	$(DOCKER_RUN) bats tests/unit/
+	$(DOCKER_RUN) bats tests/unit/ | tests/tap-summary.sh
 
 test-unit-bash32: $(LINTER_STAMP)
 	@echo "==> Unit tests (Bash 3.2)"
 	$(DOCKER_RUN) bash -c '\
 		mkdir -p /tmp/bash32-shim && \
 		ln -sf /usr/local/bin/bash-3.2 /tmp/bash32-shim/bash && \
-		PATH="/tmp/bash32-shim:$$PATH" bats tests/unit/'
+		PATH="/tmp/bash32-shim:$$PATH" bats tests/unit/' | tests/tap-summary.sh
 
 test-integration-bash4: $(LINTER_STAMP)
 	@echo "==> Integration tests (Bash 4+)"
-	$(DOCKER_RUN) bats tests/integration/
+	$(DOCKER_RUN) bats tests/integration/ | tests/tap-summary.sh
 
 test-integration-bash32: $(LINTER_STAMP)
 	@echo "==> Integration tests (Bash 3.2)"
 	$(DOCKER_RUN) bash -c '\
 		mkdir -p /tmp/bash32-shim && \
 		ln -sf /usr/local/bin/bash-3.2 /tmp/bash32-shim/bash && \
-		PATH="/tmp/bash32-shim:$$PATH" bats tests/integration/'
+		PATH="/tmp/bash32-shim:$$PATH" bats tests/integration/' | tests/tap-summary.sh
 
 capture-fixtures: ## Capture fresh multipass JSON fixtures (requires multipass on host)
 	bash tests/capture-fixtures.sh

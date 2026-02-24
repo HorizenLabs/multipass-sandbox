@@ -49,6 +49,12 @@ setup_multipass_stub() {
     : > "$MOCK_MP_CALL_LOG"
 }
 
+setup_ssh_stub() {
+    export PATH="${MPS_ROOT}/tests/stubs:${PATH}"
+    export MOCK_SSH_CALL_LOG="${TEST_TEMP_DIR}/ssh_call.log"
+    : > "$MOCK_SSH_CALL_LOG"
+}
+
 # ---------- Integration stub functions ----------
 
 setup_integration_stubs() {

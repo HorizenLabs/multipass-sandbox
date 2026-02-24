@@ -107,15 +107,13 @@ teardown() { teardown_home_override; }
 }
 
 @test "mps_require_cmd: shows jq-specific message" {
-    # jq is installed in the test container, so we test with a stub
-    # that hides jq temporarily
-    if ! command -v jq &>/dev/null; then
-        run mps_require_cmd "jq"
-        [[ "$status" -ne 0 ]]
-        [[ "$output" == *"brew install jq"* ]]
-    else
-        skip "jq is installed (expected in linter container)"
-    fi
+    # Hide jq by pointing PATH to an empty temp directory
+    local empty_dir
+    empty_dir="$(mktemp -d)"
+    PATH="$empty_dir" run mps_require_cmd "jq"
+    rmdir "$empty_dir"
+    [[ "$status" -ne 0 ]]
+    [[ "$output" == *"brew install jq"* ]]
 }
 
 @test "mps_require_cmd: generic message for unknown commands" {

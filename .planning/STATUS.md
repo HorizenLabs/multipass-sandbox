@@ -47,7 +47,10 @@ A blockchain software development company needs an internal tool to spin up isol
 - [x] `commands/*.sh` orchestration logic (batch 1) — `list`, `status`, `create`, `up`, `down`, `destroy`, `shell`, `exec`, `transfer`, `mount` — 60 tests across 3 files (`cmd_query.bats`, `cmd_lifecycle.bats`, `cmd_exec.bats`)
 - [x] `commands/*.sh` orchestration logic (batch 2) — `port`, `ssh-config`, `image` — 53 tests across 3 files (`cmd_port.bats`, `cmd_ssh_config.bats`, `cmd_image.bats`). openssh-client in linter image, real ssh-keygen, multipass stub mktemp pattern.
 - [x] `completions/` — `__complete instances` with multipass stub (dynamic instance name completion) — 8 tests in `completion_instances.bats`
+- [x] `completions/mps.bash` — `_mps_completions()` completion driver (COMP_WORDS parsing, command/subcmd detection, global flag skipping, flag-value resolution, magic token expansion, `--` separator, `__files__` early return, `_init_completion` path, `complete -p` registration) — 36 tests in `completion_driver.bats`
 - [x] `bin/mps` entry point — subprocess tests for `main()` dispatch — 11 tests in `entry_point.bats` (`--help`, `-h`, `--version`, `-v`, no args, `--debug`, path traversal, uppercase, dot-prefix, unknown command, command-specific `--help`)
+- [x] `install.sh` — sourced function tests + subprocess tests with HOME/PATH isolation — 31 tests in `install.bats` (detect_os, confirm, install_dependency, directory structure, symlink, completion, PATH check, missing deps, verification)
+- [x] `uninstall.sh` — subprocess tests with fully installed state under fake HOME — 26 tests in `uninstall.bats` (symlink removal, completion cleanup, VM cleanup, SSH config, instance metadata, cache, user config, directory cleanup, summary)
 
 ### Code coverage
 - [ ] Add kcov to linter Docker image (single binary, no Ruby dep)
@@ -71,17 +74,4 @@ A blockchain software development company needs an internal tool to spin up isol
 
 ## Known Issues / TODO
 
-### Batch 1: Test short-circuits — weak/vacuous assertions *(all 7 fixed)*
-
-~~**1–7**: All fixed — see commits `4455e12`, `e684c44`, `706d52f`.~~
-
-### Batch 2: Test short-circuits — stubbed-out code paths with no coverage
-
-**8. `mps_auto_forward_ports` — never tested end-to-end**
-Every integration test stubs this to `{ :; }`. The real function calls `mps_collect_port_specs` (reads `MPS_PORTS` + metadata), loops through specs calling `mps_forward_port` (SSH tunnels), and creates control sockets. No integration test lets this flow through, and no dedicated test exercises the full collect→forward pipeline.
-
-**9. `mps_reset_port_forwards` — stubbed to marker, real logic untested**
-`cmd_lifecycle.bats` stubs it to write a marker file, verifying the instance name was passed. But the real function's logic (kill existing SSH tunnels via control sockets, re-establish from port spec collection) is never exercised.
-
-**10. `mps_resolve_image` — stubbed in all integration tests, auto-pull untested**
-The real function handles auto-pulling images from CDN when not in cache, falling back to stock Ubuntu images for non-mps names, and `mps_die` inside `$()` if pull fails. The network.bats tests cover `_mps_fetch_manifest` and `_mps_download_file` individually, but the full `mps_resolve_image`→pull→cache flow has no integration test.
+(none currently)

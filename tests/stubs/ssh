@@ -1,0 +1,96 @@
+#!/usr/bin/env bash
+# tests/stubs/ssh — Mock SSH binary for BATS integration tests
+#
+# Simulates SSH control socket behavior via marker files.
+# Place on PATH ahead of real ssh during tests:
+#   export PATH="${MPS_ROOT}/tests/stubs:${PATH}"
+#
+# Environment variables:
+#   MOCK_SSH_CALL_LOG          — file to append all invocations (optional)
+#   MOCK_SSH_TUNNEL_EXIT       — exit code for -M tunnel creation (default 0)
+#   MOCK_SSH_TUNNEL_NO_SOCKET  — if "true", -M succeeds but doesn't create socket
+#   MOCK_SSH_STALE_SOCKETS     — space-separated socket paths where -O check returns 1
+
+set -euo pipefail
+
+_log_call() {
+    if [[ -n "${MOCK_SSH_CALL_LOG:-}" ]]; then
+        echo "ssh $*" >> "$MOCK_SSH_CALL_LOG"
+    fi
+}
+
+_log_call "$@"
+
+# ---------- Parse arguments ----------
+
+mode=""
+socket_path=""
+operation=""
+skip_next=""
+
+for arg in "$@"; do
+    if [[ -n "$skip_next" ]]; then
+        case "$skip_next" in
+            socket) socket_path="$arg" ;;
+            operation) operation="$arg" ;;
+        esac
+        skip_next=""
+        continue
+    fi
+    case "$arg" in
+        -S) skip_next="socket" ;;
+        -O) skip_next="operation" ;;
+        -M) mode="master" ;;
+        -n|-N|-f) ;;  # Flags we accept but don't act on
+        -o|-i|-L) skip_next="value" ;;  # Options with values to skip
+        *) ;;
+    esac
+done
+
+# ---------- Dispatch ----------
+
+case "$operation" in
+    check)
+        # Check if a control socket is alive
+        if [[ -z "$socket_path" ]]; then
+            exit 1
+        fi
+        # Check stale-socket list first
+        if [[ -n "${MOCK_SSH_STALE_SOCKETS:-}" ]]; then
+            local_path="$socket_path"
+            for stale in $MOCK_SSH_STALE_SOCKETS; do
+                if [[ "$stale" == "$local_path" ]]; then
+                    exit 1
+                fi
+            done
+        fi
+        # Socket exists = alive
+        if [[ -e "$socket_path" ]]; then
+            exit 0
+        fi
+        exit 1
+        ;;
+    exit)
+        # Gracefully shut down a control socket
+        if [[ -n "$socket_path" ]]; then
+            rm -f "$socket_path"
+        fi
+        exit 0
+        ;;
+esac
+
+if [[ "$mode" == "master" ]]; then
+    # Create a new control master
+    local_exit="${MOCK_SSH_TUNNEL_EXIT:-0}"
+    if [[ "$local_exit" -ne 0 ]]; then
+        exit "$local_exit"
+    fi
+    if [[ "${MOCK_SSH_TUNNEL_NO_SOCKET:-}" != "true" && -n "$socket_path" ]]; then
+        mkdir -p "$(dirname "$socket_path")"
+        touch "$socket_path"
+    fi
+    exit 0
+fi
+
+# Default: succeed silently
+exit 0
