@@ -75,10 +75,6 @@ A blockchain software development company needs an internal tool to spin up isol
 
 ~~**1–7**: All fixed — see commits `4455e12`, `e684c44`, `706d52f`.~~
 
-### Code bug: `cmd_transfer` subshell escape lets stopped-instance transfer proceed
-
-`commands/transfer.sh` calls `mps_prepare_running_instance` inside `$( )` (command substitution). When the instance is stopped, `mps_die` exits the subshell only — the parent `cmd_transfer` continues with `short_name=""` and returns 0. The error message appears on stderr (from `mps_log_error` before the subshell exits), but the transfer proceeds past the guard with an empty instance name. This likely affects `cmd_exec` and `cmd_shell` if they use the same `$()` pattern. Fix: capture the subshell exit code and propagate it, or move the call outside the command substitution.
-
 ### Batch 2: Test short-circuits — stubbed-out code paths with no coverage
 
 **8. `mps_auto_forward_ports` — never tested end-to-end**

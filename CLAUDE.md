@@ -152,6 +152,7 @@ The Makefile detects host uid:gid and the entrypoint uses setpriv to step down f
 - **Snap confinement**: Multipass is installed as a snap, which restricts file access to the user's home directory. Use paths under `$HOME` (not `/tmp`) for `mps transfer` tests and temp files that interact with the VM.
 - **End-to-end verification**: After implementing changes to command files (`commands/*.sh`) or core libraries (`lib/*.sh`), run the verification steps from the plan against a live VM on the host — not just `make lint`. If the plan includes a test script, execute it. Create a temporary instance (e.g., `--profile micro --name <test-name>`) and clean it up with `mps destroy` afterward.
 - **Automated verification in plans**: Plans must always include an automated verification script — never manual testing steps. The script should create temporary instances, assert expected behavior, and clean up afterward.
+- **Capture long command output with tee.** For `make test`, `make lint`, etc., always use: `make test 2>&1 | tee /tmp/mps-test.log`. To inspect results (grep for failures, check summaries), use `Read /tmp/mps-test.log` — don't re-run the command just to parse output differently.
 
 ## Planning & Status
 

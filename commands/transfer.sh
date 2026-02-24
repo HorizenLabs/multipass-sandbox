@@ -57,8 +57,10 @@ cmd_transfer() {
     instance_name="$(mps_resolve_instance_name "$arg_name")"
 
     # ---- Prepare running instance (state check, staleness, port forwards) ----
+    mps_prepare_running_instance "$instance_name" >/dev/null
+
     local short_name
-    short_name="$(mps_prepare_running_instance "$instance_name")"
+    short_name="$(mps_short_name "$instance_name")"
 
     # ---- Separate sources and destination ----
     local -a sources=("${file_args[@]:0:${#file_args[@]}-1}")

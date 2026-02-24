@@ -146,14 +146,10 @@ METAJSON
     [[ "$log" == *"mps-fixture-primary:/tmp/remote.txt"* ]]
 }
 
-@test "cmd_transfer: emits not-running error for stopped instance" {
+@test "cmd_transfer: dies for stopped instance" {
     export MOCK_MP_FIXTURES_DIR="${MPS_ROOT}/tests/fixtures/multipass/all-stopped"
     run cmd_transfer --name fixture-primary -- /tmp/a :/tmp/b
-    # mps_prepare_running_instance is called inside a command substitution,
-    # so mps_die exits the subshell but not the parent function. The error
-    # message still appears on stderr but cmd_transfer continues and returns
-    # 0 (known subshell-escape bug — status should be non-zero).
-    [[ "$status" -eq 0 ]]
+    [[ "$status" -ne 0 ]]
     [[ "$output" == *"not running"* ]]
 }
 
