@@ -6,23 +6,10 @@
 load ../test_helper
 
 setup() {
-    setup_temp_dir
-    # Override HOME so dispatcher filesystem tests use controlled dirs
-    export REAL_HOME="$HOME"
-    export HOME="${TEST_TEMP_DIR}/fakehome"
-    mkdir -p "$HOME"
-    # Source all command files to get _complete_* functions
-    local f
-    for f in "${MPS_ROOT}"/commands/*.sh; do
-        # shellcheck disable=SC1090
-        source "$f"
-    done
+    setup_home_override
+    source_commands
 }
-
-teardown() {
-    export HOME="$REAL_HOME"
-    teardown_temp_dir
-}
+teardown() { teardown_home_override; }
 
 # ================================================================
 # Smoke: _complete_* flags (all 13 commands)

@@ -13,56 +13,15 @@ load ../test_helper
 # ================================================================
 
 setup() {
-    setup_temp_dir
-
-    export REAL_HOME="$HOME"
-    export HOME="${TEST_TEMP_DIR}/fakehome"
+    setup_home_override
     mkdir -p "$HOME/.mps/instances" "$HOME/.mps/cache/images"
-
-    # Put stub ahead of any real multipass on PATH
-    export PATH="${MPS_ROOT}/tests/stubs:${PATH}"
-
-    # Default fixture scenario: running-mounted
-    export MOCK_MP_FIXTURES_DIR="${MPS_ROOT}/tests/fixtures/multipass/running-mounted"
-
-    # Call log for argument assertions
-    export MOCK_MP_CALL_LOG="${TEST_TEMP_DIR}/call.log"
-    : > "$MOCK_MP_CALL_LOG"
-
-    # ---- Stub functions (network, SSH, interactive) ----
-    mps_resolve_image()            { echo "file://${HOME}/.mps/cache/images/base/1.0.0/amd64.img"; }
-    mps_auto_forward_ports()       { :; }
-    mps_forward_port()             { :; }
-    mps_reset_port_forwards()      { :; }
-    mps_kill_port_forwards()       { :; }
-    mps_cleanup_port_sockets()     { :; }
-    mps_confirm()                  { return 0; }
-    mps_check_image_requirements() { :; }
-    _mps_fetch_manifest()          { return 1; }
-    _mps_warn_image_staleness()    { :; }
-    _mps_warn_instance_staleness() { :; }
-    _mps_check_instance_staleness(){ echo "up-to-date"; }
-
-    export -f mps_resolve_image mps_auto_forward_ports mps_forward_port
-    export -f mps_reset_port_forwards mps_kill_port_forwards
-    export -f mps_cleanup_port_sockets mps_confirm mps_check_image_requirements
-    export -f _mps_fetch_manifest _mps_warn_image_staleness
-    export -f _mps_warn_instance_staleness _mps_check_instance_staleness
-
-    # Source multipass.sh then command files
+    setup_multipass_stub
     # shellcheck source=../../lib/multipass.sh
     source "${MPS_ROOT}/lib/multipass.sh"
-    local f
-    for f in "${MPS_ROOT}"/commands/*.sh; do
-        # shellcheck disable=SC1090
-        source "$f"
-    done
+    setup_integration_stubs
+    source_commands
 }
-
-teardown() {
-    export HOME="$REAL_HOME"
-    teardown_temp_dir
-}
+teardown() { teardown_home_override; }
 
 # ================================================================
 # cmd_list
@@ -158,10 +117,57 @@ teardown() {
     [[ "$output" == *"2f9acc20a381"* ]]
 }
 
-@test "cmd_status: shows image status from _mps_check_instance_staleness" {
+@test "cmd_status: shows 'up-to-date' for up-to-date instance" {
+    _mps_check_instance_staleness() { echo "up-to-date"; }
+    export -f _mps_check_instance_staleness
     run cmd_status --name fixture-primary
     [[ "$status" -eq 0 ]]
+    [[ "$output" == *"Image Status:"* ]]
     [[ "$output" == *"up-to-date"* ]]
+}
+
+@test "cmd_status: shows 'stale' for stale instance" {
+    _mps_check_instance_staleness() { echo "stale"; }
+    export -f _mps_check_instance_staleness
+    run cmd_status --name fixture-primary
+    [[ "$status" -eq 0 ]]
+    [[ "$output" == *"Image Status:"* ]]
+    [[ "$output" == *"stale (rebuild available)"* ]]
+}
+
+@test "cmd_status: shows 'stale:manifest' for manifest-only staleness" {
+    _mps_check_instance_staleness() { echo "stale:manifest"; }
+    export -f _mps_check_instance_staleness
+    run cmd_status --name fixture-primary
+    [[ "$status" -eq 0 ]]
+    [[ "$output" == *"Image Status:"* ]]
+    [[ "$output" == *"stale (rebuild available, not yet pulled)"* ]]
+}
+
+@test "cmd_status: shows update available with version" {
+    _mps_check_instance_staleness() { echo "update:2.0.0"; }
+    export -f _mps_check_instance_staleness
+    run cmd_status --name fixture-primary
+    [[ "$status" -eq 0 ]]
+    [[ "$output" == *"Image Status:"* ]]
+    [[ "$output" == *"update available (2.0.0)"* ]]
+}
+
+@test "cmd_status: shows manifest update available with version" {
+    _mps_check_instance_staleness() { echo "update:manifest:3.1.0"; }
+    export -f _mps_check_instance_staleness
+    run cmd_status --name fixture-primary
+    [[ "$status" -eq 0 ]]
+    [[ "$output" == *"Image Status:"* ]]
+    [[ "$output" == *"update available (3.1.0, not yet pulled)"* ]]
+}
+
+@test "cmd_status: omits Image Status line for unknown staleness" {
+    _mps_check_instance_staleness() { echo "unknown"; }
+    export -f _mps_check_instance_staleness
+    run cmd_status --name fixture-primary
+    [[ "$status" -eq 0 ]]
+    [[ "$output" != *"Image Status:"* ]]
 }
 
 @test "cmd_status: shows mount list with origin annotations" {

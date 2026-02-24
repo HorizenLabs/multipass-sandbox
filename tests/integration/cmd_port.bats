@@ -11,65 +11,24 @@ load ../test_helper
 # ================================================================
 
 setup() {
-    setup_temp_dir
-
-    export REAL_HOME="$HOME"
-    export HOME="${TEST_TEMP_DIR}/fakehome"
+    setup_home_override
     mkdir -p "$HOME/.mps/instances" "$HOME/.mps/cache/images"
-
-    # Put stub ahead of any real multipass on PATH
-    export PATH="${MPS_ROOT}/tests/stubs:${PATH}"
-
-    # Default fixture scenario: running-mounted
-    export MOCK_MP_FIXTURES_DIR="${MPS_ROOT}/tests/fixtures/multipass/running-mounted"
-
-    # Call log for argument assertions
-    export MOCK_MP_CALL_LOG="${TEST_TEMP_DIR}/call.log"
-    : > "$MOCK_MP_CALL_LOG"
-
+    setup_multipass_stub
+    # shellcheck source=../../lib/multipass.sh
+    source "${MPS_ROOT}/lib/multipass.sh"
     export TEST_TEMP_DIR
 
-    # ---- Stub functions (network, SSH, interactive) ----
-    mps_resolve_image()            { echo "file://${HOME}/.mps/cache/images/base/1.0.0/amd64.img"; }
-    mps_confirm()                  { return 0; }
-    mps_check_image_requirements() { :; }
-    _mps_fetch_manifest()          { return 1; }
-    _mps_warn_image_staleness()    { :; }
-    _mps_warn_instance_staleness() { :; }
-    _mps_check_instance_staleness(){ echo "up-to-date"; }
-
-    # Stub mps_forward_port — record call, return configurable exit code
+    setup_integration_stubs
+    # Override: configurable port forward with logging
     _STUB_FORWARD_PORT_RC=0
     mps_forward_port() {
         echo "mps_forward_port $*" >> "${TEST_TEMP_DIR}/forward_port.log"
         return "${_STUB_FORWARD_PORT_RC}"
     }
-    mps_auto_forward_ports()       { :; }
-    mps_reset_port_forwards()      { :; }
-    mps_kill_port_forwards()       { :; }
-    mps_cleanup_port_sockets()     { :; }
-
-    export -f mps_resolve_image mps_confirm mps_check_image_requirements
-    export -f _mps_fetch_manifest _mps_warn_image_staleness
-    export -f _mps_warn_instance_staleness _mps_check_instance_staleness
-    export -f mps_forward_port mps_auto_forward_ports
-    export -f mps_reset_port_forwards mps_kill_port_forwards
-    export -f mps_cleanup_port_sockets
-
-    # Source multipass.sh then command files
-    # shellcheck source=../../lib/multipass.sh
-    source "${MPS_ROOT}/lib/multipass.sh"
-    local f
-    for f in "${MPS_ROOT}"/commands/*.sh; do
-        # shellcheck disable=SC1090
-        source "$f"
-    done
+    export -f mps_forward_port
+    source_commands
 }
-
-teardown() {
-    export HOME="$REAL_HOME"
-    teardown_temp_dir
-}
+teardown() { teardown_home_override; }
 
 # ================================================================
 # _port_forward

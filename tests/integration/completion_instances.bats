@@ -12,29 +12,11 @@ load ../test_helper
 # ================================================================
 
 setup() {
-    setup_temp_dir
-
-    export REAL_HOME="$HOME"
-    export HOME="${TEST_TEMP_DIR}/fakehome"
-    mkdir -p "$HOME"
-
-    # Put multipass stub on PATH
-    export PATH="${MPS_ROOT}/tests/stubs:${PATH}"
-
-    # Default fixture: running-mounted (has mps-fixture-primary, mps-fixture-secondary, fixture-foreign)
-    export MOCK_MP_FIXTURES_DIR="${MPS_ROOT}/tests/fixtures/multipass/running-mounted"
-
-    # Call log for invocation assertions
-    export MOCK_MP_CALL_LOG="${TEST_TEMP_DIR}/call.log"
-    : > "$MOCK_MP_CALL_LOG"
-
+    setup_home_override
+    setup_multipass_stub
     MPS_BIN="${MPS_ROOT}/bin/mps"
 }
-
-teardown() {
-    export HOME="$REAL_HOME"
-    teardown_temp_dir
-}
+teardown() { teardown_home_override; }
 
 # ================================================================
 # __complete instances

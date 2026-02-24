@@ -63,22 +63,11 @@ export -f _mps_warn_instance_staleness _mps_check_instance_staleness
 export -f _mps_resolve_project_mounts
 
 setup() {
-    setup_temp_dir
-    export REAL_HOME="$HOME"
-    export HOME="${TEST_TEMP_DIR}/fakehome"
+    setup_home_override
     mkdir -p "$HOME/.mps/instances" "$HOME/.mps/cache/images"
-    # Source all command files
-    local f
-    for f in "${MPS_ROOT}"/commands/*.sh; do
-        # shellcheck disable=SC1090
-        source "$f"
-    done
+    source_commands
 }
-
-teardown() {
-    export HOME="$REAL_HOME"
-    teardown_temp_dir
-}
+teardown() { teardown_home_override; }
 
 # ================================================================
 # --help: every command prints help and returns 0
@@ -389,29 +378,49 @@ teardown() {
 # ================================================================
 
 @test "cmd_down -n: accepts short flag alias" {
+    # Override state stub so command completes after parsing
+    mp_instance_state() { echo "Running"; }
+    export -f mp_instance_state
     run cmd_down -n myname
-    # Should not die on parsing (may fail later on instance resolution, that's ok)
-    [[ "$output" != *"Unknown flag"* ]]
+    [[ "$status" -eq 0 ]]
+    # Verify the parsed name appears in output (success message)
+    [[ "$output" == *"myname"* ]]
 }
 
 @test "cmd_down -f: accepts short --force alias" {
-    run cmd_down -f
-    [[ "$output" != *"Unknown flag"* ]]
+    mp_instance_state() { echo "Running"; }
+    export -f mp_instance_state
+    run cmd_down -f -n testinst
+    [[ "$status" -eq 0 ]]
+    [[ "$output" == *"testinst"* ]]
 }
 
 @test "cmd_create -n: accepts short --name alias" {
-    run cmd_create -n myname
-    [[ "$output" != *"Unknown flag"* ]]
+    run cmd_create -n myname --no-mount
+    [[ "$status" -eq 0 ]]
+    [[ "$output" == *"myname"* ]]
 }
 
 @test "cmd_create --mem: accepts --mem alias for --memory" {
-    run cmd_create --mem 4G
-    [[ "$output" != *"Unknown flag"* ]]
+    # Override mp_launch to log its args so we can verify parsing
+    mp_launch() { echo "MP_LAUNCH: $*"; }
+    export -f mp_launch
+    run cmd_create --mem 4G --name testinst --no-mount
+    [[ "$status" -eq 0 ]]
+    # Verify 4G was passed as the memory argument to mp_launch
+    [[ "$output" == *"MP_LAUNCH:"* ]]
+    [[ "$output" == *"4G"* ]]
 }
 
 @test "cmd_shell -w: accepts short --workdir alias" {
-    run cmd_shell -w /tmp
-    [[ "$output" != *"Unknown flag"* ]]
+    # Override mp_shell to log its args so we can verify workdir parsing
+    mp_shell() { echo "MP_SHELL: $*"; }
+    export -f mp_shell
+    run cmd_shell -w /tmp --name testinst
+    [[ "$status" -eq 0 ]]
+    # Verify /tmp was passed as the workdir argument to mp_shell
+    [[ "$output" == *"MP_SHELL:"* ]]
+    [[ "$output" == *"/tmp"* ]]
 }
 
 # ================================================================
@@ -431,9 +440,15 @@ teardown() {
 }
 
 @test "cmd_exec: -- separates command correctly" {
+    # Override mp_exec to log its args so we can verify parsing
+    mp_exec() { echo "MP_EXEC: $*"; }
+    export -f mp_exec
     run cmd_exec --name testinst -- echo hello
-    # Should reach mp_exec stub without dying
     [[ "$status" -eq 0 ]]
+    # Verify the command after -- was passed through to mp_exec
+    [[ "$output" == *"MP_EXEC:"* ]]
+    [[ "$output" == *"echo"* ]]
+    [[ "$output" == *"hello"* ]]
 }
 
 @test "cmd_exec --help before --: returns 0" {
@@ -478,9 +493,15 @@ teardown() {
 }
 
 @test "cmd_transfer: -- separates flags from file args" {
+    # Override mp_transfer to log its args so we can verify parsing
+    mp_transfer() { echo "MP_TRANSFER: $*"; }
+    export -f mp_transfer
     run cmd_transfer --name testinst -- /tmp/a :/tmp/b
-    # Should reach mp_transfer stub without dying
     [[ "$status" -eq 0 ]]
+    # Verify the file args after -- were parsed and passed to mp_transfer
+    [[ "$output" == *"MP_TRANSFER:"* ]]
+    [[ "$output" == *"/tmp/a"* ]]
+    [[ "$output" == *"/tmp/b"* ]]
 }
 
 # ================================================================
@@ -552,6 +573,8 @@ teardown() {
     echo "data" > "$f"
     run cmd_image import "$f" --tag 1.2.3 --arch amd64
     [[ "$status" -eq 0 ]]
+    # Verify the tag value was used in the cache path
+    [[ "$output" == *"fake:1.2.3"* ]]
 }
 
 @test "cmd_image import --tag: 'local' accepted" {
@@ -559,6 +582,8 @@ teardown() {
     echo "data" > "$f"
     run cmd_image import "$f" --tag local --arch amd64
     [[ "$status" -eq 0 ]]
+    # Verify the tag value was used in the cache path
+    [[ "$output" == *"fake:local"* ]]
 }
 
 @test "cmd_image pull: no image spec dies" {
@@ -747,11 +772,13 @@ teardown() {
 # create: --no-mount flag
 # ================================================================
 
-@test "cmd_create --no-mount: sets MPS_NO_AUTOMOUNT" {
+@test "cmd_create --no-mount: flag accepted when --name provided" {
     # --no-mount flag is parsed and exports MPS_NO_AUTOMOUNT=true.
-    # (Full error path when combined with missing --name happens inside
-    # command substitution where mps_die doesn't propagate — tested in E2E.)
+    # The error path (--no-mount without --name) requires subprocess testing
+    # because mps_die inside command substitution doesn't propagate — covered
+    # by the subprocess test in cmd_lifecycle.bats.
     run cmd_create --no-mount --name testinst
+    [[ "$status" -eq 0 ]]
     [[ "$output" != *"Unknown flag"* ]]
 }
 

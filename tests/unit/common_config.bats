@@ -140,6 +140,17 @@ EOF
     [[ "${MPS_DEFAULT_IMAGE}" == "protocol-dev" ]]
 }
 
+@test "mps_load_config: auto-scales CPU and memory when not pre-set" {
+    unset MPS_CPUS MPS_MEMORY MPS_DEFAULT_IMAGE 2>/dev/null || true
+    mps_load_config
+    # CPU must be a positive integer
+    [[ -n "${MPS_CPUS:-}" ]]
+    [[ "$MPS_CPUS" -ge 1 ]]
+    # Memory must match nG or nM format
+    [[ -n "${MPS_MEMORY:-}" ]]
+    [[ "$MPS_MEMORY" =~ ^[0-9]+[GM]$ ]]
+}
+
 @test "mps_load_config: rejects non-https MPS_IMAGE_BASE_URL" {
     export MPS_PROJECT_DIR="${TEST_TEMP_DIR}"
     # Set the invalid URL via project config so it survives defaults.env sourcing

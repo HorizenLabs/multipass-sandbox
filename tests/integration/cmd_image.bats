@@ -12,116 +12,51 @@ load ../test_helper
 # ================================================================
 
 setup() {
-    setup_temp_dir
-
-    export REAL_HOME="$HOME"
-    export HOME="${TEST_TEMP_DIR}/fakehome"
+    setup_home_override
     mkdir -p "$HOME/.mps/instances" "$HOME/.mps/cache/images"
-
-    # Put stub ahead of any real multipass on PATH
-    export PATH="${MPS_ROOT}/tests/stubs:${PATH}"
-
-    # Default fixture scenario (not heavily used by image tests)
-    export MOCK_MP_FIXTURES_DIR="${MPS_ROOT}/tests/fixtures/multipass/running-mounted"
-
-    # Call log
-    export MOCK_MP_CALL_LOG="${TEST_TEMP_DIR}/call.log"
-    : > "$MOCK_MP_CALL_LOG"
-
+    setup_multipass_stub
+    # shellcheck source=../../lib/multipass.sh
+    source "${MPS_ROOT}/lib/multipass.sh"
     export TEST_TEMP_DIR
 
-    # ---- Populate image cache for tests ----
+    # Populate image cache with real SHA
     local cache="${HOME}/.mps/cache/images"
     local arch
     arch="$(mps_detect_arch)"
     export TEST_ARCH="$arch"
-
-    # base/1.0.0/<arch>.img + .meta.json (pulled image with build_date)
     mkdir -p "${cache}/base/1.0.0"
     dd if=/dev/urandom of="${cache}/base/1.0.0/${arch}.img" bs=1024 count=1 2>/dev/null
     local real_sha
     real_sha="$(_mps_sha256 "${cache}/base/1.0.0/${arch}.img" | cut -d' ' -f1)"
     printf '{"sha256":"%s","build_date":"2025-01-01T00:00:00Z"}\n' "$real_sha" \
         > "${cache}/base/1.0.0/${arch}.meta.json"
-
-    # base/0.9.0/<arch>.img (older version for remove tests)
     mkdir -p "${cache}/base/0.9.0"
     dd if=/dev/urandom of="${cache}/base/0.9.0/${arch}.img" bs=1024 count=1 2>/dev/null
     printf '{"sha256":"oldsha256","build_date":"2024-06-01T00:00:00Z"}\n' \
         > "${cache}/base/0.9.0/${arch}.meta.json"
 
-    # ---- Stub functions ----
-    mps_resolve_image()            { echo "file://${HOME}/.mps/cache/images/base/1.0.0/${TEST_ARCH}.img"; }
-    mps_auto_forward_ports()       { :; }
-    mps_forward_port()             { :; }
-    mps_reset_port_forwards()      { :; }
-    mps_kill_port_forwards()       { :; }
-    mps_cleanup_port_sockets()     { :; }
-    mps_confirm()                  { return 0; }
-    mps_check_image_requirements() { :; }
-    _mps_warn_image_staleness()    { :; }
-    _mps_warn_instance_staleness() { :; }
-    _mps_check_instance_staleness(){ echo "up-to-date"; }
-
-    # _mps_fetch_manifest: return fixture manifest (not fail like batch 1)
-    # Configurable: set _STUB_MANIFEST_FAIL=true to make it fail
+    setup_integration_stubs
+    # Override: resolve image uses detected arch
+    mps_resolve_image() { echo "file://${HOME}/.mps/cache/images/base/1.0.0/${TEST_ARCH}.img"; }
+    # Override: configurable manifest stub
     _STUB_MANIFEST_FAIL=false
     _mps_fetch_manifest() {
-        if [[ "${_STUB_MANIFEST_FAIL}" == "true" ]]; then
-            return 1
-        fi
-        cat <<'MANIFEST'
-{
-    "images": {
-        "base": {
-            "latest": "1.0.0",
-            "description": "Base Ubuntu image",
-            "min_profile": "lite",
-            "versions": {
-                "1.0.0": {
-                    "amd64": {"sha256": "abc123", "build_date": "2025-01-01T00:00:00Z"},
-                    "arm64": {"sha256": "def456", "build_date": "2025-01-01T00:00:00Z"}
-                }
-            }
-        }
+        if [[ "${_STUB_MANIFEST_FAIL}" == "true" ]]; then return 1; fi
+        cat "${MPS_ROOT}/tests/fixtures/http/manifest-simple.json"
     }
-}
-MANIFEST
-    }
-
-    # _mps_check_image_staleness: return configurable status
+    # Override: configurable staleness
     _STUB_IMAGE_STALENESS="up-to-date"
-    _mps_check_image_staleness() {
-        echo "$_STUB_IMAGE_STALENESS"
-    }
-
-    # _mps_pull_image: stub — record call, don't download
+    _mps_check_image_staleness() { echo "$_STUB_IMAGE_STALENESS"; }
+    # Override: pull image tracking
     _mps_pull_image() {
         echo "pull_image $*" >> "${TEST_TEMP_DIR}/pull_image.log"
         return 0
     }
-
-    export -f mps_resolve_image mps_auto_forward_ports mps_forward_port
-    export -f mps_reset_port_forwards mps_kill_port_forwards
-    export -f mps_cleanup_port_sockets mps_confirm mps_check_image_requirements
-    export -f _mps_fetch_manifest _mps_warn_image_staleness
-    export -f _mps_warn_instance_staleness _mps_check_instance_staleness
+    export -f mps_resolve_image _mps_fetch_manifest
     export -f _mps_check_image_staleness _mps_pull_image
-
-    # Source multipass.sh then command files
-    # shellcheck source=../../lib/multipass.sh
-    source "${MPS_ROOT}/lib/multipass.sh"
-    local f
-    for f in "${MPS_ROOT}"/commands/*.sh; do
-        # shellcheck disable=SC1090
-        source "$f"
-    done
+    source_commands
 }
-
-teardown() {
-    export HOME="$REAL_HOME"
-    teardown_temp_dir
-}
+teardown() { teardown_home_override; }
 
 # ================================================================
 # _image_list
@@ -210,9 +145,13 @@ teardown() {
     [[ "$output" == *"arm64"* ]]
 }
 
-@test "image import: creates .meta.json with SHA256" {
+@test "image import: creates .meta.json with correct SHA256" {
     local src="${TEST_TEMP_DIR}/test-image.qcow2"
     dd if=/dev/urandom of="$src" bs=1024 count=1 2>/dev/null
+
+    # Compute expected hash BEFORE import
+    local expected_sha
+    expected_sha="$(_mps_sha256 "$src" | cut -d' ' -f1)"
 
     run cmd_image import "$src" --name testimg --tag 1.0.0 --arch amd64
     [[ "$status" -eq 0 ]]
@@ -220,8 +159,7 @@ teardown() {
     [[ -f "$meta" ]]
     local sha
     sha="$(jq -r '.sha256' "$meta")"
-    [[ -n "$sha" ]]
-    [[ "$sha" != "null" ]]
+    [[ "$sha" == "$expected_sha" ]]
 }
 
 @test "image import: verifies against .sha256 sidecar when present" {
@@ -284,20 +222,20 @@ teardown() {
 # _image_pull
 # ================================================================
 
-@test "image pull: calls _mps_pull_image with correct args" {
-    # Set staleness to "stale" so the pull actually executes
+@test "image pull: stale image triggers pull with correct args" {
     _mps_check_image_staleness() { echo "stale"; }
     export -f _mps_check_image_staleness
 
-    run cmd_image pull base
+    run cmd_image pull base:1.0.0
     [[ "$status" -eq 0 ]]
     [[ -f "${TEST_TEMP_DIR}/pull_image.log" ]]
     log="$(cat "${TEST_TEMP_DIR}/pull_image.log")"
-    [[ "$log" == *"pull_image base"* ]]
+    # Verify image name and version were passed to _mps_pull_image
+    [[ "$log" == *"base"* ]]
+    [[ "$log" == *"1.0.0"* ]]
 }
 
-@test "image pull: up-to-date skip (no pull)" {
-    _STUB_IMAGE_STALENESS="up-to-date"
+@test "image pull: up-to-date skips pull with message" {
     _mps_check_image_staleness() { echo "up-to-date"; }
     export -f _mps_check_image_staleness
 
@@ -308,12 +246,34 @@ teardown() {
     [[ ! -f "${TEST_TEMP_DIR}/pull_image.log" ]]
 }
 
-@test "image pull: --force bypasses staleness check and always pulls" {
-    _STUB_IMAGE_STALENESS="up-to-date"
+@test "image pull: update available triggers pull with version message" {
+    _mps_check_image_staleness() { echo "update:2.0.0"; }
+    export -f _mps_check_image_staleness
+
+    run cmd_image pull base:1.0.0
+    [[ "$status" -eq 0 ]]
+    [[ -f "${TEST_TEMP_DIR}/pull_image.log" ]]
+    # Should mention the new version
+    [[ "$output" == *"2.0.0"* ]]
+}
+
+@test "image pull: --force bypasses up-to-date and always pulls" {
     _mps_check_image_staleness() { echo "up-to-date"; }
     export -f _mps_check_image_staleness
 
     run cmd_image pull base:1.0.0 --force
+    [[ "$status" -eq 0 ]]
+    [[ -f "${TEST_TEMP_DIR}/pull_image.log" ]]
+    log="$(cat "${TEST_TEMP_DIR}/pull_image.log")"
+    [[ "$log" == *"base"* ]]
+}
+
+@test "image pull: manifest fetch failure still attempts pull" {
+    _STUB_MANIFEST_FAIL=true
+    _mps_fetch_manifest() { return 1; }
+    export -f _mps_fetch_manifest
+
+    run cmd_image pull base
     [[ "$status" -eq 0 ]]
     [[ -f "${TEST_TEMP_DIR}/pull_image.log" ]]
 }

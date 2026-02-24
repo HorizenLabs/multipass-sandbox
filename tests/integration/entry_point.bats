@@ -14,32 +14,13 @@ load ../test_helper
 # ================================================================
 
 setup() {
-    setup_temp_dir
-
-    export REAL_HOME="$HOME"
-    export HOME="${TEST_TEMP_DIR}/fakehome"
+    setup_home_override
     mkdir -p "$HOME/.mps/instances" "$HOME/.mps/cache/images"
-
-    # Put multipass stub on PATH
-    export PATH="${MPS_ROOT}/tests/stubs:${PATH}"
-
-    # Default fixture scenario
-    export MOCK_MP_FIXTURES_DIR="${MPS_ROOT}/tests/fixtures/multipass/running-mounted"
-
-    # Call log
-    export MOCK_MP_CALL_LOG="${TEST_TEMP_DIR}/call.log"
-    : > "$MOCK_MP_CALL_LOG"
-
-    # Prevent network access for CLI update check
+    setup_multipass_stub
     export MPS_CHECK_UPDATES=false
-
     MPS_BIN="${MPS_ROOT}/bin/mps"
 }
-
-teardown() {
-    export HOME="$REAL_HOME"
-    teardown_temp_dir
-}
+teardown() { teardown_home_override; }
 
 # ================================================================
 # --help / --version

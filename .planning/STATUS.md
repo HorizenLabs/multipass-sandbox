@@ -71,19 +71,21 @@ A blockchain software development company needs an internal tool to spin up isol
 
 ## Known Issues / TODO
 
-### Test quality audit findings (2026-02-24)
+### Batch 1: Test short-circuits — weak/vacuous assertions *(all 7 fixed)*
 
-Tests that are tautological or explicitly acknowledge they don't test what they claim:
+~~**1–7**: All fixed — see commits `4455e12`, `e684c44`, `706d52f`.~~
 
-1. **cmd_lifecycle.bats:342 — cmd_up mount restore**: Comment in test admits the `all-stopped` fixture has pre-existing mounts in JSON, so the restore logic sees them as "already present" and skips re-mounting. The mount-restore code path is never exercised. Needs a fixture with empty mounts.
-2. **cmd_query.bats:161 — cmd_status staleness display**: `_mps_check_instance_staleness` is hardcoded to `echo "up-to-date"`, then the test asserts output contains "up-to-date". Tautological — no staleness logic is tested.
-3. **cmd_image.bats:287,299 — image pull/staleness**: Both `_mps_check_image_staleness` and `_mps_pull_image` are stubbed. Tests assert the stubs were called but no actual staleness comparison (SHA256, version) or download/cache logic runs.
-4. **cmd_parsing.bats:750 — --no-mount error path**: Comment says "tested in E2E" but no E2E test exists. The `mps_die` inside command substitution doesn't propagate, so the unit test can't cover it.
+### Code bug: `cmd_transfer` subshell escape lets stopped-instance transfer proceed
 
-Tests with assertions too weak to catch regressions:
+`commands/transfer.sh` calls `mps_prepare_running_instance` inside `$( )` (command substitution). When the instance is stopped, `mps_die` exits the subshell only — the parent `cmd_transfer` continues with `short_name=""` and returns 0. The error message appears on stderr (from `mps_log_error` before the subshell exits), but the transfer proceeds past the guard with an empty instance name. This likely affects `cmd_exec` and `cmd_shell` if they use the same `$()` pattern. Fix: capture the subshell exit code and propagate it, or move the call outside the command substitution.
 
-5. **cmd_parsing.bats:391-415 — short flag aliases**: Five tests use only `[[ "$output" != *"Unknown flag"* ]]` (negative assertion). A regression that silently ignores the flag would still pass.
-6. **cmd_parsing.bats:433,480 — `--` separator**: Tests only check `status -eq 0` against no-op stubs (`mp_exec`, `mp_transfer`). Any parsing result produces exit 0.
-7. **common_config.bats:120 — config loading**: Pre-sets `MPS_CPUS=2` / `MPS_MEMORY=2G` to "skip compute", bypassing the auto-scaling code path that is the more complex logic.
-8. **cmd_lifecycle.bats:106,182 — port reset/kill**: Stubs create marker files; tests assert markers exist. No argument or behavior validation — signature changes in the real functions would go undetected.
-9. **cmd_image.bats:213 — import SHA256**: Checks `.meta.json` contains a `sha256` field but never verifies the hash value matches the actual file content.
+### Batch 2: Test short-circuits — stubbed-out code paths with no coverage
+
+**8. `mps_auto_forward_ports` — never tested end-to-end**
+Every integration test stubs this to `{ :; }`. The real function calls `mps_collect_port_specs` (reads `MPS_PORTS` + metadata), loops through specs calling `mps_forward_port` (SSH tunnels), and creates control sockets. No integration test lets this flow through, and no dedicated test exercises the full collect→forward pipeline.
+
+**9. `mps_reset_port_forwards` — stubbed to marker, real logic untested**
+`cmd_lifecycle.bats` stubs it to write a marker file, verifying the instance name was passed. But the real function's logic (kill existing SSH tunnels via control sockets, re-establish from port spec collection) is never exercised.
+
+**10. `mps_resolve_image` — stubbed in all integration tests, auto-pull untested**
+The real function handles auto-pulling images from CDN when not in cache, falling back to stock Ubuntu images for non-mps names, and `mps_die` inside `$()` if pull fails. The network.bats tests cover `_mps_fetch_manifest` and `_mps_download_file` individually, but the full `mps_resolve_image`→pull→cache flow has no integration test.

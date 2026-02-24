@@ -13,21 +13,11 @@ load ../test_helper
 # ================================================================
 
 setup() {
-    setup_temp_dir
-
-    export REAL_HOME="$HOME"
-    export HOME="${TEST_TEMP_DIR}/fakehome"
+    setup_home_override
     mkdir -p "$HOME/.mps/instances" "$HOME/.mps/cache/images" "$HOME/.ssh/config.d"
-
-    # Put stub ahead of any real multipass on PATH
-    export PATH="${MPS_ROOT}/tests/stubs:${PATH}"
-
-    # Default fixture scenario: running-mounted
-    export MOCK_MP_FIXTURES_DIR="${MPS_ROOT}/tests/fixtures/multipass/running-mounted"
-
-    # Call log for argument assertions
-    export MOCK_MP_CALL_LOG="${TEST_TEMP_DIR}/call.log"
-    : > "$MOCK_MP_CALL_LOG"
+    setup_multipass_stub
+    # shellcheck source=../../lib/multipass.sh
+    source "${MPS_ROOT}/lib/multipass.sh"
 
     # Image cache for create tests
     mkdir -p "${HOME}/.mps/cache/images/base/1.0.0"
@@ -35,40 +25,14 @@ setup() {
     printf '{"sha256":"abc123def456","build_date":"2025-01-01T00:00:00Z"}\n' \
         > "${HOME}/.mps/cache/images/base/1.0.0/amd64.meta.json"
 
-    # ---- Stub functions (network, SSH, interactive) ----
-    mps_resolve_image()            { echo "file://${HOME}/.mps/cache/images/base/1.0.0/amd64.img"; }
-    mps_auto_forward_ports()       { :; }
-    mps_forward_port()             { :; }
-    mps_reset_port_forwards()      { touch "${TEST_TEMP_DIR}/reset_ports.marker"; }
-    mps_kill_port_forwards()       { touch "${TEST_TEMP_DIR}/kill_ports.marker"; }
-    mps_cleanup_port_sockets()     { :; }
-    mps_confirm()                  { return 0; }
-    mps_check_image_requirements() { :; }
-    _mps_fetch_manifest()          { return 1; }
-    _mps_warn_image_staleness()    { :; }
-    _mps_warn_instance_staleness() { :; }
-    _mps_check_instance_staleness(){ echo "up-to-date"; }
-
-    export -f mps_resolve_image mps_auto_forward_ports mps_forward_port
+    setup_integration_stubs
+    # Override: record port lifecycle calls
+    mps_reset_port_forwards()  { echo "$*" > "${TEST_TEMP_DIR}/reset_ports.marker"; }
+    mps_kill_port_forwards()   { echo "$*" > "${TEST_TEMP_DIR}/kill_ports.marker"; }
     export -f mps_reset_port_forwards mps_kill_port_forwards
-    export -f mps_cleanup_port_sockets mps_confirm mps_check_image_requirements
-    export -f _mps_fetch_manifest _mps_warn_image_staleness
-    export -f _mps_warn_instance_staleness _mps_check_instance_staleness
-
-    # Source multipass.sh then command files
-    # shellcheck source=../../lib/multipass.sh
-    source "${MPS_ROOT}/lib/multipass.sh"
-    local f
-    for f in "${MPS_ROOT}"/commands/*.sh; do
-        # shellcheck disable=SC1090
-        source "$f"
-    done
+    source_commands
 }
-
-teardown() {
-    export HOME="$REAL_HOME"
-    teardown_temp_dir
-}
+teardown() { teardown_home_override; }
 
 # ================================================================
 # cmd_down
@@ -103,10 +67,13 @@ teardown() {
     [[ "$output" == *"does not exist"* ]]
 }
 
-@test "cmd_down: calls mps_reset_port_forwards before stopping" {
+@test "cmd_down: calls mps_reset_port_forwards with instance name" {
     run cmd_down --name fixture-primary
     [[ "$status" -eq 0 ]]
     [[ -f "${TEST_TEMP_DIR}/reset_ports.marker" ]]
+    local marker
+    marker="$(cat "${TEST_TEMP_DIR}/reset_ports.marker")"
+    [[ "$marker" == *"mps-fixture-primary"* ]]
 }
 
 @test "cmd_down: cleans up adhoc mounts, preserves persistent" {
@@ -179,13 +146,14 @@ METAJSON
     [[ "$output" == *"does not exist"* ]]
 }
 
-@test "cmd_destroy --force: skips confirmation" {
+@test "cmd_destroy --force: skips confirmation and kills port forwards" {
     run cmd_destroy --force --name fixture-primary
     [[ "$status" -eq 0 ]]
-    # cmd completed without prompting (confirm stub always returns 0, but
-    # --force skips it entirely; we verify by checking kill_ports marker
-    # was written, meaning flow completed)
+    # Verify kill_port_forwards was called with the instance name
     [[ -f "${TEST_TEMP_DIR}/kill_ports.marker" ]]
+    local marker
+    marker="$(cat "${TEST_TEMP_DIR}/kill_ports.marker")"
+    [[ "$marker" == *"fixture-primary"* ]]
 }
 
 @test "cmd_destroy: prints success message with short name" {
@@ -257,6 +225,16 @@ METAJSON
     [[ "$log" == *"--disk 10G"* ]]
 }
 
+@test "cmd_create --no-mount without --name: dies with error" {
+    # This error path happens inside command substitution where mps_die doesn't
+    # propagate from sourced functions. Test via subprocess to catch the exit.
+    local MPS_BIN="${MPS_ROOT}/bin/mps"
+    export MPS_CHECK_UPDATES=false
+    run "$MPS_BIN" create --no-mount
+    [[ "$status" -ne 0 ]]
+    [[ "$output" == *"--name"* ]] || [[ "$output" == *"--no-mount"* ]]
+}
+
 @test "cmd_create: dies if instance already exists" {
     # Use running-mounted fixture where mps-fixture-primary exists
     run cmd_create --name fixture-primary --no-mount
@@ -310,7 +288,7 @@ METAJSON
     log="$(cat "$MOCK_MP_CALL_LOG")"
     # Should call launch (delegated to cmd_create)
     [[ "$log" == *"launch"* ]]
-    [[ "$output" == *"does not exist"* ]] || [[ "$output" == *"Creating"* ]]
+    [[ "$output" == *"does not exist. Creating"* ]]
 }
 
 @test "cmd_up: Stopped instance starts it" {
@@ -339,9 +317,36 @@ METAJSON
     [[ "$log" == *"start mps-fixture-primary"* ]]
 }
 
-@test "cmd_up: Stopped instance restores auto-mount if missing" {
-    export MOCK_MP_FIXTURES_DIR="${MPS_ROOT}/tests/fixtures/multipass/all-stopped"
-    # Create metadata with a workdir
+@test "cmd_up: Stopped instance restores auto-mount when missing from VM" {
+    # Build a custom stopped fixture with EMPTY mounts so restore logic fires.
+    # The real all-stopped fixture has mounts pre-populated, which causes the
+    # restore code to skip re-mounting ("already present").
+    local custom_dir="${TEST_TEMP_DIR}/stopped-no-mounts"
+    mkdir -p "$custom_dir"
+    cp "${MPS_ROOT}/tests/fixtures/multipass/all-stopped/list.json" "$custom_dir/"
+    cat > "${custom_dir}/info-mps-fixture-primary.json" <<'JSON'
+{
+    "errors": [],
+    "info": {
+        "mps-fixture-primary": {
+            "state": "Stopped",
+            "ipv4": [],
+            "image_release": "24.04 LTS",
+            "image_hash": "abc123",
+            "cpu_count": "",
+            "memory": {},
+            "disks": {"sda1": {}},
+            "mounts": {},
+            "release": "",
+            "load": [],
+            "snapshot_count": "0"
+        }
+    }
+}
+JSON
+    export MOCK_MP_FIXTURES_DIR="$custom_dir"
+
+    # Create metadata with a workdir so restore knows what to re-mount
     cat > "${HOME}/.mps/instances/fixture-primary.json" <<'METAJSON'
 {
     "name": "fixture-primary",
@@ -351,14 +356,19 @@ METAJSON
 }
 METAJSON
 
-    # The all-stopped fixture has mounts in the JSON (they persist across
-    # stop/start in multipass), so the restore logic sees them as "already present"
-    # and skips re-mounting. Use a fixture with empty mounts to test restore.
-    # For now, just verify start was called and command succeeded.
-    run cmd_up --name fixture-primary --no-mount
+    # Provide arg_path matching the workdir so mps_resolve_mount succeeds.
+    # Use the fakehome as the source (must be a real directory).
+    local mount_src="${HOME}/project"
+    mkdir -p "$mount_src"
+
+    run cmd_up "$mount_src" --name fixture-primary
     [[ "$status" -eq 0 ]]
     log="$(cat "$MOCK_MP_CALL_LOG")"
+    # Should have started the instance
     [[ "$log" == *"start mps-fixture-primary"* ]]
+    # Should have called mount to restore the auto-mount (was missing from VM mounts)
+    [[ "$log" == *"mount"* ]]
+    [[ "$log" == *"mps-fixture-primary"* ]]
 }
 
 @test "cmd_up: Running instance shows IP in output" {

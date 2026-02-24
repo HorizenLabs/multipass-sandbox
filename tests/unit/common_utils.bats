@@ -4,17 +4,8 @@
 
 load ../test_helper
 
-setup() {
-    setup_temp_dir
-    export REAL_HOME="$HOME"
-    export HOME="${TEST_TEMP_DIR}/fakehome"
-    mkdir -p "$HOME"
-}
-
-teardown() {
-    export HOME="$REAL_HOME"
-    teardown_temp_dir
-}
+setup()    { setup_home_override; }
+teardown() { teardown_home_override; }
 
 # ================================================================
 # _mps_sha256

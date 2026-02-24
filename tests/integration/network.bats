@@ -49,11 +49,7 @@ EOF
 # ================================================================
 
 setup() {
-    setup_temp_dir
-
-    export REAL_HOME="$HOME"
-    export HOME="${TEST_TEMP_DIR}/fakehome"
-    mkdir -p "$HOME"
+    setup_home_override
 
     # Start the HTTP server
     HTTP_READY="${TEST_TEMP_DIR}/http_ready"
@@ -83,8 +79,7 @@ setup() {
 teardown() {
     kill "$HTTP_PID" 2>/dev/null || true
     wait "$HTTP_PID" 2>/dev/null || true
-    export HOME="$REAL_HOME"
-    teardown_temp_dir
+    teardown_home_override
 }
 
 # ================================================================
@@ -728,8 +723,8 @@ EOF
 
 @test "_mps_check_cli_update: uses cached file within 24h TTL" {
     mkdir -p "${HOME}/.mps/cache"
-    echo '{"version":"2.0.0","tag":"v2.0.0","commit_sha":"abc123"}' \
-        > "${HOME}/.mps/cache/mps-release.json"
+    cp "${MPS_ROOT}/tests/fixtures/http/mps-release-newer.json" \
+        "${HOME}/.mps/cache/mps-release.json"
     # Touch to now (fresh cache)
     touch "${HOME}/.mps/cache/mps-release.json"
     export MPS_ROOT="${TEST_TEMP_DIR}/fakerepo"
@@ -767,7 +762,7 @@ EOF
 
 @test "_mps_cli_update_warn: emits update available when remote > local" {
     local cache="${TEST_TEMP_DIR}/release.json"
-    echo '{"version":"2.0.0","tag":"v2.0.0","commit_sha":"abc123"}' > "$cache"
+    cp "${MPS_ROOT}/tests/fixtures/http/mps-release-newer.json" "$cache"
     export MPS_ROOT="${TEST_TEMP_DIR}/fakerepo"
     mkdir -p "$MPS_ROOT"
     git -C "$MPS_ROOT" init -q
@@ -779,16 +774,15 @@ EOF
 }
 
 @test "_mps_cli_update_warn: emits has been updated when versions equal but SHA differs" {
+    local cache="${TEST_TEMP_DIR}/release.json"
+    # Same version as MPS_VERSION but an unknown commit SHA
+    cp "${MPS_ROOT}/tests/fixtures/http/mps-release-current.json" "$cache"
+
     # Create a git repo where the remote commit_sha is NOT an ancestor of HEAD
     export MPS_ROOT="${TEST_TEMP_DIR}/fakerepo"
     mkdir -p "$MPS_ROOT"
     git -C "$MPS_ROOT" init -q
     git -C "$MPS_ROOT" -c user.name=test -c user.email=test@test.com commit --allow-empty -m "init" -q
-
-    local cache="${TEST_TEMP_DIR}/release.json"
-    # Same version as MPS_VERSION but an unknown commit SHA
-    echo '{"version":"0.4.1","tag":"v0.4.1","commit_sha":"deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"}' \
-        > "$cache"
     run _mps_cli_update_warn "$cache"
     [[ "$status" -eq 0 ]]
     [[ "$output" == *"has been updated"* ]]
@@ -801,12 +795,12 @@ EOF
 }
 
 @test "_mps_cli_update_warn: silent when MPS_ROOT is not a git repo" {
-    export MPS_ROOT="${TEST_TEMP_DIR}/not-a-repo"
-    mkdir -p "$MPS_ROOT"
     local cache="${TEST_TEMP_DIR}/release.json"
     # Same version, unknown SHA — would warn if it were a git repo
-    echo '{"version":"0.4.1","tag":"v0.4.1","commit_sha":"deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"}' \
-        > "$cache"
+    cp "${MPS_ROOT}/tests/fixtures/http/mps-release-current.json" "$cache"
+
+    export MPS_ROOT="${TEST_TEMP_DIR}/not-a-repo"
+    mkdir -p "$MPS_ROOT"
     run _mps_cli_update_warn "$cache"
     [[ "$status" -eq 0 ]]
     [[ -z "$output" ]]
