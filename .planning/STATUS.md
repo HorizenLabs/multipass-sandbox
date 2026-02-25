@@ -64,10 +64,16 @@ A blockchain software development company needs an internal tool to spin up isol
 - [x] Enforce 70% minimum coverage threshold in `coverage-report.sh` (fails `make test` if below)
 
 ### e2e tests
-- [ ] TODO
+- [x] E2E test script (`tests/e2e.sh`): 16-phase lifecycle test (~90 assertions)
+  - Phases: install, smoke, image, create (fatal gate), exec, cloud-init, status, SSH, lazy ports, transfer, mounts, port forwarding, down/up lifecycle, destroy, image remove, uninstall
+  - Plain bash, `set -euo pipefail`, single VM, assertion counters (pass/fail/skip)
+  - Configurable: `MPS_E2E_IMAGE` (name or file path), `MPS_E2E_INSTALL` (install/uninstall bookends)
+- [x] Coverage path-awareness: `_MPS_COV_PREFIX` in `coverage-trap.sh` and `coverage-report.sh`
+- [x] Makefile targets: `test-e2e`, `test-e2e-report` (host-native, no Docker)
+- [x] Cloud-init test template: `#:example`/`#:end` markers in `default.yaml`
 
 ### CI integration of e2e tests
-- [ ] TODO
+- [ ] TODO (separate follow-up: CI workflow YAML, runner selection, artifact download)
 
 ## Phase 12 — PowerShell Parity (Windows): NOT STARTED
 

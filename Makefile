@@ -99,6 +99,7 @@ CLEAN_IMAGE_PHONY := $(foreach f,$(FLAVORS),clean-image-$(f) $(foreach a,$(ARCHS
 	test-unit test-unit-bash4 test-unit-bash32 \
 	test-integration test-integration-bash4 test-integration-bash32 \
 	test-coverage-unit test-coverage-integration test-coverage-report \
+	test-e2e test-e2e-report \
 	build-docker-builder build-docker-linter build-docker-publisher build-bash32 \
 	lint lint-bash lint-bash32 lint-powershell lint-dockerfile lint-makefile lint-yaml lint-hcl lint-actions \
 	clean-docker-builder clean-docker-linter clean-docker-publisher clean-images \
@@ -220,6 +221,18 @@ test-coverage-integration: $(LINTER_STAMP)
 
 test-coverage-report:
 	$(DOCKER_RUN) bash tests/coverage-report.sh $(COVERAGE_DIR)/ $(COVERAGE_DIR)/unit $(COVERAGE_DIR)/integration
+
+# ---------- E2E tests (host-native, requires multipass + KVM) ----------
+test-e2e: ## Run e2e tests with coverage (requires multipass on host)
+	rm -rf $(COVERAGE_DIR)/e2e
+	_MPS_COV_DIR=$(CURDIR)/$(COVERAGE_DIR)/e2e \
+	_MPS_COV_PREFIX=$(CURDIR) \
+	BASH_ENV=$(CURDIR)/tests/coverage-trap.sh \
+	bash tests/e2e.sh
+
+test-e2e-report: ## Merge e2e coverage with unit/integration
+	_MPS_COV_PREFIX=$(CURDIR) \
+	bash tests/coverage-report.sh $(COVERAGE_DIR)/ $(COVERAGE_DIR)/unit $(COVERAGE_DIR)/integration $(COVERAGE_DIR)/e2e
 
 # ---------- Lint (all) ----------
 lint: lint-bash lint-bash32 lint-powershell lint-dockerfile lint-makefile lint-yaml lint-hcl lint-actions ## Run all linters

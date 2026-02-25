@@ -22,7 +22,7 @@ OUTPUT_DIR="$1"
 shift
 HITS_DIRS=("$@")
 
-WORKDIR="/workdir"
+WORKDIR="${_MPS_COV_PREFIX:-/workdir}"
 
 # ---------- Merge all hits.log files ----------
 MERGED_HITS=$(mktemp)
@@ -41,12 +41,12 @@ if [[ ! -s "$MERGED_HITS" ]]; then
 fi
 
 # ---------- Extract unique file:line pairs ----------
-# Xtrace lines look like: + /workdir/lib/common.sh:42: some_command args
-# Extract file:line, strip /workdir/ prefix, deduplicate
+# Xtrace lines look like: + <WORKDIR>/lib/common.sh:42: some_command args
+# Extract file:line, strip WORKDIR/ prefix, deduplicate
 HIT_LINES=$(mktemp)
 trap 'rm -f "$MERGED_HITS" "$HIT_LINES"' EXIT
 
-sed -n 's/^+\+ \(\/workdir\/[^:]*\):\([0-9]*\):.*/\1:\2/p' "$MERGED_HITS" \
+sed -n 's/^+\+ \(\/[^:]*\):\([0-9]*\):.*/\1:\2/p' "$MERGED_HITS" \
     | sed "s|^${WORKDIR}/||" \
     | sort -u > "$HIT_LINES"
 

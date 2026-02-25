@@ -5,9 +5,11 @@
 # For the full provisioning layers, see images/layers/.
 
 # --- Install additional packages ---
+#:example
 # packages:
 #   - postgresql-client
 #   - redis-tools
+#:end
 
 # --- Run commands on first boot ---
 runcmd:
@@ -26,6 +28,7 @@ runcmd:
       claude plugin install zkverify-product-development@hl-agent-skills --scope user
       claude plugin install context-utils@hl-agent-skills --scope user
     '
+#:example
   # --- Trail of Bits security skills (uncomment to enable) ---
   # - |
   #   sudo -u ubuntu bash -c '
@@ -107,21 +110,27 @@ runcmd:
   #     export PATH="$HOME/.local/bin:$PATH"
   #     uv tool install specify-cli --from git+https://github.com/github/spec-kit.git
   #   '
-
-# runcmd:
-#   - echo "Hello from cloud-init" > /tmp/hello.txt
-#   - apt-get install -y <package>
+  # --- Custom commands (uncomment to enable) ---
+  # - echo "Hello from cloud-init" > /tmp/hello.txt
+  # - apt-get install -y <package>
+#:end
 
 # --- Write files ---
+#:example
 # write_files:
 #   - path: /home/ubuntu/.env
 #     content: |
 #       DATABASE_URL=postgres://localhost/mydb
 #     owner: ubuntu:ubuntu
 #     permissions: '0600'
+#:end
 
 # --- Set hostname ---
+#:example
 # hostname: my-sandbox
+#:end
 
 # --- Set timezone ---
+#:example
 # timezone: America/New_York
+#:end

@@ -28,7 +28,9 @@ PS4='+ ${BASH_SOURCE[0]:-}:${LINENO}: '
 "$_cov_mkdir" -p "$_MPS_COV_DIR" 2>/dev/null || return 0
 # Xtrace nests: + for top-level, ++ for one level deep, etc.
 # Match one or more '+' followed by space and our source paths.
-exec {BASH_XTRACEFD}> >("$_cov_grep" --line-buffered -E '^\++ /workdir/(bin/mps|lib/|commands/|completions/|install\.sh|uninstall\.sh)' \
+# _MPS_COV_PREFIX: configurable path prefix (default /workdir for Docker, project root for e2e)
+_cov_prefix="${_MPS_COV_PREFIX:-/workdir}"
+exec {BASH_XTRACEFD}> >("$_cov_grep" --line-buffered -E "^\++ ${_cov_prefix}/(bin/mps|lib/|commands/|completions/|install\.sh|uninstall\.sh)" \
     >> "$_MPS_COV_DIR/hits.log" 2>/dev/null)
 
 set -x

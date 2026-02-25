@@ -85,8 +85,17 @@ Implementation:
 
 ### E2E: Real everything
 
-No mocking. Real `multipass`, real VMs, real mounts, real port forwards.
-Image download testing (if included) uses real CDN — acceptable at CI network speeds.
+No mocking. Real `multipass`, real VMs, real mounts, real port forwards, real SSH tunnels.
+Image download testing uses real CDN (acceptable at CI network speeds) or imports local artifacts.
+
+**Implementation**: `tests/e2e.sh` — plain bash (not BATS), `set -euo pipefail`, single VM.
+- ~90 assertions across 16 phases, assertion counters (pass/fail/skip), non-aborting failures
+- Fatal gates: install failure skips all phases, create failure skips VM-dependent phases
+- Coverage via `BASH_ENV` + `_MPS_COV_PREFIX` (same mechanism as unit/integration)
+- Makefile targets: `make test-e2e` (with coverage), `make test-e2e-report` (merge all tiers)
+- Env vars: `MPS_E2E_IMAGE` (name or file path), `MPS_E2E_INSTALL` (install/uninstall bookends)
+- Stale reaper: destroys leftover `mps-project-cloud-init-e2e` instance before starting
+- Temp directory: `$HOME/.mps-e2e-<pid>/` (under HOME for snap confinement)
 
 ## Code Coverage
 
@@ -476,4 +485,26 @@ Multipass stub for VM discovery, `du` stub, `brew` stub, stdin piping for intera
 | `uninstall.bats` | 26 | Integration | `tests/integration/` |
 | **Total** | **749** | | |
 
-*Last updated: 2026-02-24*
+*Last updated: 2026-02-25*
+
+### E2E Test Coverage Map
+
+| Phase | Name | Tests | Key Assertions |
+|-------|------|-------|----------------|
+| 0 | Install | 5 | install.sh, mps --version, deps, dirs, completion |
+| 1 | Smoke | 16 | --version, --help, all 13 cmd --help, --debug |
+| 2 | Image | 3 | import/pull, image list |
+| 3 | Create | 7 | create, state Running, auto-mount, config mount, content, metadata |
+| 4 | Exec | 6 | echo, uname, arch, pwd, --workdir, exit code |
+| 5 | Cloud-Init | 20 | status, errors, packages, files, perms, hostname, tz, plugins |
+| 6 | Status | 5 | status text, --json, list |
+| 7 | SSH | 4 | --print, --append, SSH connectivity, idempotent |
+| 8 | Lazy Ports | 2 | trigger, port list 19000 active |
+| 9 | Transfer | 2 | host->guest, guest->host |
+| 10 | Mounts | 7 | config present, adhoc add, bidirectional, 3 origins, remove |
+| 11 | Ports | 4 | unprivileged forward, privileged forward, port list |
+| 12 | Down/Up | 14 | tunnels alive, down state, ports dead, exec error, up state, mount restore, lazy re-establish, re-forward, service restart |
+| 13 | Destroy | 3 | not in list, metadata removed, SSH config removed |
+| 14 | Image Remove | 1 | image not in list |
+| 15 | Uninstall | 2 | mps not found, completion removed |
+| **Total** | | **~90** | |
