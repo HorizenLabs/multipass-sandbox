@@ -190,6 +190,147 @@ teardown() { teardown_home_override; }
     [[ -z "$result" ]]
 }
 
+# --- flag-values: --name returns __instances__ for simple commands ---
+
+@test "_complete_destroy: --name flag-values returns __instances__" {
+    result="$(_complete_destroy flag-values --name)"
+    [[ "$result" == "__instances__" ]]
+}
+
+@test "_complete_destroy: -n flag-values returns __instances__" {
+    result="$(_complete_destroy flag-values -n)"
+    [[ "$result" == "__instances__" ]]
+}
+
+@test "_complete_exec: --name flag-values returns __instances__" {
+    result="$(_complete_exec flag-values --name)"
+    [[ "$result" == "__instances__" ]]
+}
+
+@test "_complete_exec: -n flag-values returns __instances__" {
+    result="$(_complete_exec flag-values -n)"
+    [[ "$result" == "__instances__" ]]
+}
+
+@test "_complete_shell: --name flag-values returns __instances__" {
+    result="$(_complete_shell flag-values --name)"
+    [[ "$result" == "__instances__" ]]
+}
+
+@test "_complete_shell: -n flag-values returns __instances__" {
+    result="$(_complete_shell flag-values -n)"
+    [[ "$result" == "__instances__" ]]
+}
+
+@test "_complete_status: --name flag-values returns __instances__" {
+    result="$(_complete_status flag-values --name)"
+    [[ "$result" == "__instances__" ]]
+}
+
+@test "_complete_status: -n flag-values returns __instances__" {
+    result="$(_complete_status flag-values -n)"
+    [[ "$result" == "__instances__" ]]
+}
+
+@test "_complete_transfer: --name flag-values returns __instances__" {
+    result="$(_complete_transfer flag-values --name)"
+    [[ "$result" == "__instances__" ]]
+}
+
+@test "_complete_transfer: -n flag-values returns __instances__" {
+    result="$(_complete_transfer flag-values -n)"
+    [[ "$result" == "__instances__" ]]
+}
+
+@test "_complete_down: --name flag-values returns __instances__" {
+    result="$(_complete_down flag-values --name)"
+    [[ "$result" == "__instances__" ]]
+}
+
+@test "_complete_down: -n flag-values returns __instances__" {
+    result="$(_complete_down flag-values -n)"
+    [[ "$result" == "__instances__" ]]
+}
+
+# --- flag-values: up mirrors create with all value-taking flags ---
+
+@test "_complete_up: --name flag-values returns __instances__" {
+    result="$(_complete_up flag-values --name)"
+    [[ "$result" == "__instances__" ]]
+}
+
+@test "_complete_up: --image flag-values returns __images__" {
+    result="$(_complete_up flag-values --image)"
+    [[ "$result" == "__images__" ]]
+}
+
+@test "_complete_up: --cloud-init flag-values returns __cloud_init__" {
+    result="$(_complete_up flag-values --cloud-init)"
+    [[ "$result" == "__cloud_init__" ]]
+}
+
+# --- flag-values: ssh-config ---
+
+@test "_complete_ssh_config: --name flag-values returns __instances__" {
+    result="$(_complete_ssh_config flag-values --name)"
+    [[ "$result" == "__instances__" ]]
+}
+
+@test "_complete_ssh_config: -n flag-values returns __instances__" {
+    result="$(_complete_ssh_config flag-values -n)"
+    [[ "$result" == "__instances__" ]]
+}
+
+# --- flag-values: image subcommand with --name ---
+
+@test "_complete_image: --name flag-values returns __images__" {
+    result="$(_complete_image flag-values --name)"
+    [[ "$result" == "__images__" ]]
+}
+
+# --- flag-values: mount ---
+
+@test "_complete_mount: --name flag-values returns __instances__" {
+    result="$(_complete_mount flag-values --name)"
+    [[ "$result" == "__instances__" ]]
+}
+
+@test "_complete_mount: -n flag-values returns __instances__" {
+    result="$(_complete_mount flag-values -n)"
+    [[ "$result" == "__instances__" ]]
+}
+
+# --- flag-values: image remove flags ---
+
+@test "_complete_image: flags for remove includes --arch" {
+    result="$(_complete_image flags remove)"
+    [[ " $result " == *" --arch "* ]]
+}
+
+@test "_complete_image: flags for remove includes --force" {
+    result="$(_complete_image flags remove)"
+    [[ " $result " == *" --force "* ]]
+}
+
+@test "_complete_image: flags for remove includes --all" {
+    result="$(_complete_image flags remove)"
+    [[ " $result " == *" --all "* ]]
+}
+
+# --- flag-values: mount subcommand routing ---
+
+@test "_complete_mount: flags for remove includes --name" {
+    result="$(_complete_mount flags remove)"
+    [[ " $result " == *" --name "* ]]
+}
+
+@test "_complete_mount: flags for list includes --name" {
+    result="$(_complete_mount flags list)"
+    [[ " $result " == *" --name "* ]]
+}
+
+# --- Completions: flag as subcommand filtering ---
+
 # ================================================================
 # Dispatcher: token collection (commands, profiles, images, cloud_init)
 # ================================================================

@@ -11,14 +11,9 @@ load ../test_helper
 # ================================================================
 
 setup() {
-    setup_home_override
-    mkdir -p "$HOME/mps/instances" "$HOME/mps/cache/images"
-    setup_multipass_stub
-    # shellcheck source=../../lib/multipass.sh
-    source "${MPS_ROOT}/lib/multipass.sh"
+    setup_cmd_integration
     export TEST_TEMP_DIR
 
-    setup_integration_stubs
     # Override: configurable port forward with logging
     _STUB_FORWARD_PORT_RC=0
     mps_forward_port() {
@@ -26,7 +21,6 @@ setup() {
         return "${_STUB_FORWARD_PORT_RC}"
     }
     export -f mps_forward_port
-    source_commands
 }
 teardown() { teardown_home_override; }
 
@@ -219,4 +213,37 @@ JSON
     run cmd_port forward
     [[ "$status" -ne 0 ]]
     [[ "$output" == *"Usage"* ]]
+}
+
+@test "port forward: invalid port spec (empty host port) dies" {
+    run cmd_port forward fixture-primary :3000
+    [[ "$status" -ne 0 ]]
+    [[ "$output" == *"Invalid port spec"* ]]
+}
+
+@test "port forward: non-numeric port dies" {
+    run cmd_port forward fixture-primary abc:80
+    [[ "$status" -ne 0 ]]
+    [[ "$output" == *"Ports must be numbers"* ]]
+}
+
+@test "port forward: unknown option errors" {
+    run cmd_port forward --bogus fixture-primary 3000:3000
+    [[ "$status" -ne 0 ]]
+    [[ "$output" == *"Unknown option"* ]]
+}
+
+@test "port forward: forward failure (rc=1) dies" {
+    _STUB_FORWARD_PORT_RC=1
+    mps_forward_port() { return 1; }
+    export -f mps_forward_port
+    run cmd_port forward fixture-primary 3000:3000
+    [[ "$status" -ne 0 ]]
+    [[ "$output" == *"Failed to establish port forward"* ]]
+}
+
+@test "port list: unknown option errors" {
+    run cmd_port list --bogus
+    [[ "$status" -ne 0 ]]
+    [[ "$output" == *"Unknown option"* ]]
 }

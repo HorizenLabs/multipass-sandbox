@@ -429,3 +429,80 @@ STUB
     [[ "$status" -eq 0 ]]
     [[ "$output" == *"Installation complete"* ]]
 }
+
+# ================================================================
+# Mode A: install_dependency — fallback when package managers missing
+# ================================================================
+
+@test "install: install_dependency multipass missing macos no brew warns manual" {
+    export PATH="${stubs_dir}:${PATH}"
+    _hide_cmds=(multipass brew)
+    source "$INSTALL_SCRIPT"
+    OS=macos
+    run install_dependency "multipass"
+    [[ "$status" -eq 1 ]]
+    [[ "$output" == *"Homebrew not found"* ]]
+    [[ "$output" == *"multipass"* ]]
+}
+
+@test "install: install_dependency jq missing linux no apt warns manual" {
+    export PATH="${stubs_dir}:${PATH}"
+    _hide_cmds=(jq apt-get)
+    source "$INSTALL_SCRIPT"
+    OS=linux
+    run install_dependency "jq"
+    [[ "$status" -eq 1 ]]
+    [[ "$output" == *"apt-get not found"* ]]
+    [[ "$output" == *"jq"* ]]
+}
+
+@test "install: install_dependency jq missing macos no brew warns manual" {
+    export PATH="${stubs_dir}:${PATH}"
+    _hide_cmds=(jq brew)
+    source "$INSTALL_SCRIPT"
+    # shellcheck disable=SC2034
+    OS=macos
+    run install_dependency "jq"
+    [[ "$status" -eq 1 ]]
+    [[ "$output" == *"Homebrew not found"* ]]
+    [[ "$output" == *"jq"* ]]
+}
+
+# ================================================================
+# Mode B: completion symlink replacement + PATH warning
+# ================================================================
+
+@test "install: linux completion replaces existing symlink" {
+    local comp_dir="${HOME}/.local/share/bash-completion/completions"
+    mkdir -p "$comp_dir"
+    ln -sf /dev/null "${comp_dir}/mps"
+
+    run _run_install ""
+    [[ "$status" -eq 0 ]]
+    [[ -L "${comp_dir}/mps" ]]
+    local target
+    target="$(readlink "${comp_dir}/mps")"
+    [[ "$target" == "${MPS_ROOT}/completions/mps.bash" ]]
+}
+
+@test "install: macos completion replaces existing symlink" {
+    export MOCK_UNAME_S="Darwin"
+    export MOCK_BREW_PREFIX="${TEST_TEMP_DIR}/brew"
+    local comp_dir="${MOCK_BREW_PREFIX}/etc/bash_completion.d"
+    mkdir -p "$comp_dir"
+    ln -sf /dev/null "${comp_dir}/mps"
+
+    run _run_install ""
+    [[ "$status" -eq 0 ]]
+    [[ -L "${comp_dir}/mps" ]]
+    local target
+    target="$(readlink "${comp_dir}/mps")"
+    [[ "$target" == "${MPS_ROOT}/completions/mps.bash" ]]
+}
+
+@test "install: mps not on PATH after install shows warning" {
+    rm -f "${stubs_dir}/mps"
+    run _run_install $'n\n' "PATH=${stubs_dir}:/usr/bin:/bin"
+    [[ "$status" -eq 0 ]]
+    [[ "$output" == *"not on your PATH"* ]] || [[ "$output" == *"not in your PATH"* ]]
+}

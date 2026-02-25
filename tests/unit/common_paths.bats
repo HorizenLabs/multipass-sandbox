@@ -208,3 +208,74 @@ teardown() {
     [[ "$output" == *"hidden directory"* ]]
     [[ "$output" == *"snap confinement"* ]]
 }
+
+# ================================================================
+# mps_detect_arch: stub-driven architecture mapping
+# ================================================================
+
+@test "mps_detect_arch: maps x86_64 to amd64" {
+    local stub_dir="${TEST_TEMP_DIR}/arch_stubs"
+    mkdir -p "$stub_dir"
+    printf '#!/bin/sh\necho x86_64\n' > "${stub_dir}/dpkg"
+    chmod +x "${stub_dir}/dpkg"
+    printf '#!/bin/sh\necho x86_64\n' > "${stub_dir}/uname"
+    chmod +x "${stub_dir}/uname"
+    result="$(PATH="${stub_dir}:${PATH}" mps_detect_arch)"
+    [[ "$result" == "amd64" ]]
+}
+
+@test "mps_detect_arch: maps aarch64 to arm64" {
+    local stub_dir="${TEST_TEMP_DIR}/arch_stubs"
+    mkdir -p "$stub_dir"
+    printf '#!/bin/sh\necho aarch64\n' > "${stub_dir}/dpkg"
+    chmod +x "${stub_dir}/dpkg"
+    result="$(PATH="${stub_dir}:${PATH}" mps_detect_arch)"
+    [[ "$result" == "arm64" ]]
+}
+
+@test "mps_detect_arch: maps arm64 to arm64" {
+    local stub_dir="${TEST_TEMP_DIR}/arch_stubs"
+    mkdir -p "$stub_dir"
+    printf '#!/bin/sh\necho arm64\n' > "${stub_dir}/dpkg"
+    chmod +x "${stub_dir}/dpkg"
+    result="$(PATH="${stub_dir}:${PATH}" mps_detect_arch)"
+    [[ "$result" == "arm64" ]]
+}
+
+@test "mps_detect_arch: passes through unknown arch unchanged" {
+    local stub_dir="${TEST_TEMP_DIR}/arch_stubs"
+    mkdir -p "$stub_dir"
+    printf '#!/bin/sh\necho s390x\n' > "${stub_dir}/dpkg"
+    chmod +x "${stub_dir}/dpkg"
+    result="$(PATH="${stub_dir}:${PATH}" mps_detect_arch)"
+    [[ "$result" == "s390x" ]]
+}
+
+@test "mps_detect_arch: falls back to uname when dpkg unavailable" {
+    local stub_dir="${TEST_TEMP_DIR}/arch_stubs"
+    mkdir -p "$stub_dir"
+    printf '#!/bin/sh\nexit 1\n' > "${stub_dir}/dpkg"
+    chmod +x "${stub_dir}/dpkg"
+    printf '#!/bin/sh\necho aarch64\n' > "${stub_dir}/uname"
+    chmod +x "${stub_dir}/uname"
+    result="$(PATH="${stub_dir}:${PATH}" mps_detect_arch)"
+    [[ "$result" == "arm64" ]]
+}
+
+# ================================================================
+# mps_resolve_mount_source: relative and error paths
+# ================================================================
+
+@test "mps_resolve_mount_source: resolves relative path to absolute" {
+    local subdir="${TEST_TEMP_DIR}/rel_parent/child"
+    mkdir -p "$subdir"
+    result="$(cd "${TEST_TEMP_DIR}/rel_parent" && mps_resolve_mount_source "child")"
+    expected="$(cd "$subdir" && pwd -P)"
+    [[ "$result" == "$expected" ]]
+}
+
+@test "mps_resolve_mount_source: dies for nonexistent relative path" {
+    run bash -c "cd '${TEST_TEMP_DIR}' && source '${MPS_ROOT}/lib/common.sh' && mps_resolve_mount_source 'no-such-dir'"
+    [[ "$status" -ne 0 ]]
+    [[ "$output" == *"Path does not exist"* ]]
+}

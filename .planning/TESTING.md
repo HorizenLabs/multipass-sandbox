@@ -462,32 +462,33 @@ Multipass stub for VM discovery, `du` stub, `brew` stub, stdin piping for intera
 | `common_parsing.bats` | 21 | Unit | `tests/unit/` |
 | `common_naming.bats` | 38 | Unit | `tests/unit/` |
 | `common_logging.bats` | 8 | Unit | `tests/unit/` |
-| `common_config.bats` | 13 | Unit | `tests/unit/` |
-| `common_resources.bats` | 17 | Unit | `tests/unit/` |
-| `common_paths.bats` | 22 | Unit | `tests/unit/` |
+| `common_config.bats` | 23 | Unit | `tests/unit/` |
+| `common_resources.bats` | 19 | Unit | `tests/unit/` |
+| `common_paths.bats` | 30 | Unit | `tests/unit/` |
 | `common_meta.bats` | 56 | Unit | `tests/unit/` |
 | `common_ports.bats` | 15 | Unit | `tests/unit/` |
-| `common_utils.bats` | 15 | Unit | `tests/unit/` |
-| `completion.bats` | 44 | Unit | `tests/unit/` |
+| `common_updates.bats` | 19 | Unit | `tests/unit/` |
+| `common_utils.bats` | 23 | Unit | `tests/unit/` |
+| `completion.bats` | 69 | Unit | `tests/unit/` |
 | `stub_smoke.bats` | 20 | Integration | `tests/integration/` |
 | `mp_lifecycle.bats` | 40 | Integration | `tests/integration/` |
-| `network.bats` | 53 | Integration | `tests/integration/` |
-| `cmd_query.bats` | 20 | Integration | `tests/integration/` |
-| `cmd_lifecycle.bats` | 33 | Integration | `tests/integration/` |
-| `cmd_exec.bats` | 21 | Integration | `tests/integration/` |
-| `cmd_port.bats` | 15 | Integration | `tests/integration/` |
-| `cmd_ssh_config.bats` | 13 | Integration | `tests/integration/` |
-| `cmd_image.bats` | 27 | Integration | `tests/integration/` |
+| `network.bats` | 65 | Integration | `tests/integration/` |
+| `cmd_query.bats` | 21 | Integration | `tests/integration/` |
+| `cmd_lifecycle.bats` | 67 | Integration | `tests/integration/` |
+| `cmd_exec.bats` | 27 | Integration | `tests/integration/` |
+| `cmd_port.bats` | 20 | Integration | `tests/integration/` |
+| `cmd_ssh_config.bats` | 19 | Integration | `tests/integration/` |
+| `cmd_image.bats` | 50 | Integration | `tests/integration/` |
 | `resolve_image.bats` | 15 | Integration | `tests/integration/` |
 | `port_forwarding.bats` | 33 | Integration | `tests/integration/` |
 | `completion_driver.bats` | 36 | Integration | `tests/integration/` |
 | `completion_instances.bats` | 8 | Integration | `tests/integration/` |
 | `entry_point.bats` | 11 | Integration | `tests/integration/` |
-| `install.bats` | 31 | Integration | `tests/integration/` |
+| `install.bats` | 37 | Integration | `tests/integration/` |
 | `uninstall.bats` | 26 | Integration | `tests/integration/` |
-| **Total** | **756** | | |
+| **Total** | **921** | | |
 
-*Last updated: 2026-02-25*
+*Last updated: 2026-02-26*
 
 ### E2E Test Coverage Map
 

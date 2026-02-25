@@ -21,9 +21,9 @@ The mpsandbox project has a mature, fully containerized build system (Makefile +
 Steps:
 1. `actions/checkout@v4` (no submodules — lint/test don't need them)
 2. `make lint` (builds linter Docker image automatically via stamp dep)
-3. `make test` (runs all tests with coverage; enforces 70% minimum threshold via `coverage-report.sh`)
+3. `make test` (runs all tests with coverage; enforces 90% minimum threshold via `coverage-report.sh`)
 4. Coverage job summary — appends `coverage/summary.md` to `$GITHUB_STEP_SUMMARY` (all events)
-5. Coverage PR comment — `zgosalvez/github-actions-report-lcov@v4` posts/updates a coverage summary comment on PRs (`GITHUB_TOKEN`, `minimum-coverage: 70`, `update-comment: true`). PR events only.
+5. Coverage PR comment — `zgosalvez/github-actions-report-lcov@v4` posts/updates a coverage summary comment on PRs (`GITHUB_TOKEN`, `minimum-coverage: 90`, `update-comment: true`). PR events only.
 6. Upload `coverage/` directory as artifact (30-day retention)
 
 ## Workflow 2: `images.yml` — Build + Publish

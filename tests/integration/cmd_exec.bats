@@ -13,14 +13,8 @@ load ../test_helper
 # ================================================================
 
 setup() {
-    setup_home_override
-    mkdir -p "$HOME/mps/instances" "$HOME/mps/cache/images"
-    setup_multipass_stub
-    # shellcheck source=../../lib/multipass.sh
-    source "${MPS_ROOT}/lib/multipass.sh"
+    setup_cmd_integration
     export TEST_TEMP_DIR
-    setup_integration_stubs
-    source_commands
 }
 teardown() { teardown_home_override; }
 
@@ -242,4 +236,63 @@ METAJSON
     run cmd_mount remove /mnt/nonexistent --name fixture-primary
     [[ "$status" -ne 0 ]]
     [[ "$output" == *"No mount found"* ]]
+}
+
+@test "cmd_mount add: unknown option dies" {
+    run cmd_mount add --bogus
+    [[ "$status" -ne 0 ]]
+    [[ "$output" == *"Unknown option"* ]]
+}
+
+@test "cmd_mount add: nonexistent source dies" {
+    run cmd_mount add "no-such-dir-12345:/mnt/target" --name fixture-primary
+    [[ "$status" -ne 0 ]]
+    [[ "$output" == *"does not exist"* ]]
+}
+
+@test "cmd_mount remove: unknown option dies" {
+    run cmd_mount remove --bogus
+    [[ "$status" -ne 0 ]]
+    [[ "$output" == *"Unknown option"* ]]
+}
+
+@test "cmd_mount list: unknown option dies" {
+    run cmd_mount list --bogus
+    [[ "$status" -ne 0 ]]
+    [[ "$output" == *"Unknown option"* ]]
+}
+
+@test "cmd_mount remove: persistent mount warns about persistence" {
+    # Create metadata with workdir for origin derivation
+    cat > "${HOME}/mps/instances/fixture-primary.json" <<'METAJSON'
+{
+    "name": "fixture-primary",
+    "full_name": "mps-fixture-primary",
+    "workdir": "/mnt/test-a",
+    "image": null
+}
+METAJSON
+
+    # /mnt/test-a is auto-mount (workdir) → persistent
+    run cmd_mount remove /mnt/test-a --name fixture-primary
+    [[ "$status" -eq 0 ]]
+    [[ "$output" == *"persistent"* ]]
+}
+
+@test "cmd_mount list: shows 'config' origin for MPS_MOUNTS entries" {
+    cat > "${HOME}/mps/instances/fixture-primary.json" <<'METAJSON'
+{
+    "name": "fixture-primary",
+    "full_name": "mps-fixture-primary",
+    "workdir": "/mnt/test-a",
+    "image": null
+}
+METAJSON
+
+    export MPS_MOUNTS="/some/host/path:/mnt/test-b"
+
+    run cmd_mount list --name fixture-primary
+    [[ "$status" -eq 0 ]]
+    [[ "$output" == *"auto"* ]]
+    [[ "$output" == *"config"* ]]
 }

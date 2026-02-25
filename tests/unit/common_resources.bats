@@ -143,3 +143,42 @@ load ../test_helper
     mem_mb="$(_mps_parse_size_mb "$MPS_MEMORY")"
     [[ "$mem_mb" -ge 2048 ]]
 }
+
+@test "_mps_compute_resources: memory below 1024 MB formats as NM" {
+    # Unset pre-existing values so _mps_compute_resources actually runs
+    unset MPS_CPUS MPS_MEMORY 2>/dev/null || true
+    # Set up fraction so that 2048 * 1 / 6 = 341 MB (< 1024)
+    export MPS_CPUS_FRACTION_NUM=1
+    export MPS_CPUS_FRACTION_DEN=4
+    export MPS_CPUS_MIN=1
+    export MPS_MEMORY_FRACTION_NUM=1
+    export MPS_MEMORY_FRACTION_DEN=6
+    export MPS_MEMORY_MIN="256M"
+    export MPS_MEMORY_CAP="512M"
+
+    # Override /proc/meminfo by making host_memory_mb small
+    # _mps_compute_resources reads /proc/meminfo directly, so we need to work around it.
+    # We can't easily stub /proc/meminfo, but we can set a small enough cap
+    # that the result is < 1024 regardless of host memory.
+    # With cap=512M, computed_mem_mb will be capped at 512 → formats as "512M"
+    _mps_compute_resources
+    [[ "$MPS_MEMORY" =~ ^[0-9]+M$ ]]
+    # Verify it's a reasonable value (should be capped at 512)
+    local mem_num="${MPS_MEMORY%M}"
+    [[ "$mem_num" -le 512 ]]
+    [[ "$mem_num" -ge 256 ]]
+}
+
+@test "_mps_compute_resources: memory exactly 1024 MB formats as 1G" {
+    unset MPS_CPUS MPS_MEMORY 2>/dev/null || true
+    export MPS_CPUS_FRACTION_NUM=1
+    export MPS_CPUS_FRACTION_DEN=4
+    export MPS_CPUS_MIN=1
+    export MPS_MEMORY_FRACTION_NUM=1
+    export MPS_MEMORY_FRACTION_DEN=6
+    export MPS_MEMORY_MIN="1G"
+    export MPS_MEMORY_CAP="1G"
+    # Both min and cap are 1G (1024 MB), so result will be exactly 1024 MB → "1G"
+    _mps_compute_resources
+    [[ "$MPS_MEMORY" == "1G" ]]
+}

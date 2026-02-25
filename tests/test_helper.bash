@@ -88,6 +88,17 @@ source_commands() {
     done
 }
 
+# Common integration setup for command tests
+setup_cmd_integration() {
+    setup_home_override
+    mkdir -p "$HOME/mps/instances" "$HOME/mps/cache/images"
+    setup_multipass_stub
+    # shellcheck source=../lib/multipass.sh
+    source "${MPS_ROOT}/lib/multipass.sh"
+    setup_integration_stubs
+    source_commands
+}
+
 # ---------- Source common.sh ----------
 # Suppress _mps_compute_resources by pre-setting both values
 export MPS_CPUS=2

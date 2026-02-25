@@ -61,7 +61,7 @@ A blockchain software development company needs an internal tool to spin up isol
 ### CI integration of tests + coverage
 - [x] Wire `make test` into GitHub Actions CI (lint + test on push/PR)
 - [x] Wire coverage report into CI (GitHub Actions job summary + PR comments via zgosalvez/github-actions-report-lcov)
-- [x] Enforce 70% minimum coverage threshold in `coverage-report.sh` (fails `make test` if below)
+- [x] Enforce 90% minimum coverage threshold in `coverage-report.sh` (fails `make test` if below)
 
 ### e2e tests
 - [x] E2E test script (`tests/e2e.sh`): 16-phase lifecycle test (~90 assertions)
@@ -74,6 +74,7 @@ A blockchain software development company needs an internal tool to spin up isol
 
 ### CI integration of e2e tests
 - [ ] TODO (separate follow-up: CI workflow YAML, runner selection, artifact download)
+  - [ ] Enable AppArmor in CI e2e job: GitHub Actions runners ship with AppArmor disabled. Enable it (`sudo systemctl start apparmor`) to reproduce snap confinement issues that only affect native Ubuntu users.
 
 ## Phase 12 — PowerShell Parity (Windows): NOT STARTED
 
@@ -85,5 +86,4 @@ A blockchain software development company needs an internal tool to spin up isol
 
 ## Known Issues / TODO
 
-- [x] **Snap confinement breaks image launch on native Ubuntu**: Fixed — moved `~/.mps/` to `~/mps/` (non-hidden path avoids snap `home` interface restrictions). Added `_mps_snap_confined()` + `_mps_check_snap_path()` pre-flight checks that block user-provided hidden paths (mounts, transfers, cloud-init, images) with clear error messages when snap confinement is active.
-- [ ] **Enable AppArmor in CI e2e job**: GitHub Actions runners ship with AppArmor disabled. Enable it (`sudo systemctl start apparmor`) in the e2e CI job to reproduce snap confinement issues that only affect native Ubuntu users.
+None.

@@ -11,15 +11,10 @@ load ../test_helper
 # ================================================================
 
 setup() {
-    setup_home_override
-    mkdir -p "$HOME/mps/instances" "$HOME/mps/cache/images" "$HOME/.ssh/config.d"
-    setup_multipass_stub
-    # shellcheck source=../../lib/multipass.sh
-    source "${MPS_ROOT}/lib/multipass.sh"
+    setup_cmd_integration
+    mkdir -p "$HOME/.ssh/config.d"
     export TEST_TEMP_DIR
     ssh-keygen -t ed25519 -f "$HOME/.ssh/id_ed25519" -N "" -q
-    setup_integration_stubs
-    source_commands
 }
 teardown() { teardown_home_override; }
 
@@ -155,4 +150,66 @@ teardown() { teardown_home_override; }
     run cmd_ssh_config --name fixture-primary
     [[ "$status" -ne 0 ]]
     [[ "$output" == *"not running"* ]]
+}
+
+@test "ssh-config resolve_pubkey: explicit nonexistent key dies with 'not found'" {
+    run _ssh_config_resolve_pubkey "/nonexistent/key"
+    [[ "$status" -ne 0 ]]
+    [[ "$output" == *"not found"* ]]
+}
+
+@test "cmd_ssh_config --append: creates ~/.ssh/config.d directory if missing" {
+    rm -rf "${HOME}/.ssh/config.d"
+    run cmd_ssh_config --append --name fixture-primary
+    [[ "$status" -eq 0 ]]
+    [[ -d "${HOME}/.ssh/config.d" ]]
+    [[ -f "${HOME}/.ssh/config.d/mps-fixture-primary" ]]
+}
+
+# ================================================================
+# _ssh_config_inject_key: error paths
+# ================================================================
+
+@test "ssh-config inject_key: fails when transfer fails" {
+    export MOCK_MP_TRANSFER_EXIT=1
+    run _ssh_config_inject_key "mps-fixture-primary" "fixture-primary" \
+        "$HOME/.ssh/id_ed25519.pub" "$HOME/.ssh/id_ed25519"
+    [[ "$status" -ne 0 ]]
+    [[ "$output" == *"Failed to transfer SSH public key"* ]]
+}
+
+# ================================================================
+# _ssh_config_ensure_key: private key not found
+# ================================================================
+
+@test "ssh-config ensure_key: fails when private key not found for .pub" {
+    cp "$HOME/.ssh/id_ed25519.pub" "${TEST_TEMP_DIR}/orphan.pub"
+    run _ssh_config_ensure_key "mps-fixture-primary" "fixture-primary" \
+        "${TEST_TEMP_DIR}/orphan.pub"
+    [[ "$status" -ne 0 ]]
+    [[ "$output" == *"private key not found"* ]]
+}
+
+# ================================================================
+# cmd_ssh_config: IP resolution failure
+# ================================================================
+
+@test "cmd_ssh_config: dies when IP cannot be determined" {
+    mp_ipv4() { echo ""; }
+    export -f mp_ipv4
+    run cmd_ssh_config --name fixture-primary
+    [[ "$status" -ne 0 ]]
+    [[ "$output" == *"Could not determine IP"* ]]
+}
+
+# ================================================================
+# cmd_ssh_config: --ssh-key flag parsing
+# ================================================================
+
+@test "cmd_ssh_config --ssh-key: uses explicit key path" {
+    run cmd_ssh_config --ssh-key "$HOME/.ssh/id_ed25519" --name fixture-primary
+    [[ "$status" -eq 0 ]]
+    [[ "$output" == *"id_ed25519"* ]]
+    [[ "$output" == *"Host fixture-primary"* ]]
+    [[ "$output" == *"IdentityFile"* ]]
 }

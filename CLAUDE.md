@@ -150,7 +150,7 @@ The Makefile detects host uid:gid and the entrypoint uses setpriv to step down f
   - **GitHub Actions**: `.github/workflows/*.yml`
 - Linting requires Docker. The linter image is built automatically if missing (`make lint` depends on the stamp file).
 - Fix all lint errors before committing — do not bypass with `--no-verify` or inline disables unless there is a documented reason.
-- **Test coverage**: `make test` always generates coverage. Minimum threshold is 70% — do not merge changes that drop total coverage below this. Check the coverage summary at the end of `make test` output.
+- **Test coverage**: `make test` always generates coverage. Minimum threshold is 90% — do not merge changes that drop total coverage below this. Check the coverage summary at the end of `make test` output.
 - **checkmake quirks**: `minphony` only parses the first line of `.PHONY` declarations — keep `test` and `clean` on the first line. `maxbodylength` default max is 15 lines per target body (configured in `checkmake.ini`).
 - **Local verification**: `multipass` and `jq` are installed on the dev machine — run `mps` commands directly to verify changes.
 - **Snap confinement**: Multipass is installed as a snap, which restricts file access to the user's home directory. Use paths under `$HOME` (not `/tmp`) for `mps transfer` tests and temp files that interact with the VM.

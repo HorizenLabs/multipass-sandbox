@@ -13,13 +13,7 @@ load ../test_helper
 # ================================================================
 
 setup() {
-    setup_home_override
-    mkdir -p "$HOME/mps/instances" "$HOME/mps/cache/images"
-    setup_multipass_stub
-    # shellcheck source=../../lib/multipass.sh
-    source "${MPS_ROOT}/lib/multipass.sh"
-    setup_integration_stubs
-    source_commands
+    setup_cmd_integration
 }
 teardown() { teardown_home_override; }
 
@@ -212,4 +206,23 @@ METAJSON
     run cmd_status --name nonexistent-vm
     [[ "$status" -ne 0 ]]
     [[ "$output" == *"does not exist"* ]]
+}
+
+@test "cmd_status: shows 'config' origin for MPS_MOUNTS entries" {
+    cat > "${HOME}/mps/instances/fixture-primary.json" <<'METAJSON'
+{
+    "name": "fixture-primary",
+    "full_name": "mps-fixture-primary",
+    "workdir": "/mnt/test-a",
+    "image": {"name": "base", "version": "1.0.0", "arch": "amd64", "sha256": null, "source": "pulled"}
+}
+METAJSON
+
+    export MPS_MOUNTS="/some/host/path:/mnt/test-b"
+
+    run cmd_status --name fixture-primary
+    [[ "$status" -eq 0 ]]
+    [[ "$output" == *"Mounts:"* ]]
+    [[ "$output" == *"(auto)"* ]]
+    [[ "$output" == *"(config)"* ]]
 }

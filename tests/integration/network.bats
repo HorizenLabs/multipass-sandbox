@@ -44,6 +44,18 @@ _create_instance_meta() {
 EOF
 }
 
+# Build a PATH string with aria2c's directory removed
+_path_without_aria2c() {
+    local aria2c_dir="" new_path="" IFS=':'
+    if command -v aria2c &>/dev/null; then
+        aria2c_dir="$(dirname "$(command -v aria2c)")"
+    fi
+    for p in $PATH; do
+        [[ "$p" != "$aria2c_dir" ]] && new_path="${new_path:+${new_path}:}${p}"
+    done
+    echo "$new_path"
+}
+
 # ================================================================
 # Setup / Teardown
 # ================================================================
@@ -228,25 +240,9 @@ teardown() {
 # ----------------------------------------------------------------
 
 @test "_mps_download_file (curl): downloads file when aria2c hidden from PATH" {
-    # Hide aria2c by restricting PATH
-    local saved_path="$PATH"
-    local aria2c_dir=""
-    if command -v aria2c &>/dev/null; then
-        aria2c_dir="$(dirname "$(command -v aria2c)")"
-    fi
-    # Build a PATH that excludes the aria2c directory
-    local new_path=""
-    local IFS=':'
-    for p in $saved_path; do
-        if [[ "$p" != "$aria2c_dir" ]]; then
-            new_path="${new_path:+${new_path}:}${p}"
-        fi
-    done
-    unset IFS
-
     local dest="${TEST_TEMP_DIR}/downloads_curl/testfile.txt"
     mkdir -p "$(dirname "$dest")"
-    PATH="$new_path" run _mps_download_file "${MPS_IMAGE_BASE_URL}/testfile.txt" "$dest"
+    PATH="$(_path_without_aria2c)" run _mps_download_file "${MPS_IMAGE_BASE_URL}/testfile.txt" "$dest"
     [[ "$status" -eq 0 ]]
     [[ -f "$dest" ]]
     local content
@@ -255,24 +251,10 @@ teardown() {
 }
 
 @test "_mps_download_file (curl): overwrites existing file" {
-    local saved_path="$PATH"
-    local aria2c_dir=""
-    if command -v aria2c &>/dev/null; then
-        aria2c_dir="$(dirname "$(command -v aria2c)")"
-    fi
-    local new_path=""
-    local IFS=':'
-    for p in $saved_path; do
-        if [[ "$p" != "$aria2c_dir" ]]; then
-            new_path="${new_path:+${new_path}:}${p}"
-        fi
-    done
-    unset IFS
-
     local dest="${TEST_TEMP_DIR}/downloads_curl/overwrite.txt"
     mkdir -p "$(dirname "$dest")"
     echo "old data" > "$dest"
-    PATH="$new_path" run _mps_download_file "${MPS_IMAGE_BASE_URL}/testfile.txt" "$dest"
+    PATH="$(_path_without_aria2c)" run _mps_download_file "${MPS_IMAGE_BASE_URL}/testfile.txt" "$dest"
     [[ "$status" -eq 0 ]]
     local content
     content="$(cat "$dest")"
@@ -280,24 +262,54 @@ teardown() {
 }
 
 @test "_mps_download_file (curl): returns non-zero on 404" {
-    local saved_path="$PATH"
-    local aria2c_dir=""
-    if command -v aria2c &>/dev/null; then
-        aria2c_dir="$(dirname "$(command -v aria2c)")"
-    fi
-    local new_path=""
-    local IFS=':'
-    for p in $saved_path; do
-        if [[ "$p" != "$aria2c_dir" ]]; then
-            new_path="${new_path:+${new_path}:}${p}"
-        fi
-    done
-    unset IFS
-
     local dest="${TEST_TEMP_DIR}/downloads_curl/missing.txt"
     mkdir -p "$(dirname "$dest")"
-    PATH="$new_path" run _mps_download_file "${MPS_IMAGE_BASE_URL}/nonexistent_file.xyz" "$dest"
+    PATH="$(_path_without_aria2c)" run _mps_download_file "${MPS_IMAGE_BASE_URL}/nonexistent_file.xyz" "$dest"
     [[ "$status" -ne 0 ]]
+}
+
+@test "_mps_download_file (curl): uses curl --progress-bar when aria2c unavailable" {
+    local stub_dir="${TEST_TEMP_DIR}/stubs"
+    mkdir -p "$stub_dir"
+
+    export MOCK_CURL_LOG="${TEST_TEMP_DIR}/curl_calls.log"
+    : > "$MOCK_CURL_LOG"
+
+    # Use #!/bin/bash shebang (not /usr/bin/env bash) so it works with restricted PATH
+    cat > "${stub_dir}/curl" <<'STUB'
+#!/bin/bash
+echo "CURL_ARGS: $*" >> "${MOCK_CURL_LOG}"
+# Find the -o argument and create the output file
+prev_arg=""
+for arg in "$@"; do
+    if [ "$prev_arg" = "-o" ]; then
+        touch "$arg"
+        break
+    fi
+    prev_arg="$arg"
+done
+STUB
+    chmod +x "${stub_dir}/curl"
+
+    # Symlink essential commands but deliberately exclude aria2c
+    local cmd real_path
+    for cmd in bash dirname basename touch rm; do
+        real_path="$(command -v "$cmd" 2>/dev/null)" || true
+        if [[ -n "$real_path" ]]; then
+            ln -sf "$real_path" "${stub_dir}/${cmd}"
+        fi
+    done
+
+    local dest="${TEST_TEMP_DIR}/downloaded_file"
+    # Set PATH to ONLY our stub dir — no aria2c available
+    PATH="$stub_dir" _mps_download_file "https://example.com/file.img" "$dest"
+
+    # Verify curl was called with --progress-bar
+    [[ -f "$MOCK_CURL_LOG" ]]
+    local logged
+    logged="$(cat "$MOCK_CURL_LOG")"
+    [[ "$logged" == *"--progress-bar"* ]]
+    [[ "$logged" == *"https://example.com/file.img"* ]]
 }
 
 # ----------------------------------------------------------------
@@ -738,24 +750,6 @@ EOF
     [[ "$output" == *"2.0.0"* ]]
 }
 
-@test "_mps_check_cli_update: silent when MPS_CHECK_UPDATES=false" {
-    MPS_CHECK_UPDATES=false run _mps_check_cli_update
-    [[ "$status" -eq 0 ]]
-    [[ -z "$output" ]]
-}
-
-@test "_mps_check_cli_update: silent when MPS_VERSION not SemVer" {
-    MPS_VERSION="dev" run _mps_check_cli_update
-    [[ "$status" -eq 0 ]]
-    [[ -z "$output" ]]
-}
-
-@test "_mps_check_cli_update: silent when MPS_IMAGE_BASE_URL empty" {
-    MPS_IMAGE_BASE_URL="" run _mps_check_cli_update
-    [[ "$status" -eq 0 ]]
-    [[ -z "$output" ]]
-}
-
 # ----------------------------------------------------------------
 # _mps_cli_update_warn
 # ----------------------------------------------------------------
@@ -788,12 +782,6 @@ EOF
     [[ "$output" == *"has been updated"* ]]
 }
 
-@test "_mps_cli_update_warn: silent when cache file does not exist" {
-    run _mps_cli_update_warn "${TEST_TEMP_DIR}/nonexistent.json"
-    [[ "$status" -eq 0 ]]
-    [[ -z "$output" ]]
-}
-
 @test "_mps_cli_update_warn: silent when MPS_ROOT is not a git repo" {
     local cache="${TEST_TEMP_DIR}/release.json"
     # Same version, unknown SHA — would warn if it were a git repo
@@ -804,4 +792,162 @@ EOF
     run _mps_cli_update_warn "$cache"
     [[ "$status" -eq 0 ]]
     [[ -z "$output" ]]
+}
+
+# ================================================================
+# Group D: _mps_pull_image error paths
+# ================================================================
+
+@test "_mps_pull_image: fails when MPS_IMAGE_BASE_URL is empty" {
+    MPS_IMAGE_BASE_URL="" run _mps_pull_image "base"
+    [[ "$status" -ne 0 ]]
+    [[ "$output" == *"MPS_IMAGE_BASE_URL not configured"* ]]
+}
+
+@test "_mps_pull_image: fails when manifest fetch fails (bad URL)" {
+    MPS_IMAGE_BASE_URL="http://127.0.0.1:1" run _mps_pull_image "base"
+    [[ "$status" -ne 0 ]]
+    [[ "$output" == *"Failed to fetch manifest"* ]]
+}
+
+@test "_mps_pull_image: fails when latest version not in manifest" {
+    # manifest-simple.json has "base" but we ask for "nonexistent" image
+    run _mps_pull_image "nonexistent"
+    [[ "$status" -ne 0 ]]
+    [[ "$output" == *"No 'latest' version"* ]]
+}
+
+@test "_mps_pull_image: fails when meta.json sidecar not found (404)" {
+    # base:1.0.0 exists in manifest but no actual .meta.json served at URL
+    # The HTTP server returns 404 for nonexistent paths
+    run _mps_pull_image "base" "9.9.9"
+    [[ "$status" -ne 0 ]]
+    [[ "$output" == *"not found"* ]]
+}
+
+# ================================================================
+# Group E: _mps_check_image_staleness: SHA comparison edge cases
+# ================================================================
+
+@test "_mps_check_image_staleness: stale via manifest fallback when sidecar unreachable" {
+    local arch
+    arch="$(mps_detect_arch)"
+    _create_local_meta "base" "1.1.0" "$arch" \
+        "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
+    touch -t 200001010000 "${HOME}/mps/cache/images/base/1.1.0/${arch}.meta.json"
+    # Manifest says SHA is different → stale
+    local manifest='{"schema_version":2,"images":{"base":{"latest":"1.1.0","versions":{"1.1.0":{"'"$arch"'":{"sha256":"aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111"}}}}}}'
+    MPS_IMAGE_BASE_URL="http://127.0.0.1:1"
+    run _mps_check_image_staleness "$manifest" "base" "1.1.0" "$arch"
+    [[ "$status" -eq 0 ]]
+    [[ "$output" == "stale" ]]
+}
+
+@test "_mps_check_image_staleness: unknown when both sidecar and manifest have no SHA" {
+    local arch
+    arch="$(mps_detect_arch)"
+    _create_local_meta "base" "1.1.0" "$arch" \
+        "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
+    touch -t 200001010000 "${HOME}/mps/cache/images/base/1.1.0/${arch}.meta.json"
+    # Manifest with no SHA for this version
+    local manifest='{"schema_version":2,"images":{"base":{"latest":"1.1.0","versions":{"1.1.0":{}}}}}'
+    MPS_IMAGE_BASE_URL="http://127.0.0.1:1"
+    run _mps_check_image_staleness "$manifest" "base" "1.1.0" "$arch"
+    [[ "$status" -eq 0 ]]
+    [[ "$output" == "unknown" ]]
+}
+
+# ================================================================
+# Group D: _mps_pull_image error paths
+# ================================================================
+
+@test "_mps_pull_image: SHA256 mismatch removes file and returns error" {
+    local arch
+    arch="$(mps_detect_arch)"
+    local img_rel="base/1.0.0/${arch}.img"
+    local meta_rel="base/1.0.0/${arch}.img.meta.json"
+    local fixtures_img="${HTTP_FIXTURES}/${img_rel}"
+    local fixtures_meta="${HTTP_FIXTURES}/${meta_rel}"
+    mkdir -p "$(dirname "$fixtures_img")"
+    echo "fake-image-content" > "$fixtures_img"
+    printf '{"sha256": "0000000000000000000000000000000000000000000000000000000000000000"}\n' \
+        > "$fixtures_meta"
+    run _mps_pull_image "base" "1.0.0"
+    [[ "$status" -ne 0 ]]
+    [[ "$output" == *"Checksum mismatch"* ]]
+    local dest="${HOME}/mps/cache/images/base/1.0.0/${arch}.img"
+    [[ ! -f "$dest" ]]
+    rm -f "$fixtures_img" "$fixtures_meta"
+    rmdir "$(dirname "$fixtures_img")" 2>/dev/null || true
+    rmdir "$(dirname "$(dirname "$fixtures_img")")" 2>/dev/null || true
+}
+
+@test "_mps_pull_image: download failure cleans up and returns error" {
+    local arch
+    arch="$(mps_detect_arch)"
+    local meta_rel="base/2.0.0/${arch}.img.meta.json"
+    local fixtures_meta="${HTTP_FIXTURES}/${meta_rel}"
+    mkdir -p "$(dirname "$fixtures_meta")"
+    printf '{"sha256": "aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111"}\n' \
+        > "$fixtures_meta"
+    _mps_download_file() { return 1; }
+    export -f _mps_download_file
+    run _mps_pull_image "base" "2.0.0"
+    [[ "$status" -ne 0 ]]
+    [[ "$output" == *"Failed to download"* ]]
+    local dest="${HOME}/mps/cache/images/base/2.0.0/${arch}.img"
+    [[ ! -f "$dest" ]]
+    rm -f "$fixtures_meta"
+    rmdir "$(dirname "$fixtures_meta")" 2>/dev/null || true
+    rmdir "$(dirname "$(dirname "$fixtures_meta")")" 2>/dev/null || true
+}
+
+# ================================================================
+# Group E: _mps_remote_is_fresh curl failure path
+# ================================================================
+
+@test "_mps_remote_is_fresh: returns 1 when curl itself fails (non-HTTP error)" {
+    local ref="${TEST_TEMP_DIR}/ref_file"
+    echo "cached" > "$ref"
+    run _mps_remote_is_fresh "http://127.0.0.1:1/some/path" "$ref"
+    [[ "$status" -ne 0 ]]
+}
+
+@test "_mps_check_image_staleness: up-to-date via remote sidecar body when HEAD says modified" {
+    local arch
+    arch="$(mps_detect_arch)"
+    local sha="cccc3333cccc3333cccc3333cccc3333cccc3333cccc3333cccc3333cccc3333"
+    _create_local_meta "base" "1.1.0" "$arch" "$sha"
+    touch -t 200001010000 "${HOME}/mps/cache/images/base/1.1.0/${arch}.meta.json"
+    local meta_rel="base/1.1.0/${arch}.img.meta.json"
+    local fixtures_meta="${HTTP_FIXTURES}/${meta_rel}"
+    mkdir -p "$(dirname "$fixtures_meta")"
+    printf '{"sha256": "%s"}\n' "$sha" > "$fixtures_meta"
+    local manifest='{"schema_version":2,"images":{"base":{"latest":"1.1.0","versions":{"1.1.0":{"'"$arch"'":{"sha256":"'"$sha"'"}}}}}}'
+    run _mps_check_image_staleness "$manifest" "base" "1.1.0" "$arch"
+    [[ "$status" -eq 0 ]]
+    [[ "$output" == "up-to-date" ]]
+    rm -f "$fixtures_meta"
+    rmdir "$(dirname "$fixtures_meta")" 2>/dev/null || true
+    rmdir "$(dirname "$(dirname "$fixtures_meta")")" 2>/dev/null || true
+}
+
+@test "_mps_check_image_staleness: stale via remote sidecar body when SHA differs" {
+    local arch
+    arch="$(mps_detect_arch)"
+    _create_local_meta "base" "1.1.0" "$arch" \
+        "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
+    touch -t 200001010000 "${HOME}/mps/cache/images/base/1.1.0/${arch}.meta.json"
+    local meta_rel="base/1.1.0/${arch}.img.meta.json"
+    local fixtures_meta="${HTTP_FIXTURES}/${meta_rel}"
+    mkdir -p "$(dirname "$fixtures_meta")"
+    printf '{"sha256": "aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111"}\n' \
+        > "$fixtures_meta"
+    local manifest='{"schema_version":2,"images":{"base":{"latest":"1.1.0","versions":{"1.1.0":{"'"$arch"'":{"sha256":"aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111"}}}}}}'
+    run _mps_check_image_staleness "$manifest" "base" "1.1.0" "$arch"
+    [[ "$status" -eq 0 ]]
+    [[ "$output" == "stale" ]]
+    rm -f "$fixtures_meta"
+    rmdir "$(dirname "$fixtures_meta")" 2>/dev/null || true
+    rmdir "$(dirname "$(dirname "$fixtures_meta")")" 2>/dev/null || true
 }

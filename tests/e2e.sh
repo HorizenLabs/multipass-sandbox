@@ -151,6 +151,9 @@ cleanup() {
         rm -rf "${E2E_TMPDIR:?}"
     fi
 
+    # Remove generated cloud-init template
+    rm -f "${HOME}/mps/cloud-init/e2e.yaml"
+
     return $rc
 }
 trap cleanup EXIT
@@ -159,14 +162,14 @@ trap cleanup EXIT
 # Stale reaper: destroy leftover e2e instance from crashed runs
 # ============================================================
 
-_E2E_EXPECTED_NAME="mps-project-cloud-init-e2e"
+_E2E_EXPECTED_NAME="mps-project-e2e"
 _e2e_log "Checking for stale e2e instance..."
 if multipass list --format json 2>/dev/null \
     | jq -e --arg n "$_E2E_EXPECTED_NAME" '.list[]? | select(.name == $n)' &>/dev/null; then
     _e2e_log "  Destroying stale instance: $_E2E_EXPECTED_NAME"
     multipass delete --purge "$_E2E_EXPECTED_NAME" 2>/dev/null || true
-    rm -f "${HOME}/mps/instances/project-cloud-init-e2e.json" 2>/dev/null || true
-    rm -f "${HOME}/mps/instances/project-cloud-init-e2e.ports.json" 2>/dev/null || true
+    rm -f "${HOME}/mps/instances/project-e2e.json" 2>/dev/null || true
+    rm -f "${HOME}/mps/instances/project-e2e.ports.json" 2>/dev/null || true
     rm -f "${HOME}/.ssh/config.d/${_E2E_EXPECTED_NAME}" 2>/dev/null || true
 fi
 
@@ -219,19 +222,20 @@ echo "adhoc-content" > "${E2E_TMPDIR}/adhocdir/adhocfile.txt"
 
 # Create .mps.env in the project directory
 cat > "${E2E_TMPDIR}/project/.mps.env" << EOF
-MPS_CLOUD_INIT=${E2E_TMPDIR}/cloud-init-e2e.yaml
+MPS_CLOUD_INIT=e2e
 MPS_PORTS=19000:9000
 MPS_MOUNTS=${E2E_TMPDIR}/mountdir:/mnt/config-mount
 EOF
 
 # Generate cloud-init from default.yaml (uncomment all #:example blocks)
+mkdir -p "${HOME}/mps/cloud-init"
 awk '
   /^#:example/  { uncomment=1; next }
   /^#:end/      { uncomment=0; next }
   uncomment     { sub(/# ?/, ""); print; next }
   { print }
 ' "${MPS_ROOT}/templates/cloud-init/default.yaml" \
-  > "${E2E_TMPDIR}/cloud-init-e2e.yaml"
+  > "${HOME}/mps/cloud-init/e2e.yaml"
 
 # ============================================================
 # Phase 0: Install (conditional)
@@ -244,10 +248,17 @@ phase_install() {
         return
     fi
 
-    yes | bash "${MPS_ROOT}/install.sh" || {
-        _e2e_fail "install.sh exited non-zero"
-        return
-    }
+    # yes exits non-zero (SIGPIPE) when install.sh closes stdin, which
+    # trips pipefail. Disable pipefail so only install.sh's exit code
+    # (last in pipeline) determines success.
+    local install_rc=0
+    set +o pipefail
+    yes | bash "${MPS_ROOT}/install.sh" || install_rc=$?
+    set -o pipefail
+    if [[ "$install_rc" -ne 0 ]]; then
+        _e2e_fail "FATAL: install.sh exited non-zero"
+        return 1
+    fi
     _e2e_pass "install.sh succeeded"
 
     assert_exit_zero "mps --version after install" mps --version
@@ -327,8 +338,7 @@ phase_create() {
     cd "${E2E_TMPDIR}/project"
 
     local create_out
-    create_out="$("${MPS_ROOT}/bin/mps" create --profile micro \
-        --cloud-init "${E2E_TMPDIR}/cloud-init-e2e.yaml" 2>&1)" || {
+    create_out="$("${MPS_ROOT}/bin/mps" create --profile micro 2>&1)" || {
         _e2e_fail "FATAL: mps create failed"
         echo "$create_out" >&2
         return 1
@@ -470,36 +480,26 @@ phase_cloud_init() {
     # Superpowers
     assert_contains "plugin: superpowers" "$plugin_list" "superpowers"
 
-    # --- Optional third-party tools (soft assertions: skip if not installed) ---
-    # These install from npm/git and may fail due to external factors.
+    # --- Third-party tools (hard assertions) ---
+    # Note: use $HOME (no backslash) inside single-quoted _ubuntu_exec args.
+    # $1 expansion results are not re-scanned by the host shell, so $HOME
+    # passes through literally to the VM's bash -c where it expands correctly.
 
-    # GSD framework
-    if _ubuntu_exec 'command -v get-shit-done-cc' >/dev/null 2>&1; then
-        _e2e_pass "gsd installed"
-    else
-        _e2e_skip "gsd not installed (optional)"
-    fi
+    # GSD framework (bunx ephemeral — no persistent binary; check installed artifacts)
+    assert_exit_zero "gsd installed" \
+        _ubuntu_exec 'test -d $HOME/.claude/commands/gsd && test -f $HOME/.claude/gsd-file-manifest.json'
 
-    # SuperClaude framework
-    if _ubuntu_exec 'command -v superclaude' >/dev/null 2>&1; then
-        _e2e_pass "superclaude installed"
-    else
-        _e2e_skip "superclaude not installed (optional)"
-    fi
+    # SuperClaude framework (uv installs binary + slash commands)
+    assert_exit_zero "superclaude installed" \
+        _ubuntu_exec 'command -v superclaude && test -d $HOME/.claude/commands/sc'
 
-    # BMAD Method
-    if _ubuntu_exec 'test -d "\$HOME/.bmad" || test -d "\$HOME/bmm"' >/dev/null 2>&1; then
-        _e2e_pass "bmad installed"
-    else
-        _e2e_skip "bmad not installed (optional)"
-    fi
+    # BMAD Method (installs to ~/_bmad/ via --directory ~)
+    assert_exit_zero "bmad installed" \
+        _ubuntu_exec 'test -d $HOME/_bmad && test -f $HOME/_bmad/_config/manifest.yaml'
 
-    # GitHub Spec Kit
-    if _ubuntu_exec 'command -v specify-cli' >/dev/null 2>&1; then
-        _e2e_pass "spec-kit installed"
-    else
-        _e2e_skip "spec-kit not installed (optional)"
-    fi
+    # GitHub Spec Kit (uv installs "specify" binary)
+    assert_exit_zero "spec-kit installed" \
+        _ubuntu_exec 'command -v specify'
 }
 
 # ============================================================
@@ -810,8 +810,17 @@ phase_uninstall() {
         return
     fi
 
-    yes | bash "${MPS_ROOT}/uninstall.sh" || true
+    local uninstall_rc=0
+    set +o pipefail
+    yes | bash "${MPS_ROOT}/uninstall.sh" || uninstall_rc=$?
+    set -o pipefail
+    if [[ "$uninstall_rc" -ne 0 ]]; then
+        _e2e_fail "uninstall.sh exited non-zero"
+        return
+    fi
+    _e2e_pass "uninstall.sh succeeded"
 
+    hash -r  # clear shell's command cache from install phase
     assert_exit_nonzero "mps not found after uninstall" command -v mps
 
     local comp_exists=false
@@ -838,8 +847,22 @@ _e2e_log "  E2E_INSTALL:    ${E2E_INSTALL}"
 _e2e_log "  Host arch:      $(uname -m)"
 echo ""
 
-# Phase 0-2: independent (no VM needed)
-phase_install
+# Phase 0: Install (fatal gate when E2E_INSTALL=true)
+if ! phase_install; then
+    _e2e_log "FATAL: Install failed — aborting"
+    echo ""
+    echo "========================================"
+    echo "  E2E Summary"
+    echo "========================================"
+    echo "  Pass: ${_e2e_pass}"
+    echo "  Fail: ${_e2e_fail}"
+    echo "  Skip: ${_e2e_skip}"
+    echo "  Total: $((_e2e_pass + _e2e_fail + _e2e_skip))"
+    echo "========================================"
+    exit 1
+fi
+
+# Phases 1-2: independent (no VM needed)
 phase_smoke
 phase_image
 

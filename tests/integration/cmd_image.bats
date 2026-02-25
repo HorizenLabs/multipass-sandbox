@@ -100,6 +100,137 @@ teardown() { teardown_home_override; }
     [[ "$output" != *"STATUS"* ]]
 }
 
+@test "image list: stale status displayed in STATUS column" {
+    _mps_check_image_staleness() { echo "stale"; }
+    export -f _mps_check_image_staleness
+    run cmd_image list
+    [[ "$status" -eq 0 ]]
+    [[ "$output" == *"stale"* ]]
+}
+
+@test "image list: update status shows new version in STATUS column" {
+    _mps_check_image_staleness() { echo "update:2.0.0"; }
+    export -f _mps_check_image_staleness
+    run cmd_image list
+    [[ "$status" -eq 0 ]]
+    [[ "$output" == *"update"* ]]
+    [[ "$output" == *"2.0.0"* ]]
+}
+
+@test "image list: unknown status shows -- in STATUS column" {
+    _mps_check_image_staleness() { echo "unknown"; }
+    export -f _mps_check_image_staleness
+    run cmd_image list
+    [[ "$status" -eq 0 ]]
+    [[ "$output" == *"--"* ]]
+}
+
+@test "image list: --remote with no MPS_IMAGE_BASE_URL warns and fails" {
+    unset MPS_IMAGE_BASE_URL
+    run cmd_image list --remote
+    [[ "$status" -ne 0 ]]
+    [[ "$output" == *"MPS_IMAGE_BASE_URL not configured"* ]]
+}
+
+@test "image list: --remote with unreachable URL fails" {
+    MPS_IMAGE_BASE_URL="http://127.0.0.1:1"
+    run cmd_image list --remote
+    [[ "$status" -ne 0 ]]
+    [[ "$output" == *"Failed to fetch manifest"* ]]
+}
+
+@test "image list: --remote renders remote image table" {
+    # Use real HTTP stub — setup already sets MPS_IMAGE_BASE_URL for the test stub
+    # But our manifest is a simple one without the full fields — override
+    _mps_fetch_manifest() { cat "${MPS_ROOT}/tests/fixtures/http/manifest-simple.json"; }
+    export -f _mps_fetch_manifest
+    # We need real curl to hit manifests; use manifest-simple.json which our stub serves
+    export MPS_IMAGE_BASE_URL="http://localhost:1"
+    # Just test via the stub function
+    run bash -c '
+        source "'"${MPS_ROOT}"'/lib/common.sh"
+        source "'"${MPS_ROOT}"'/lib/multipass.sh"
+        for f in "'"${MPS_ROOT}"'"/commands/*.sh; do source "$f"; done
+        _mps_fetch_manifest() { cat "'"${MPS_ROOT}"'/tests/fixtures/http/manifest-simple.json"; }
+        # Override curl so the function uses our manifest directly
+        curl() { cat "'"${MPS_ROOT}"'/tests/fixtures/http/manifest-simple.json"; }
+        export -f curl _mps_fetch_manifest
+        export MPS_IMAGE_BASE_URL="http://localhost"
+        cmd_image list --remote
+    '
+    [[ "$status" -eq 0 ]]
+    [[ "$output" == *"Remote images"* ]]
+    [[ "$output" == *"base"* ]]
+}
+
+@test "image list: unknown option errors" {
+    run cmd_image list --bogus
+    [[ "$status" -ne 0 ]]
+    [[ "$output" == *"Unknown option"* ]]
+}
+
+@test "image import: unknown option errors" {
+    run cmd_image import --bogus
+    [[ "$status" -ne 0 ]]
+    [[ "$output" == *"Unknown option"* ]]
+}
+
+@test "image pull: unknown option errors" {
+    run cmd_image pull --bogus
+    [[ "$status" -ne 0 ]]
+    [[ "$output" == *"Unknown option"* ]]
+}
+
+@test "image remove: unknown option errors" {
+    run cmd_image remove --bogus
+    [[ "$status" -ne 0 ]]
+    [[ "$output" == *"Unknown option"* ]]
+}
+
+@test "image remove: empty cache with --all shows 'no cached images'" {
+    rm -rf "${HOME}/mps/cache/images"/*
+    run cmd_image remove --all --force
+    [[ "$status" -eq 0 ]]
+    [[ "$output" == *"No cached images"* ]]
+}
+
+@test "image remove: nonexistent version dies with 'Image not found'" {
+    run cmd_image remove base:99.0.0 --force
+    [[ "$status" -ne 0 ]]
+    [[ "$output" == *"Image not found"* ]]
+}
+
+@test "image remove: nonexistent arch dies with 'Architecture not found'" {
+    # Use a valid arch that doesn't exist in cache (opposite of TEST_ARCH)
+    local missing_arch="arm64"
+    [[ "$TEST_ARCH" == "arm64" ]] && missing_arch="amd64"
+    run cmd_image remove "base:1.0.0" --arch "$missing_arch" --force
+    [[ "$status" -ne 0 ]]
+    [[ "$output" == *"not found"* ]]
+}
+
+@test "image remove: confirmation declined aborts" {
+    mps_confirm() { return 1; }
+    export -f mps_confirm
+    run cmd_image remove base:0.9.0
+    [[ "$status" -eq 0 ]]
+    [[ "$output" == *"Aborted"* ]]
+    # Image should still exist
+    [[ -d "${HOME}/mps/cache/images/base/0.9.0" ]]
+}
+
+@test "image remove: rmdir cleans empty image dir after arch removal" {
+    local cache="${HOME}/mps/cache/images"
+    # Create a version with only one arch file
+    mkdir -p "${cache}/cleanme/1.0.0"
+    : > "${cache}/cleanme/1.0.0/${TEST_ARCH}.img"
+    run cmd_image remove "cleanme:1.0.0" --arch "$TEST_ARCH" --force
+    [[ "$status" -eq 0 ]]
+    # Both tag dir and image dir should be cleaned up
+    [[ ! -d "${cache}/cleanme/1.0.0" ]]
+    [[ ! -d "${cache}/cleanme" ]]
+}
+
 @test "image list: distinguishes pulled vs imported" {
     local cache="${HOME}/mps/cache/images"
     # Create an imported image (no build_date in meta)
@@ -346,4 +477,246 @@ teardown() { teardown_home_override; }
     run cmd_image remove base:0.9.0 --force
     [[ "$status" -eq 0 ]]
     [[ "$output" == *"will be removed"* ]]
+}
+
+# ================================================================
+# _image_pull: old version cleanup after successful pull
+# ================================================================
+
+@test "image pull: cleans up old version when mps_confirm accepts" {
+    local cache="${HOME}/mps/cache/images"
+
+    # Override _mps_check_image_staleness to trigger a pull (stale)
+    _mps_check_image_staleness() { echo "stale"; }
+    export -f _mps_check_image_staleness
+
+    # Override _mps_pull_image to simulate downloading a new version.
+    # It creates the 2.0.0 directory with an image file.
+    _mps_pull_image() {
+        local name="$1"
+        mkdir -p "${HOME}/mps/cache/images/${name}/2.0.0"
+        dd if=/dev/urandom of="${HOME}/mps/cache/images/${name}/2.0.0/${TEST_ARCH}.img" bs=1024 count=1 2>/dev/null
+        printf '{"sha256":"new_sha","build_date":"2026-01-01T00:00:00Z"}\n' \
+            > "${HOME}/mps/cache/images/${name}/2.0.0/${TEST_ARCH}.meta.json"
+        return 0
+    }
+    export -f _mps_pull_image
+
+    # Override mps_confirm to accept removal
+    mps_confirm() { return 0; }
+    export -f mps_confirm
+
+    # Verify old versions exist before pull
+    [[ -d "${cache}/base/1.0.0" ]]
+    [[ -d "${cache}/base/0.9.0" ]]
+
+    run cmd_image pull base:1.0.0
+    [[ "$status" -eq 0 ]]
+
+    # After pull, 2.0.0 is the new version; old SemVer versions should be cleaned up
+    [[ -d "${cache}/base/2.0.0" ]]
+    # Both old versions (1.0.0 and 0.9.0) should have been removed (mps_confirm returns 0)
+    [[ ! -f "${cache}/base/1.0.0/${TEST_ARCH}.img" ]]
+    [[ ! -f "${cache}/base/0.9.0/${TEST_ARCH}.img" ]]
+}
+
+@test "image pull: preserves old version when mps_confirm declines" {
+    local cache="${HOME}/mps/cache/images"
+
+    _mps_check_image_staleness() { echo "stale"; }
+    export -f _mps_check_image_staleness
+
+    # Override _mps_pull_image to simulate downloading a new version
+    _mps_pull_image() {
+        local name="$1"
+        mkdir -p "${HOME}/mps/cache/images/${name}/2.0.0"
+        dd if=/dev/urandom of="${HOME}/mps/cache/images/${name}/2.0.0/${TEST_ARCH}.img" bs=1024 count=1 2>/dev/null
+        printf '{"sha256":"new_sha","build_date":"2026-01-01T00:00:00Z"}\n' \
+            > "${HOME}/mps/cache/images/${name}/2.0.0/${TEST_ARCH}.meta.json"
+        return 0
+    }
+    export -f _mps_pull_image
+
+    # Override mps_confirm to DECLINE removal
+    mps_confirm() { return 1; }
+    export -f mps_confirm
+
+    [[ -d "${cache}/base/0.9.0" ]]
+
+    run cmd_image pull base:1.0.0
+    [[ "$status" -eq 0 ]]
+
+    # Old versions should be preserved since user declined
+    [[ -f "${cache}/base/0.9.0/${TEST_ARCH}.img" ]]
+    [[ -f "${cache}/base/1.0.0/${TEST_ARCH}.img" ]]
+    # New version should exist
+    [[ -d "${cache}/base/2.0.0" ]]
+}
+
+@test "image pull: old version cleanup removes empty tag directories" {
+    local cache="${HOME}/mps/cache/images"
+
+    _mps_check_image_staleness() { echo "stale"; }
+    export -f _mps_check_image_staleness
+
+    _mps_pull_image() {
+        local name="$1"
+        mkdir -p "${HOME}/mps/cache/images/${name}/2.0.0"
+        dd if=/dev/urandom of="${HOME}/mps/cache/images/${name}/2.0.0/${TEST_ARCH}.img" bs=1024 count=1 2>/dev/null
+        printf '{"sha256":"new_sha","build_date":"2026-01-01T00:00:00Z"}\n' \
+            > "${HOME}/mps/cache/images/${name}/2.0.0/${TEST_ARCH}.meta.json"
+        return 0
+    }
+    export -f _mps_pull_image
+
+    mps_confirm() { return 0; }
+    export -f mps_confirm
+
+    run cmd_image pull base:1.0.0
+    [[ "$status" -eq 0 ]]
+
+    # Old version directories should be removed entirely (empty after cleanup)
+    [[ ! -d "${cache}/base/0.9.0" ]]
+    [[ "$output" == *"Removed base:"* ]]
+}
+
+# ================================================================
+# _image_list --remote: remote image listing with jq formatting
+# ================================================================
+
+@test "image list --remote: formats remote manifest with jq" {
+    # Set up MPS_IMAGE_BASE_URL so the remote listing code path triggers
+    export MPS_IMAGE_BASE_URL="http://localhost:9999"
+
+    # Override curl to return a valid manifest with image data
+    curl() {
+        # Only intercept the manifest.json fetch
+        case "${*}" in
+            *manifest.json*)
+                cat <<'MANIFEST'
+{
+    "images": {
+        "base": {
+            "latest": "1.0.0",
+            "description": "Base Ubuntu image",
+            "min_profile": "lite",
+            "versions": {
+                "1.0.0": {
+                    "amd64": {"sha256": "abc123", "build_date": "2025-01-01T00:00:00Z"},
+                    "arm64": {"sha256": "def456", "build_date": "2025-01-01T00:00:00Z"}
+                }
+            }
+        }
+    }
+}
+MANIFEST
+                return 0
+                ;;
+            *)
+                command curl "$@"
+                ;;
+        esac
+    }
+    export -f curl
+
+    run cmd_image list --remote
+    [[ "$status" -eq 0 ]]
+    # Should show remote images header
+    [[ "$output" == *"Remote images"* ]]
+    # Should show column headers for remote listing
+    [[ "$output" == *"NAME"* ]]
+    [[ "$output" == *"VERSION"* ]]
+    # Should show the base image from manifest
+    [[ "$output" == *"base"* ]]
+    [[ "$output" == *"1.0.0"* ]]
+}
+
+# ================================================================
+# _image_import: manifest metadata merge into .meta.json
+# ================================================================
+
+@test "image import: merges manifest metadata into .meta.json" {
+    local src="${TEST_TEMP_DIR}/test-merge.qcow2"
+    dd if=/dev/urandom of="$src" bs=1024 count=1 2>/dev/null
+
+    # Override _mps_fetch_manifest to return a manifest with flavor metadata
+    _mps_fetch_manifest() {
+        cat <<'MANIFEST'
+{
+    "images": {
+        "base": {
+            "latest": "1.0.0",
+            "disk_size": "20G",
+            "min_profile": "lite",
+            "min_disk": "15G",
+            "min_memory": "2G",
+            "min_cpus": 2,
+            "description": "Base Ubuntu image",
+            "versions": {
+                "1.0.0": {
+                    "amd64": {"sha256": "abc123"}
+                }
+            }
+        }
+    }
+}
+MANIFEST
+        return 0
+    }
+    export -f _mps_fetch_manifest
+
+    run cmd_image import "$src" --name base --tag 1.0.0 --arch amd64
+    [[ "$status" -eq 0 ]]
+
+    local meta="${HOME}/mps/cache/images/base/1.0.0/amd64.meta.json"
+    [[ -f "$meta" ]]
+
+    # Verify merged metadata fields
+    local disk_size min_profile
+    disk_size="$(jq -r '.disk_size' "$meta")"
+    min_profile="$(jq -r '.min_profile' "$meta")"
+    [[ "$disk_size" == "20G" ]]
+    [[ "$min_profile" == "lite" ]]
+
+    # sha256 should also be present (from the import itself)
+    local sha
+    sha="$(jq -r '.sha256' "$meta")"
+    [[ -n "$sha" ]]
+}
+
+@test "image import: no merge when manifest fetch fails" {
+    local src="${TEST_TEMP_DIR}/test-nomerge.qcow2"
+    dd if=/dev/urandom of="$src" bs=1024 count=1 2>/dev/null
+
+    # Override _mps_fetch_manifest to fail
+    _mps_fetch_manifest() { return 1; }
+    export -f _mps_fetch_manifest
+
+    run cmd_image import "$src" --name custom --tag 1.0.0 --arch amd64
+    [[ "$status" -eq 0 ]]
+
+    local meta="${HOME}/mps/cache/images/custom/1.0.0/amd64.meta.json"
+    [[ -f "$meta" ]]
+
+    # Should only have sha256 (no merged fields)
+    local disk_size
+    disk_size="$(jq -r '.disk_size // "null"' "$meta")"
+    [[ "$disk_size" == "null" ]]
+}
+
+# ================================================================
+# _image_remove: nonexistent image and version not found
+# ================================================================
+
+@test "image remove: nonexistent image name dies with 'not found'" {
+    run cmd_image remove "nonexistent-image" --force
+    [[ "$status" -ne 0 ]]
+    [[ "$output" == *"not found"* ]] || [[ "$output" == *"Image not found"* ]]
+}
+
+@test "image remove: nonexistent version dies with 'not found'" {
+    # base image exists but version 99.99.99 does not
+    run cmd_image remove "base:99.99.99" --force
+    [[ "$status" -ne 0 ]]
+    [[ "$output" == *"not found"* ]] || [[ "$output" == *"Image not found"* ]]
 }
