@@ -135,11 +135,14 @@ _transfer_resolve_path() {
         echo "${instance_name}:${guest_path}"
     else
         # Host path: resolve to absolute
+        local resolved
         if [[ "$path" == /* ]]; then
-            echo "$path"
+            resolved="$path"
         else
-            echo "${MPS_PROJECT_DIR:-$(pwd)}/${path}"
+            resolved="${MPS_PROJECT_DIR:-$(pwd)}/${path}"
         fi
+        _mps_check_snap_path "$resolved" "Transfer"
+        echo "$resolved"
     fi
 }
 

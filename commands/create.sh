@@ -140,11 +140,15 @@ cmd_create() {
     local cloud_init_path=""
     cloud_init_path="$(mps_resolve_cloud_init "${arg_cloud_init:-}")"
     mps_log_debug "Cloud-init template: ${cloud_init_path}"
+    _mps_check_snap_path "$cloud_init_path" "Cloud-init"
 
     # ---- Resolve resource values: CLI flags > config/profile > defaults ----
     local image_spec="${arg_image:-${MPS_IMAGE:-${MPS_DEFAULT_IMAGE:-base}}}"
     local image
     image="$(mps_resolve_image "$image_spec")"
+    if [[ "$image" == file://* ]]; then
+        _mps_check_snap_path "${image#file://}" "Image"
+    fi
     local cpus="${arg_cpus:-${MPS_CPUS:-${MPS_DEFAULT_CPUS:-2}}}"
     local memory="${arg_memory:-${MPS_MEMORY:-${MPS_DEFAULT_MEMORY:-2G}}}"
     local disk="${arg_disk:-${MPS_DISK:-${MPS_DEFAULT_DISK:-20G}}}"
@@ -163,11 +167,7 @@ cmd_create() {
 
     # Primary mount (passed as --mount to multipass launch)
     if [[ -n "${MPS_MOUNT_SOURCE:-}" && -n "${MPS_MOUNT_TARGET:-}" ]]; then
-        # Rule 2 check only for auto-mount (CWD is virtually always under $HOME)
-        if [[ "${MPS_MOUNT_SOURCE}" == "${HOME:-}" ]]; then
-            mps_log_warn "Mounting your entire home directory exposes dotfiles (.ssh, .gnupg, etc.) inside the VM."
-            mps_log_warn "Consider mounting a project subdirectory instead, or use --no-mount."
-        fi
+        mps_validate_mount_source "$MPS_MOUNT_SOURCE"
         extra_args+=(--mount "${MPS_MOUNT_SOURCE}:${MPS_MOUNT_TARGET}")
         mps_log_debug "Primary mount: ${MPS_MOUNT_SOURCE} -> ${MPS_MOUNT_TARGET}"
     fi
@@ -280,6 +280,7 @@ cmd_create() {
             if [[ "$host_src" != /* ]]; then
                 host_src="${MPS_PROJECT_DIR:-$(pwd)}/${host_src}"
             fi
+            _mps_check_snap_path "$host_src" "Transfer"
 
             if [[ ! -e "$host_src" ]]; then
                 mps_die "Transfer source not found: ${host_src}"

@@ -15,7 +15,7 @@ load ../test_helper
 
 setup() {
     setup_home_override
-    mkdir -p "$HOME/.mps/instances" "$HOME/.mps/cache/images"
+    mkdir -p "$HOME/mps/instances" "$HOME/mps/cache/images"
     setup_multipass_stub
     export MPS_CHECK_UPDATES=false
     MPS_BIN="${MPS_ROOT}/bin/mps"

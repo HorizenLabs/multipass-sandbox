@@ -63,7 +63,7 @@ _mps_dispatch_complete() {
                 seen="${seen} ${name}"
             done
             # Also include cached image names not in layers
-            local cache_dir="${HOME}/.mps/cache/images"
+            local cache_dir="${HOME}/mps/cache/images"
             if [[ -d "$cache_dir" ]]; then
                 local d
                 for d in "$cache_dir"/*/; do
@@ -84,7 +84,7 @@ _mps_dispatch_complete() {
                 [[ -f "$f" ]] || continue
                 basename "$f" .yaml
             done
-            local user_dir="${HOME}/.mps/cloud-init"
+            local user_dir="${HOME}/mps/cloud-init"
             if [[ -d "$user_dir" ]]; then
                 for f in "$user_dir"/*.yaml; do
                     [[ -f "$f" ]] || continue
@@ -213,7 +213,7 @@ ${_color_bold}Examples:${_color_reset}
 ${_color_bold}Configuration:${_color_reset}
     Config files are loaded in order (later wins):
       1. <mps-root>/config/defaults.env
-      2. ~/.mps/config
+      2. ~/mps/config
       3. .mps.env (per-project)
       4. CLI flags
 

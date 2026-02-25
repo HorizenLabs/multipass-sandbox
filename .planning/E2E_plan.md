@@ -61,7 +61,7 @@ EXIT trap destroys any `mps-e2e-*` VM + removes temp dir. Pre-run stale reaper k
 Under `$HOME` (Multipass snap confinement):
 
 ```
-$HOME/.mps-e2e-<pid>/
+$HOME/mps-e2e-<pid>/
 ├── project/                ← fake project dir (auto-mount + auto-naming source)
 │   └── .mps.env            ← MPS_PORTS=19000:9000 + MPS_MOUNTS=...:/mnt/config-mount
 ├── cloud-init-e2e.yaml     ← generated from default.yaml at runtime
@@ -121,7 +121,7 @@ yes | bash install.sh
 assert: mps --version exits 0
 assert: multipass version exits 0
 assert: jq --version exits 0
-assert: ~/.mps/instances/ directory exists
+assert: ~/mps/instances/ directory exists
 assert: completion file symlinked
 ```
 
@@ -170,7 +170,7 @@ fatal assert: state == "Running" (via mps status --json)
 assert: auto-mount visible in mps mount list with origin "auto"
 assert: config mount visible in mps mount list with origin "config"
 assert: mps exec -- cat /mnt/config-mount/configfile.txt → "config-mount-content"
-assert: metadata file exists at ~/.mps/instances/<short>.json
+assert: metadata file exists at ~/mps/instances/<short>.json
 assert: MPS_PORTS recorded in metadata (port_forwards field)
 # Note: port 19000 NOT yet forwarded (ssh: null at create time)
 ```
@@ -382,8 +382,8 @@ curl -sf --max-time 5 http://localhost:80/     → response
 ```
 mps destroy --force
 mps list                                 → does not contain instance
-assert: ~/.mps/instances/<short>.json removed
-assert: ~/.mps/sockets/<short>-*.sock removed
+assert: ~/mps/instances/<short>.json removed
+assert: ~/mps/sockets/<short>-*.sock removed
 assert: ~/.ssh/config.d/mps-$FULL_NAME removed
 ```
 
@@ -400,7 +400,7 @@ mps image list                           → does not contain image
 yes | bash uninstall.sh
 assert: command -v mps fails
 assert: completion file removed
-assert: ~/.mps/instances/ empty or gone
+assert: ~/mps/instances/ empty or gone
 ```
 
 ---

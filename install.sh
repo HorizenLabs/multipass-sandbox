@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # Multi Pass Sandbox (mps) — Installer
-# Symlinks bin/mps to a location on PATH and creates ~/.mps/ directory structure.
+# Symlinks bin/mps to a location on PATH and creates ~/mps/ directory structure.
 
 _color_reset=$'\033[0m'
 _color_red=$'\033[0;31m'
@@ -118,10 +118,10 @@ _mps_install_main() {
 
     # ---------- Create Directory Structure ----------
 
-    info "Creating ~/.mps/ directory structure..."
-    mkdir -p "${HOME}/.mps/instances"
-    mkdir -p "${HOME}/.mps/cache/images"
-    mkdir -p "${HOME}/.mps/cloud-init"
+    info "Creating ~/mps/ directory structure..."
+    mkdir -p "${HOME}/mps/instances"
+    mkdir -p "${HOME}/mps/cache/images"
+    mkdir -p "${HOME}/mps/cloud-init"
     mkdir -p "${HOME}/.ssh/config.d"
 
     # ---------- Install ----------

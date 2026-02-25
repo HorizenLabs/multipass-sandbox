@@ -69,13 +69,13 @@ teardown() { teardown_home_override; }
 @test "mps_state_dir: creates directory under HOME" {
     result="$(mps_state_dir)"
     [[ -d "$result" ]]
-    [[ "$result" == "${HOME}/.mps/instances" ]]
+    [[ "$result" == "${HOME}/mps/instances" ]]
 }
 
 @test "mps_cache_dir: creates directory under HOME" {
     result="$(mps_cache_dir)"
     [[ -d "$result" ]]
-    [[ "$result" == "${HOME}/.mps/cache" ]]
+    [[ "$result" == "${HOME}/mps/cache" ]]
 }
 
 # ================================================================
@@ -84,7 +84,7 @@ teardown() { teardown_home_override; }
 
 @test "mps_instance_meta: returns correct path" {
     result="$(mps_instance_meta "mydev")"
-    [[ "$result" == *"/.mps/instances/mydev.json" ]]
+    [[ "$result" == *"/mps/instances/mydev.json" ]]
 }
 
 # ================================================================
@@ -103,10 +103,10 @@ teardown() { teardown_home_override; }
 }
 
 @test "mps_resolve_cloud_init: resolves personal template" {
-    mkdir -p "${HOME}/.mps/cloud-init"
-    touch "${HOME}/.mps/cloud-init/personal.yaml"
+    mkdir -p "${HOME}/mps/cloud-init"
+    touch "${HOME}/mps/cloud-init/personal.yaml"
     result="$(mps_resolve_cloud_init "personal")"
-    [[ "$result" == "${HOME}/.mps/cloud-init/personal.yaml" ]]
+    [[ "$result" == "${HOME}/mps/cloud-init/personal.yaml" ]]
 }
 
 @test "mps_resolve_cloud_init: dies for non-existent template" {

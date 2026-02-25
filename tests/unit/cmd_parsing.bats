@@ -64,7 +64,7 @@ export -f _mps_resolve_project_mounts
 
 setup() {
     setup_home_override
-    mkdir -p "$HOME/.mps/instances" "$HOME/.mps/cache/images"
+    mkdir -p "$HOME/mps/instances" "$HOME/mps/cache/images"
     source_commands
 }
 teardown() { teardown_home_override; }

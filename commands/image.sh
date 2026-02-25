@@ -427,7 +427,7 @@ ${_color_bold}Usage:${_color_reset} mps image remove <name>[:<version>] [options
        mps image remove --all [--force]
 
 ${_color_bold}Description:${_color_reset}
-    Remove cached images from ~/.mps/cache/images/.
+    Remove cached images from ~/mps/cache/images/.
 
 ${_color_bold}Options:${_color_reset}
     --arch <arch>      Remove only the specified architecture (amd64 or arm64)

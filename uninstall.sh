@@ -123,7 +123,7 @@ _mps_uninstall_main() {
 
     # ---------- 5. Instance Metadata ----------
 
-    instances_dir="${HOME}/.mps/instances"
+    instances_dir="${HOME}/mps/instances"
     if [[ -d "$instances_dir" ]]; then
         instance_files=()
         while IFS= read -r -d '' f; do
@@ -140,7 +140,7 @@ _mps_uninstall_main() {
 
     # ---------- 6. Cached Images ----------
 
-    cache_dir="${HOME}/.mps/cache"
+    cache_dir="${HOME}/mps/cache"
     if [[ -d "$cache_dir" ]]; then
         cache_size="$(du -sh "$cache_dir" 2>/dev/null | cut -f1 || echo "unknown")"
         echo ""
@@ -153,23 +153,23 @@ _mps_uninstall_main() {
 
     # ---------- 7. User Config ----------
 
-    user_config="${HOME}/.mps/config"
+    user_config="${HOME}/mps/config"
     if [[ -f "$user_config" ]]; then
         echo ""
-        if confirm "Remove user config (~/.mps/config)?"; then
+        if confirm "Remove user config (~/mps/config)?"; then
             rm -f "$user_config"
             removed+=("User config: ${user_config}")
             info "Removed user config."
         fi
     fi
 
-    # ---------- 8. Cleanup ~/.mps ----------
+    # ---------- 8. Cleanup ~/mps ----------
 
-    if [[ -d "${HOME}/.mps" ]]; then
+    if [[ -d "${HOME}/mps" ]]; then
         # Remove instances dir if empty
-        rmdir "${HOME}/.mps/instances" 2>/dev/null || true
+        rmdir "${HOME}/mps/instances" 2>/dev/null || true
         # Remove top-level dir if empty
-        rmdir "${HOME}/.mps" 2>/dev/null && removed+=("Directory: ~/.mps") || true
+        rmdir "${HOME}/mps" 2>/dev/null && removed+=("Directory: ~/mps") || true
     fi
 
     # ---------- 9. Summary ----------

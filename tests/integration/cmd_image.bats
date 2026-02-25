@@ -1,7 +1,7 @@
 #!/usr/bin/env bats
 # Integration tests for command orchestration: cmd_image (list/import/pull/remove).
 #
-# These tests use a populated cache tree in $HOME/.mps/cache/images/ and let most
+# These tests use a populated cache tree in $HOME/mps/cache/images/ and let most
 # functions flow through. Network functions (_mps_fetch_manifest, _mps_pull_image)
 # are stubbed since they require real CDN access.
 
@@ -13,14 +13,14 @@ load ../test_helper
 
 setup() {
     setup_home_override
-    mkdir -p "$HOME/.mps/instances" "$HOME/.mps/cache/images"
+    mkdir -p "$HOME/mps/instances" "$HOME/mps/cache/images"
     setup_multipass_stub
     # shellcheck source=../../lib/multipass.sh
     source "${MPS_ROOT}/lib/multipass.sh"
     export TEST_TEMP_DIR
 
     # Populate image cache with real SHA
-    local cache="${HOME}/.mps/cache/images"
+    local cache="${HOME}/mps/cache/images"
     local arch
     arch="$(mps_detect_arch)"
     export TEST_ARCH="$arch"
@@ -37,7 +37,7 @@ setup() {
 
     setup_integration_stubs
     # Override: resolve image uses detected arch
-    mps_resolve_image() { echo "file://${HOME}/.mps/cache/images/base/1.0.0/${TEST_ARCH}.img"; }
+    mps_resolve_image() { echo "file://${HOME}/mps/cache/images/base/1.0.0/${TEST_ARCH}.img"; }
     # Override: configurable manifest stub
     _STUB_MANIFEST_FAIL=false
     _mps_fetch_manifest() {
@@ -76,7 +76,7 @@ teardown() { teardown_home_override; }
 }
 
 @test "image list: empty cache shows (none)" {
-    rm -rf "${HOME}/.mps/cache/images"/*
+    rm -rf "${HOME}/mps/cache/images"/*
     run cmd_image list
     [[ "$status" -eq 0 ]]
     [[ "$output" == *"(none)"* ]]
@@ -101,7 +101,7 @@ teardown() { teardown_home_override; }
 }
 
 @test "image list: distinguishes pulled vs imported" {
-    local cache="${HOME}/.mps/cache/images"
+    local cache="${HOME}/mps/cache/images"
     # Create an imported image (no build_date in meta)
     mkdir -p "${cache}/custom/local"
     : > "${cache}/custom/local/${TEST_ARCH}.img"
@@ -123,7 +123,7 @@ teardown() { teardown_home_override; }
 
     run cmd_image import "$src" --name testimg --tag 1.0.0 --arch amd64
     [[ "$status" -eq 0 ]]
-    [[ -f "${HOME}/.mps/cache/images/testimg/1.0.0/amd64.img" ]]
+    [[ -f "${HOME}/mps/cache/images/testimg/1.0.0/amd64.img" ]]
 }
 
 @test "image import: auto-detects name from mps-<name>-<arch>.qcow2.img filename" {
@@ -133,7 +133,7 @@ teardown() { teardown_home_override; }
     run cmd_image import "$src"
     [[ "$status" -eq 0 ]]
     [[ "$output" == *"myimage"* ]]
-    [[ -f "${HOME}/.mps/cache/images/myimage/local/amd64.img" ]]
+    [[ -f "${HOME}/mps/cache/images/myimage/local/amd64.img" ]]
 }
 
 @test "image import: auto-detects arch from filename" {
@@ -155,7 +155,7 @@ teardown() { teardown_home_override; }
 
     run cmd_image import "$src" --name testimg --tag 1.0.0 --arch amd64
     [[ "$status" -eq 0 ]]
-    local meta="${HOME}/.mps/cache/images/testimg/1.0.0/amd64.meta.json"
+    local meta="${HOME}/mps/cache/images/testimg/1.0.0/amd64.meta.json"
     [[ -f "$meta" ]]
     local sha
     sha="$(jq -r '.sha256' "$meta")"
@@ -190,7 +190,7 @@ teardown() { teardown_home_override; }
 
     run cmd_image import "$src" --name custom --tag 2.0.0 --arch arm64
     [[ "$status" -eq 0 ]]
-    [[ -f "${HOME}/.mps/cache/images/custom/2.0.0/arm64.img" ]]
+    [[ -f "${HOME}/mps/cache/images/custom/2.0.0/arm64.img" ]]
     [[ "$output" == *"custom"* ]]
     [[ "$output" == *"2.0.0"* ]]
     [[ "$output" == *"arm64"* ]]
@@ -283,14 +283,14 @@ teardown() { teardown_home_override; }
 # ================================================================
 
 @test "image remove: removes specific version directory" {
-    [[ -d "${HOME}/.mps/cache/images/base/0.9.0" ]]
+    [[ -d "${HOME}/mps/cache/images/base/0.9.0" ]]
     run cmd_image remove base:0.9.0 --force
     [[ "$status" -eq 0 ]]
-    [[ ! -d "${HOME}/.mps/cache/images/base/0.9.0" ]]
+    [[ ! -d "${HOME}/mps/cache/images/base/0.9.0" ]]
 }
 
 @test "image remove: --arch removes only specified arch files" {
-    local cache="${HOME}/.mps/cache/images"
+    local cache="${HOME}/mps/cache/images"
     # Add a second arch file to 1.0.0
     local other_arch="arm64"
     [[ "$TEST_ARCH" == "arm64" ]] && other_arch="amd64"
@@ -309,14 +309,14 @@ teardown() { teardown_home_override; }
     run cmd_image remove --all --force
     [[ "$status" -eq 0 ]]
     # Cache dir should still exist (recreated) but be empty
-    [[ -d "${HOME}/.mps/cache/images" ]]
+    [[ -d "${HOME}/mps/cache/images" ]]
     local contents
-    contents="$(ls -A "${HOME}/.mps/cache/images" 2>/dev/null)"
+    contents="$(ls -A "${HOME}/mps/cache/images" 2>/dev/null)"
     [[ -z "$contents" ]]
 }
 
 @test "image remove: cleans up empty parent directories after arch removal" {
-    local cache="${HOME}/.mps/cache/images"
+    local cache="${HOME}/mps/cache/images"
     # Remove the only arch file from 0.9.0
     run cmd_image remove "base:0.9.0" --arch "$TEST_ARCH" --force
     [[ "$status" -eq 0 ]]
@@ -327,7 +327,7 @@ teardown() { teardown_home_override; }
 @test "image remove --force: skips confirmation" {
     run cmd_image remove base:0.9.0 --force
     [[ "$status" -eq 0 ]]
-    [[ ! -d "${HOME}/.mps/cache/images/base/0.9.0" ]]
+    [[ ! -d "${HOME}/mps/cache/images/base/0.9.0" ]]
 }
 
 @test "image remove: not found dies" {
@@ -339,7 +339,7 @@ teardown() { teardown_home_override; }
 @test "image remove: removes all versions when no tag specified" {
     run cmd_image remove base --force
     [[ "$status" -eq 0 ]]
-    [[ ! -d "${HOME}/.mps/cache/images/base" ]]
+    [[ ! -d "${HOME}/mps/cache/images/base" ]]
 }
 
 @test "image remove: shows preview before removing" {

@@ -14,7 +14,7 @@ load ../test_helper
 
 setup() {
     setup_home_override
-    mkdir -p "$HOME/.mps/instances" "$HOME/.mps/cache/images"
+    mkdir -p "$HOME/mps/instances" "$HOME/mps/cache/images"
     setup_multipass_stub
     # shellcheck source=../../lib/multipass.sh
     source "${MPS_ROOT}/lib/multipass.sh"
@@ -46,7 +46,7 @@ teardown() { teardown_home_override; }
 
 @test "cmd_shell: uses metadata workdir when no --workdir flag" {
     # Create metadata with workdir
-    cat > "${HOME}/.mps/instances/fixture-primary.json" <<'METAJSON'
+    cat > "${HOME}/mps/instances/fixture-primary.json" <<'METAJSON'
 {
     "name": "fixture-primary",
     "full_name": "mps-fixture-primary",
@@ -95,7 +95,7 @@ METAJSON
 }
 
 @test "cmd_exec: uses metadata workdir when no --workdir" {
-    cat > "${HOME}/.mps/instances/fixture-primary.json" <<'METAJSON'
+    cat > "${HOME}/mps/instances/fixture-primary.json" <<'METAJSON'
 {
     "name": "fixture-primary",
     "full_name": "mps-fixture-primary",
@@ -182,7 +182,7 @@ METAJSON
 
 @test "cmd_mount list: shows mounts with origin annotations" {
     # Create metadata with workdir for origin derivation
-    cat > "${HOME}/.mps/instances/fixture-primary.json" <<'METAJSON'
+    cat > "${HOME}/mps/instances/fixture-primary.json" <<'METAJSON'
 {
     "name": "fixture-primary",
     "full_name": "mps-fixture-primary",

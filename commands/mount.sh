@@ -273,7 +273,7 @@ ${_color_bold}Options:${_color_reset}
 
 ${_color_bold}Mount Origins:${_color_reset}
     auto    CWD auto-mount (set at create time)
-    config  From MPS_MOUNTS in .mps.env or ~/.mps/config
+    config  From MPS_MOUNTS in .mps.env or ~/mps/config
     adhoc   Added at runtime via 'mps mount add' (removed on 'mps down')
 
 ${_color_bold}Persistence:${_color_reset}
@@ -285,8 +285,9 @@ ${_color_bold}Persistence:${_color_reset}
 
 ${_color_bold}Restrictions:${_color_reset}
     Mount sources must be within your home directory (\$HOME).
-    On Linux (Snap installs), hidden paths (e.g. ~/.ssh) may be blocked
-    by Snap confinement — mount the parent directory instead.
+    On Linux with Multipass snap, hidden directories under \$HOME (e.g.
+    ~/.ssh) are blocked by snap confinement. MPS detects this and refuses
+    the operation. Move files to a non-hidden path instead.
 
 ${_color_bold}Examples:${_color_reset}
     mps mount add ~/data:/home/ubuntu/data

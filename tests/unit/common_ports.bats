@@ -14,7 +14,7 @@ teardown() { teardown_home_override; }
 
 @test "mps_ports_file: returns correct path" {
     result="$(mps_ports_file "mydev")"
-    [[ "$result" == *"/.mps/instances/mydev.ports.json" ]]
+    [[ "$result" == *"/mps/instances/mydev.ports.json" ]]
 }
 
 # ================================================================
@@ -23,12 +23,12 @@ teardown() { teardown_home_override; }
 
 @test "mps_port_socket: returns socket path with instance and port" {
     result="$(mps_port_socket "mydev" "8080")"
-    [[ "$result" == "${HOME}/.mps/sockets/mydev-8080.sock" ]]
+    [[ "$result" == "${HOME}/mps/sockets/mydev-8080.sock" ]]
 }
 
 @test "mps_port_socket: creates sockets directory" {
     mps_port_socket "mydev" "8080" >/dev/null
-    [[ -d "${HOME}/.mps/sockets" ]]
+    [[ -d "${HOME}/mps/sockets" ]]
 }
 
 # ================================================================
@@ -108,7 +108,7 @@ teardown() { teardown_home_override; }
 # ================================================================
 
 @test "mps_cleanup_port_sockets: removes sockets for instance" {
-    local sock_dir="${HOME}/.mps/sockets"
+    local sock_dir="${HOME}/mps/sockets"
     mkdir -p "$sock_dir"
     touch "${sock_dir}/mydev-8080.sock"
     touch "${sock_dir}/mydev-9090.sock"
@@ -118,7 +118,7 @@ teardown() { teardown_home_override; }
 }
 
 @test "mps_cleanup_port_sockets: preserves other instances' sockets" {
-    local sock_dir="${HOME}/.mps/sockets"
+    local sock_dir="${HOME}/mps/sockets"
     mkdir -p "$sock_dir"
     touch "${sock_dir}/mydev-8080.sock"
     touch "${sock_dir}/other-8080.sock"
@@ -128,7 +128,7 @@ teardown() { teardown_home_override; }
 }
 
 @test "mps_cleanup_port_sockets: handles no matching sockets" {
-    mkdir -p "${HOME}/.mps/sockets"
+    mkdir -p "${HOME}/mps/sockets"
     run mps_cleanup_port_sockets "nonexistent"
     [[ "$status" -eq 0 ]]
 }
@@ -139,7 +139,7 @@ teardown() { teardown_home_override; }
 }
 
 @test "mps_cleanup_port_sockets: removes multiple sockets for same instance" {
-    local sock_dir="${HOME}/.mps/sockets"
+    local sock_dir="${HOME}/mps/sockets"
     mkdir -p "$sock_dir"
     touch "${sock_dir}/dev-3000.sock"
     touch "${sock_dir}/dev-3001.sock"

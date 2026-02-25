@@ -84,7 +84,7 @@ _start_http_server() {
 # Usage: _cache_image <name> <version> <arch>
 _cache_image() {
     local name="$1" ver="$2" arch="$3"
-    local cache="${HOME}/.mps/cache/images/${name}/${ver}"
+    local cache="${HOME}/mps/cache/images/${name}/${ver}"
     mkdir -p "$cache"
     local content="${name}-${ver}-${arch}-image-content"
     printf '%s' "$content" > "${cache}/${arch}.img"
@@ -100,7 +100,7 @@ _cache_image() {
 
 setup() {
     setup_home_override
-    mkdir -p "$HOME/.mps/cache/images"
+    mkdir -p "$HOME/mps/cache/images"
 
     # Stub arch detection to amd64 for determinism
     mps_detect_arch() { echo "amd64"; }
@@ -126,7 +126,7 @@ teardown() {
     _cache_image base 1.0.0 amd64
     run mps_resolve_image "base:1.0.0"
     [[ "$status" -eq 0 ]]
-    [[ "$output" == "file://${HOME}/.mps/cache/images/base/1.0.0/amd64.img" ]]
+    [[ "$output" == "file://${HOME}/mps/cache/images/base/1.0.0/amd64.img" ]]
 }
 
 @test "resolve_image: latest resolves to highest cached SemVer" {
@@ -138,16 +138,16 @@ teardown() {
 }
 
 @test "resolve_image: 'local' tag returns correct path" {
-    local cache="${HOME}/.mps/cache/images/base/local"
+    local cache="${HOME}/mps/cache/images/base/local"
     mkdir -p "$cache"
     printf 'local-image-content' > "${cache}/amd64.img"
     run mps_resolve_image "base:local"
     [[ "$status" -eq 0 ]]
-    [[ "$output" == "file://${HOME}/.mps/cache/images/base/local/amd64.img" ]]
+    [[ "$output" == "file://${HOME}/mps/cache/images/base/local/amd64.img" ]]
 }
 
 @test "resolve_image: latest falls back to 'local' tag" {
-    local cache="${HOME}/.mps/cache/images/base/local"
+    local cache="${HOME}/mps/cache/images/base/local"
     mkdir -p "$cache"
     printf 'local-image-content' > "${cache}/amd64.img"
     run mps_resolve_image "base"
@@ -167,9 +167,9 @@ teardown() {
     [[ "$status" -eq 0 ]]
     [[ "$output" == *"/base/1.0.0/amd64.img" ]]
     # Verify file was actually downloaded
-    [[ -f "${HOME}/.mps/cache/images/base/1.0.0/amd64.img" ]]
+    [[ -f "${HOME}/mps/cache/images/base/1.0.0/amd64.img" ]]
     # Verify .meta.json was saved
-    [[ -f "${HOME}/.mps/cache/images/base/1.0.0/amd64.meta.json" ]]
+    [[ -f "${HOME}/mps/cache/images/base/1.0.0/amd64.meta.json" ]]
 }
 
 @test "resolve_image: cache miss auto-pulls latest via manifest" {
@@ -180,7 +180,7 @@ teardown() {
     [[ "$status" -eq 0 ]]
     # manifest.json says latest=1.1.0
     [[ "$output" == *"/base/1.1.0/amd64.img" ]]
-    [[ -f "${HOME}/.mps/cache/images/base/1.1.0/amd64.img" ]]
+    [[ -f "${HOME}/mps/cache/images/base/1.1.0/amd64.img" ]]
 }
 
 @test "resolve_image: auto-pull uses correct arch (arm64)" {
@@ -193,7 +193,7 @@ teardown() {
     run mps_resolve_image "base:1.0.0"
     [[ "$status" -eq 0 ]]
     [[ "$output" == *"/base/1.0.0/arm64.img" ]]
-    [[ -f "${HOME}/.mps/cache/images/base/1.0.0/arm64.img" ]]
+    [[ -f "${HOME}/mps/cache/images/base/1.0.0/arm64.img" ]]
 }
 
 # ================================================================
@@ -262,7 +262,7 @@ teardown() {
     run mps_resolve_image "base:1.0.0"
     [[ "$status" -ne 0 ]]
     # Corrupted file must not remain in cache
-    [[ ! -f "${HOME}/.mps/cache/images/base/1.0.0/amd64.img" ]]
+    [[ ! -f "${HOME}/mps/cache/images/base/1.0.0/amd64.img" ]]
 }
 
 # ================================================================

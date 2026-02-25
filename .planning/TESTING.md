@@ -95,7 +95,7 @@ Image download testing uses real CDN (acceptable at CI network speeds) or import
 - Makefile targets: `make test-e2e` (with coverage), `make test-e2e-report` (merge all tiers)
 - Env vars: `MPS_E2E_IMAGE` (name or file path), `MPS_E2E_INSTALL` (install/uninstall bookends)
 - Stale reaper: destroys leftover `mps-project-cloud-init-e2e` instance before starting
-- Temp directory: `$HOME/.mps-e2e-<pid>/` (under HOME for snap confinement)
+- Temp directory: `$HOME/mps-e2e-<pid>/` (under HOME for snap confinement)
 
 ## Code Coverage
 
@@ -154,7 +154,9 @@ not just BATS. E2E scripts get coverage for free by exporting the same env vars.
 | `mps_host_to_guest_path` | `common_paths.bats` | Identity on Linux |
 | `mps_resolve_mount_source` | `common_paths.bats` | CWD fallback, absolute path |
 | `mps_resolve_mount` | `common_paths.bats` | Source+target, MPS_NO_AUTOMOUNT, explicit override |
-| `mps_validate_mount_source` | `common_paths.bats` | HOME check, outside HOME rejection, HOME warn |
+| `_mps_snap_confined` | `common_paths.bats` | Returns false in test env (no snap) |
+| `_mps_check_snap_path` | `common_paths.bats` | No-op unconfined, dies on HOME dotdir, allows visible/outside/nested |
+| `mps_validate_mount_source` | `common_paths.bats` | HOME check, outside HOME rejection, HOME warn, snap confined hidden path |
 | `mps_parse_extra_mounts` | `common_paths.bats` | Empty, absolute pairs, multiple specs |
 | `_mps_read_meta_json` | `common_meta.bats` | Read key, missing key, missing file, nested |
 | `_mps_write_json` | `common_meta.bats` | Write, permissions (600), atomic overwrite |
@@ -423,7 +425,7 @@ functions directly with overridden globals) and subprocess tests (run `bash inst
 | `detect_os` | `install.bats` | 3 | Linux, Darwin, unknown via uname stub |
 | `confirm` | `install.bats` | 4 | y, Yes, n, empty |
 | `install_dependency` | `install.bats` | 8 | Found, missing+snap, missing+brew, missing+apt, decline, unknown platform |
-| Directory structure | `install.bats` | 2 | `~/.mps/*`, `~/.ssh/config.d`, `INSTALL_DIR` |
+| Directory structure | `install.bats` | 2 | `~/mps/*`, `~/.ssh/config.d`, `INSTALL_DIR` |
 | Symlink | `install.bats` | 4 | Create, replace, non-symlink error, `MPS_INSTALL_DIR` override |
 | Bash completion | `install.bats` | 4 | Linux, macOS+brew, fallback, zsh hint |
 | PATH check | `install.bats` | 4 | Already on PATH, accept→bashrc, zsh→.zshrc, decline |
@@ -443,7 +445,7 @@ Multipass stub for VM discovery, `du` stub, `brew` stub, stdin piping for intera
 | Instance metadata | `uninstall.bats` | 2 | Removes .json/.env/.ports.json, preserves non-matching |
 | Cache | `uninstall.bats` | 2 | Confirm remove, decline preserve |
 | User config | `uninstall.bats` | 3 | Confirm remove, decline preserve, missing |
-| Directory cleanup | `uninstall.bats` | 2 | Empty ~/.mps removed, non-empty preserved |
+| Directory cleanup | `uninstall.bats` | 2 | Empty ~/mps removed, non-empty preserved |
 | Summary + misc | `uninstall.bats` | 4 | Lists removed, nothing removed, MPS_INSTALL_DIR override, source dir |
 
 ### Not Yet Covered: Full Workflows
@@ -462,7 +464,7 @@ Multipass stub for VM discovery, `du` stub, `brew` stub, stdin piping for intera
 | `common_logging.bats` | 8 | Unit | `tests/unit/` |
 | `common_config.bats` | 13 | Unit | `tests/unit/` |
 | `common_resources.bats` | 17 | Unit | `tests/unit/` |
-| `common_paths.bats` | 15 | Unit | `tests/unit/` |
+| `common_paths.bats` | 22 | Unit | `tests/unit/` |
 | `common_meta.bats` | 56 | Unit | `tests/unit/` |
 | `common_ports.bats` | 15 | Unit | `tests/unit/` |
 | `common_utils.bats` | 15 | Unit | `tests/unit/` |
@@ -483,7 +485,7 @@ Multipass stub for VM discovery, `du` stub, `brew` stub, stdin piping for intera
 | `entry_point.bats` | 11 | Integration | `tests/integration/` |
 | `install.bats` | 31 | Integration | `tests/integration/` |
 | `uninstall.bats` | 26 | Integration | `tests/integration/` |
-| **Total** | **749** | | |
+| **Total** | **756** | | |
 
 *Last updated: 2026-02-25*
 

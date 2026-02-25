@@ -12,7 +12,7 @@ load ../test_helper
 
 setup() {
     setup_home_override
-    mkdir -p "$HOME/.mps/instances" "$HOME/.mps/cache/images"
+    mkdir -p "$HOME/mps/instances" "$HOME/mps/cache/images"
     setup_multipass_stub
     # shellcheck source=../../lib/multipass.sh
     source "${MPS_ROOT}/lib/multipass.sh"
@@ -95,7 +95,7 @@ teardown() { teardown_home_override; }
 
 @test "port list: shows header columns" {
     # Create a .ports.json to have something to display
-    local state_dir="${HOME}/.mps/instances"
+    local state_dir="${HOME}/mps/instances"
     cat > "${state_dir}/fixture-primary.ports.json" <<'JSON'
 {"3000": {"guest_port": 3000, "socket": "/tmp/fake.sock", "sudo": false}}
 JSON
@@ -112,7 +112,7 @@ JSON
 }
 
 @test "port list: shows ports from .ports.json" {
-    local state_dir="${HOME}/.mps/instances"
+    local state_dir="${HOME}/mps/instances"
     cat > "${state_dir}/fixture-primary.ports.json" <<'JSON'
 {"3000": {"guest_port": 3000, "socket": "/tmp/fake.sock", "sudo": false}}
 JSON
@@ -127,7 +127,7 @@ JSON
 }
 
 @test "port list: filters by name" {
-    local state_dir="${HOME}/.mps/instances"
+    local state_dir="${HOME}/mps/instances"
     cat > "${state_dir}/fixture-primary.ports.json" <<'JSON'
 {"3000": {"guest_port": 3000, "socket": "/tmp/fake-p.sock", "sudo": false}}
 JSON
@@ -155,7 +155,7 @@ JSON
 }
 
 @test "port list: dead socket shows dead status" {
-    local state_dir="${HOME}/.mps/instances"
+    local state_dir="${HOME}/mps/instances"
     # Socket path points to non-existent file → ssh -O check fails → dead
     cat > "${state_dir}/fixture-primary.ports.json" <<'JSON'
 {"3000": {"guest_port": 3000, "socket": "/tmp/nonexistent-socket", "sudo": false}}
@@ -170,7 +170,7 @@ JSON
 }
 
 @test "port list: multiple sandboxes are all shown" {
-    local state_dir="${HOME}/.mps/instances"
+    local state_dir="${HOME}/mps/instances"
     cat > "${state_dir}/fixture-primary.ports.json" <<'JSON'
 {"3000": {"guest_port": 3000, "socket": "/tmp/fake-p.sock", "sudo": false}}
 JSON
@@ -193,7 +193,7 @@ JSON
 }
 
 @test "port list: re-establishes dead forwards for running instances" {
-    local state_dir="${HOME}/.mps/instances"
+    local state_dir="${HOME}/mps/instances"
     cat > "${state_dir}/fixture-primary.ports.json" <<'JSON'
 {"3000": {"guest_port": 3000, "socket": "/tmp/nonexistent.sock", "sudo": false}}
 JSON

@@ -67,20 +67,20 @@ STUB
     echo "Host other-host" > "${HOME}/.ssh/config.d/other-host"
 
     # Instance metadata
-    mkdir -p "${HOME}/.mps/instances"
-    echo '{}' > "${HOME}/.mps/instances/mps-test.json"
-    echo '{}' > "${HOME}/.mps/instances/mps-test.ports.json"
-    echo 'MPS_NAME=test' > "${HOME}/.mps/instances/mps-test.env"
+    mkdir -p "${HOME}/mps/instances"
+    echo '{}' > "${HOME}/mps/instances/mps-test.json"
+    echo '{}' > "${HOME}/mps/instances/mps-test.ports.json"
+    echo 'MPS_NAME=test' > "${HOME}/mps/instances/mps-test.env"
 
     # Cache
-    mkdir -p "${HOME}/.mps/cache/images/base/1.0.0"
-    echo "fake image" > "${HOME}/.mps/cache/images/base/1.0.0/amd64.img"
+    mkdir -p "${HOME}/mps/cache/images/base/1.0.0"
+    echo "fake image" > "${HOME}/mps/cache/images/base/1.0.0/amd64.img"
 
     # User config
-    echo "MPS_PROFILE=standard" > "${HOME}/.mps/config"
+    echo "MPS_PROFILE=standard" > "${HOME}/mps/config"
 
     # Cloud-init dir (should survive uninstall — not empty after)
-    mkdir -p "${HOME}/.mps/cloud-init"
+    mkdir -p "${HOME}/mps/cloud-init"
 }
 
 teardown() { teardown_home_override; }
@@ -250,17 +250,17 @@ _run_uninstall() {
 @test "uninstall: removes .json .env .ports.json files" {
     run _run_uninstall $'y\ny\ny\n'
     [[ "$status" -eq 0 ]]
-    [[ ! -e "${HOME}/.mps/instances/mps-test.json" ]]
-    [[ ! -e "${HOME}/.mps/instances/mps-test.ports.json" ]]
-    [[ ! -e "${HOME}/.mps/instances/mps-test.env" ]]
+    [[ ! -e "${HOME}/mps/instances/mps-test.json" ]]
+    [[ ! -e "${HOME}/mps/instances/mps-test.ports.json" ]]
+    [[ ! -e "${HOME}/mps/instances/mps-test.env" ]]
     [[ "$output" == *"instance metadata"* ]]
 }
 
 @test "uninstall: preserves non-matching files in instances" {
-    echo "keep me" > "${HOME}/.mps/instances/README"
+    echo "keep me" > "${HOME}/mps/instances/README"
     run _run_uninstall $'y\ny\ny\n'
     [[ "$status" -eq 0 ]]
-    [[ -f "${HOME}/.mps/instances/README" ]]
+    [[ -f "${HOME}/mps/instances/README" ]]
 }
 
 # ================================================================
@@ -270,7 +270,7 @@ _run_uninstall() {
 @test "uninstall: removes cache on confirm" {
     run _run_uninstall $'y\ny\ny\n'
     [[ "$status" -eq 0 ]]
-    [[ ! -d "${HOME}/.mps/cache" ]]
+    [[ ! -d "${HOME}/mps/cache" ]]
     [[ "$output" == *"Removed image cache"* ]]
 }
 
@@ -278,7 +278,7 @@ _run_uninstall() {
     # VMs(y), cache(n), config(n)
     run _run_uninstall $'y\nn\nn\n'
     [[ "$status" -eq 0 ]]
-    [[ -d "${HOME}/.mps/cache" ]]
+    [[ -d "${HOME}/mps/cache" ]]
 }
 
 # ================================================================
@@ -288,7 +288,7 @@ _run_uninstall() {
 @test "uninstall: removes user config on confirm" {
     run _run_uninstall $'y\ny\ny\n'
     [[ "$status" -eq 0 ]]
-    [[ ! -f "${HOME}/.mps/config" ]]
+    [[ ! -f "${HOME}/mps/config" ]]
     [[ "$output" == *"Removed user config"* ]]
 }
 
@@ -296,11 +296,11 @@ _run_uninstall() {
     # VMs(y), cache(y), config(n)
     run _run_uninstall $'y\ny\nn\n'
     [[ "$status" -eq 0 ]]
-    [[ -f "${HOME}/.mps/config" ]]
+    [[ -f "${HOME}/mps/config" ]]
 }
 
 @test "uninstall: handles missing config" {
-    rm -f "${HOME}/.mps/config"
+    rm -f "${HOME}/mps/config"
     run _run_uninstall $'y\ny\n'
     [[ "$status" -eq 0 ]]
     # No error — just skipped
@@ -310,20 +310,20 @@ _run_uninstall() {
 # 8. Directory cleanup
 # ================================================================
 
-@test "uninstall: removes empty ~/.mps" {
+@test "uninstall: removes empty ~/mps" {
     # Remove cloud-init dir so .mps becomes empty after cleanup
-    rm -rf "${HOME}/.mps/cloud-init"
+    rm -rf "${HOME}/mps/cloud-init"
     run _run_uninstall $'y\ny\ny\n'
     [[ "$status" -eq 0 ]]
-    [[ ! -d "${HOME}/.mps" ]]
-    [[ "$output" == *"Directory: ~/.mps"* ]]
+    [[ ! -d "${HOME}/mps" ]]
+    [[ "$output" == *"Directory: ~/mps"* ]]
 }
 
-@test "uninstall: preserves non-empty ~/.mps" {
+@test "uninstall: preserves non-empty ~/mps" {
     # cloud-init dir keeps .mps non-empty
     run _run_uninstall $'y\ny\ny\n'
     [[ "$status" -eq 0 ]]
-    [[ -d "${HOME}/.mps" ]]
+    [[ -d "${HOME}/mps" ]]
 }
 
 # ================================================================
@@ -344,10 +344,10 @@ _run_uninstall() {
     rm -f "${stubs_dir}/brew"
     # Remove SSH configs and instance metadata
     rm -f "${HOME}/.ssh/config.d/mps-"*
-    rm -f "${HOME}/.mps/instances/"*.json "${HOME}/.mps/instances/"*.env
+    rm -f "${HOME}/mps/instances/"*.json "${HOME}/mps/instances/"*.env
     # Remove cache and config
-    rm -rf "${HOME}/.mps/cache"
-    rm -f "${HOME}/.mps/config"
+    rm -rf "${HOME}/mps/cache"
+    rm -f "${HOME}/mps/config"
     # Empty fixture
     export MOCK_MP_FIXTURES_DIR="${TEST_TEMP_DIR}/empty_fixtures"
     mkdir -p "$MOCK_MP_FIXTURES_DIR"

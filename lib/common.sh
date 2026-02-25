@@ -109,9 +109,9 @@ mps_load_config() {
     fi
 
     # 2. User global overrides (safe line-by-line parsing, no sourcing)
-    if [[ -f "${HOME}/.mps/config" ]]; then
-        mps_log_debug "Loading user config from ~/.mps/config"
-        _mps_load_env_file "${HOME}/.mps/config"
+    if [[ -f "${HOME}/mps/config" ]]; then
+        mps_log_debug "Loading user config from ~/mps/config"
+        _mps_load_env_file "${HOME}/mps/config"
     fi
 
     # 3. Per-project overrides (safe line-by-line parsing, no sourcing)
@@ -412,13 +412,13 @@ mps_resolve_instance_name() {
 # ---------- State Directory ----------
 
 mps_state_dir() {
-    local dir="${HOME}/.mps/instances"
+    local dir="${HOME}/mps/instances"
     mkdir -p "$dir"
     echo "$dir"
 }
 
 mps_cache_dir() {
-    local dir="${HOME}/.mps/cache"
+    local dir="${HOME}/mps/cache"
     mkdir -p "$dir"
     echo "$dir"
 }
@@ -606,7 +606,7 @@ _mps_pull_image() {
 
 # Resolve an image spec to a file:// URL (if cached) or pass through unchanged.
 # Input: "base", "base:1.0.0", "base:local", "base:latest", "24.04"
-# Output: "file:///home/.../.mps/cache/images/base/1.0.0/amd64.img" or "24.04"
+# Output: "file:///home/.../mps/cache/images/base/1.0.0/amd64.img" or "24.04"
 mps_resolve_image() {
     local image_spec="$1"
     local name="${image_spec%%:*}"
@@ -801,7 +801,7 @@ _mps_remote_fetch() {
 # ---------- Image Staleness Detection ----------
 
 # Fetch remote manifest.json to stdout. Thin wrapper around _mps_remote_fetch.
-# Caches locally at ~/.mps/cache/manifest.json with conditional GET.
+# Caches locally at ~/mps/cache/manifest.json with conditional GET.
 # Returns 1 only if no manifest is available (neither remote nor cached).
 _mps_fetch_manifest() {
     local base_url="${MPS_IMAGE_BASE_URL:-}"
@@ -898,7 +898,7 @@ _mps_warn_image_staleness() {
     [[ "${MPS_IMAGE_CHECK_UPDATES:-true}" == "true" ]] || return 0
 
     # Parse name/version/arch from cache path
-    # Format: file:///home/.../.mps/cache/images/<name>/<version>/<arch>.img
+    # Format: file:///home/.../mps/cache/images/<name>/<version>/<arch>.img
     local img_path="${file_url#file://}"
     local arch
     arch="$(basename "$img_path" .img)"
@@ -1270,14 +1270,14 @@ mps_resolve_mount_source() {
     local provided_path="${1:-}"
 
     if [[ -n "$provided_path" ]]; then
-        # Resolve relative paths to absolute
+        # Resolve to physical absolute path (symlinks resolved via pwd -P / readlink)
         if [[ "$provided_path" = /* ]]; then
-            echo "$provided_path"
+            (cd "$provided_path" 2>/dev/null && pwd -P) || mps_die "Path does not exist: $provided_path"
         else
-            echo "$(cd "$provided_path" 2>/dev/null && pwd)" || mps_die "Path does not exist: $provided_path"
+            (cd "$provided_path" 2>/dev/null && pwd -P) || mps_die "Path does not exist: $provided_path"
         fi
     else
-        pwd
+        pwd -P
     fi
 }
 
@@ -1323,6 +1323,33 @@ mps_parse_extra_mounts() {
     echo "${result[*]}"
 }
 
+# ---------- Snap Confinement Helpers ----------
+
+# Detect active Multipass snap confinement.
+# Returns 0 (true) if: snap is installed, multipass is a snap, and AppArmor is enabled.
+# Short-circuits on macOS (no snap), WSL2 (AppArmor disabled), Docker (no snap).
+_mps_snap_confined() {
+    command -v snap >/dev/null 2>&1 \
+        && snap list multipass >/dev/null 2>&1 \
+        && [[ -f /sys/module/apparmor/parameters/enabled ]] \
+        && [[ "$(cat /sys/module/apparmor/parameters/enabled 2>/dev/null)" == "Y" ]]
+}
+
+# Check if a path is inside a hidden ($HOME/.*) directory and bail if snap confined.
+# Usage: _mps_check_snap_path <path> <operation>
+# Dies with a clear message if the path is under a $HOME dot-directory.
+# No-op when snap confinement is not active.
+_mps_check_snap_path() {
+    local path="$1" operation="$2"
+    _mps_snap_confined || return 0
+    local rel="${path#${HOME}/}"
+    [[ "$rel" != "$path" && -n "$rel" ]] || return 0
+    local top="${rel%%/*}"
+    case "$top" in
+        .*) mps_die "${operation} path '${path}' is inside a hidden directory (~/${top}). Multipass snap confinement blocks access to dot-directories under \$HOME. Move to a non-hidden path." ;;
+    esac
+}
+
 # Validate mount source path against security rules.
 # Called after resolving to absolute path.
 # Returns 0 on success, dies on hard block, warns on soft issues.
@@ -1348,23 +1375,13 @@ mps_validate_mount_source() {
         mps_log_warn "Consider mounting a project subdirectory instead, or use --no-mount."
     fi
 
-    # Rule 3: Warn on hidden paths on Linux (Snap may block)
-    local os
-    os="$(mps_detect_os)"
-    if [[ "$os" == "linux" ]]; then
-        local basename
-        basename="$(basename "$source_path")"
-        case "$basename" in
-            .*)
-                mps_log_warn "Snap may block mounting hidden paths directly. Consider mounting the parent directory instead."
-                ;;
-        esac
-    fi
+    # Rule 3: Block snap-confined hidden paths under $HOME
+    _mps_check_snap_path "$source_path" "Mount"
 }
 
 # Resolve the set of persistent mounts for an instance.
 # Reads workdir from metadata and MPS_MOUNTS from the full config cascade:
-# current env (already loaded) -> project .mps.env -> ~/.mps/config -> defaults.env.
+# current env (already loaded) -> project .mps.env -> ~/mps/config -> defaults.env.
 # Outputs space-separated "source:target" pairs to stdout.
 # Usage: _mps_resolve_project_mounts <short_name>
 _mps_resolve_project_mounts() {
@@ -1396,7 +1413,7 @@ _mps_resolve_project_mounts() {
         fi
     fi
     if [[ -z "$config_mounts" ]]; then
-        local global_config="${HOME}/.mps/config"
+        local global_config="${HOME}/mps/config"
         if [[ -f "$global_config" ]]; then
             config_mounts="$(grep -E '^MPS_MOUNTS=' "$global_config" 2>/dev/null | head -1 | sed 's/^MPS_MOUNTS=//' | sed 's/^["'"'"']//; s/["'"'"']$//')" || true
         fi
@@ -1443,7 +1460,7 @@ mps_resolve_cloud_init() {
     fi
 
     # Look in personal templates directory
-    local user_path="${HOME}/.mps/cloud-init/${template}.yaml"
+    local user_path="${HOME}/mps/cloud-init/${template}.yaml"
     if [[ -f "$user_path" ]]; then
         echo "$user_path"
         return
@@ -1581,10 +1598,10 @@ mps_ports_file() {
 }
 
 # Return the control socket path for a given instance + host port.
-# Sockets live in ~/.mps/sockets/, separate from instance metadata.
+# Sockets live in ~/mps/sockets/, separate from instance metadata.
 mps_port_socket() {
     local short_name="$1" host_port="$2"
-    local dir="${HOME}/.mps/sockets"
+    local dir="${HOME}/mps/sockets"
     mkdir -p "$dir"
     echo "${dir}/${short_name}-${host_port}.sock"
 }
@@ -1845,7 +1862,7 @@ mps_kill_port_forwards() {
 mps_cleanup_port_sockets() {
     local short_name="$1"
     local sock
-    for sock in "${HOME}/.mps/sockets/${short_name}-"*.sock; do
+    for sock in "${HOME}/mps/sockets/${short_name}-"*.sock; do
         if [[ -e "$sock" ]]; then rm -f "$sock"; fi
     done
 }

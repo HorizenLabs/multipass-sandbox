@@ -280,9 +280,9 @@ _run_install() {
 @test "install: creates ~/.mps directory structure" {
     run _run_install ""
     [[ "$status" -eq 0 ]]
-    [[ -d "${HOME}/.mps/instances" ]]
-    [[ -d "${HOME}/.mps/cache/images" ]]
-    [[ -d "${HOME}/.mps/cloud-init" ]]
+    [[ -d "${HOME}/mps/instances" ]]
+    [[ -d "${HOME}/mps/cache/images" ]]
+    [[ -d "${HOME}/mps/cloud-init" ]]
     [[ -d "${HOME}/.ssh/config.d" ]]
 }
 
@@ -419,7 +419,7 @@ STUB
     run _run_install $'n\nn\nn\n'
     [[ "$output" == *"Some dependencies are missing"* ]]
     # Dirs and symlink still created
-    [[ -d "${HOME}/.mps/instances" ]]
+    [[ -d "${HOME}/mps/instances" ]]
     [[ -L "${HOME}/.local/bin/mps" ]]
 }
 

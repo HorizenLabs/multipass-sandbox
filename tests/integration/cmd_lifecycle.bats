@@ -14,16 +14,16 @@ load ../test_helper
 
 setup() {
     setup_home_override
-    mkdir -p "$HOME/.mps/instances" "$HOME/.mps/cache/images" "$HOME/.ssh/config.d"
+    mkdir -p "$HOME/mps/instances" "$HOME/mps/cache/images" "$HOME/.ssh/config.d"
     setup_multipass_stub
     # shellcheck source=../../lib/multipass.sh
     source "${MPS_ROOT}/lib/multipass.sh"
 
     # Image cache for create tests
-    mkdir -p "${HOME}/.mps/cache/images/base/1.0.0"
-    : > "${HOME}/.mps/cache/images/base/1.0.0/amd64.img"
+    mkdir -p "${HOME}/mps/cache/images/base/1.0.0"
+    : > "${HOME}/mps/cache/images/base/1.0.0/amd64.img"
     printf '{"sha256":"abc123def456","build_date":"2025-01-01T00:00:00Z"}\n' \
-        > "${HOME}/.mps/cache/images/base/1.0.0/amd64.meta.json"
+        > "${HOME}/mps/cache/images/base/1.0.0/amd64.meta.json"
 
     setup_integration_stubs
     # Override: record port lifecycle calls
@@ -78,7 +78,7 @@ teardown() { teardown_home_override; }
 
 @test "cmd_down: cleans up adhoc mounts, preserves persistent" {
     # Create metadata with workdir = /mnt/test-a (persistent auto-mount)
-    cat > "${HOME}/.mps/instances/fixture-primary.json" <<'METAJSON'
+    cat > "${HOME}/mps/instances/fixture-primary.json" <<'METAJSON'
 {
     "name": "fixture-primary",
     "full_name": "mps-fixture-primary",
@@ -115,21 +115,21 @@ METAJSON
 }
 
 @test "cmd_destroy: removes metadata file from state dir" {
-    cat > "${HOME}/.mps/instances/fixture-primary.json" <<'METAJSON'
+    cat > "${HOME}/mps/instances/fixture-primary.json" <<'METAJSON'
 {"name": "fixture-primary", "full_name": "mps-fixture-primary"}
 METAJSON
 
     run cmd_destroy --force --name fixture-primary
     [[ "$status" -eq 0 ]]
-    [[ ! -f "${HOME}/.mps/instances/fixture-primary.json" ]]
+    [[ ! -f "${HOME}/mps/instances/fixture-primary.json" ]]
 }
 
 @test "cmd_destroy: removes ports file from state dir" {
-    echo '[]' > "${HOME}/.mps/instances/fixture-primary.ports.json"
+    echo '[]' > "${HOME}/mps/instances/fixture-primary.ports.json"
 
     run cmd_destroy --force --name fixture-primary
     [[ "$status" -eq 0 ]]
-    [[ ! -f "${HOME}/.mps/instances/fixture-primary.ports.json" ]]
+    [[ ! -f "${HOME}/mps/instances/fixture-primary.ports.json" ]]
 }
 
 @test "cmd_destroy: removes SSH config file" {
@@ -176,7 +176,7 @@ METAJSON
     # Should wait for cloud-init
     [[ "$log" == *"cloud-init status --wait"* ]]
     # Should save metadata
-    [[ -f "${HOME}/.mps/instances/test-create.json" ]]
+    [[ -f "${HOME}/mps/instances/test-create.json" ]]
 }
 
 @test "cmd_create: call log shows correct launch args" {
@@ -193,7 +193,7 @@ METAJSON
 @test "cmd_create: saves instance metadata JSON" {
     run cmd_create --name test-create --no-mount
     [[ "$status" -eq 0 ]]
-    local meta="${HOME}/.mps/instances/test-create.json"
+    local meta="${HOME}/mps/instances/test-create.json"
     [[ -f "$meta" ]]
     local name
     name="$(jq -r '.name' "$meta")"
@@ -258,17 +258,20 @@ METAJSON
     # Use a mount path under fake HOME so validate_mount_source passes
     local mount_dir="${HOME}/test-project"
     mkdir -p "$mount_dir"
+    # mps_resolve_mount_source returns physical path (pwd -P)
+    local phys_dir
+    phys_dir="$(cd "$mount_dir" && pwd -P)"
 
     run cmd_create --name test-mount "$mount_dir"
     [[ "$status" -eq 0 ]]
     log="$(cat "$MOCK_MP_CALL_LOG")"
-    [[ "$log" == *"--mount ${mount_dir}:${mount_dir}"* ]]
+    [[ "$log" == *"--mount ${phys_dir}:${phys_dir}"* ]]
 }
 
 @test "cmd_create: image metadata extraction from sidecar" {
     run cmd_create --name test-meta --no-mount
     [[ "$status" -eq 0 ]]
-    local meta="${HOME}/.mps/instances/test-meta.json"
+    local meta="${HOME}/mps/instances/test-meta.json"
     [[ -f "$meta" ]]
     local sha
     sha="$(jq -r '.image.sha256' "$meta")"
@@ -347,7 +350,7 @@ JSON
     export MOCK_MP_FIXTURES_DIR="$custom_dir"
 
     # Create metadata with a workdir so restore knows what to re-mount
-    cat > "${HOME}/.mps/instances/fixture-primary.json" <<'METAJSON'
+    cat > "${HOME}/mps/instances/fixture-primary.json" <<'METAJSON'
 {
     "name": "fixture-primary",
     "full_name": "mps-fixture-primary",
@@ -420,4 +423,37 @@ JSON
     run cmd_up --name fixture-primary --no-mount
     [[ "$status" -ne 0 ]]
     [[ "$output" == *"unexpected state"* ]]
+}
+
+# ================================================================
+# Mount validation: outside $HOME rejected before multipass call
+# ================================================================
+
+@test "cmd_create: path outside HOME dies before calling multipass launch" {
+    local outside_dir="/tmp/mps-test-outside-home-$$"
+    mkdir -p "$outside_dir"
+
+    run cmd_create --name test-outside "$outside_dir"
+    [[ "$status" -ne 0 ]]
+    [[ "$output" == *"within your home directory"* ]]
+    # Verify multipass was never called
+    log="$(cat "$MOCK_MP_CALL_LOG")"
+    [[ "$log" != *"launch"* ]]
+
+    rmdir "$outside_dir" 2>/dev/null || true
+}
+
+@test "cmd_up: path outside HOME dies before calling multipass" {
+    local outside_dir="/tmp/mps-test-outside-home-$$"
+    mkdir -p "$outside_dir"
+
+    run cmd_up --name test-outside "$outside_dir"
+    [[ "$status" -ne 0 ]]
+    [[ "$output" == *"within your home directory"* ]]
+    # Verify multipass was never called (no launch, no start)
+    log="$(cat "$MOCK_MP_CALL_LOG")"
+    [[ "$log" != *"launch"* ]]
+    [[ "$log" != *"start"* ]]
+
+    rmdir "$outside_dir" 2>/dev/null || true
 }

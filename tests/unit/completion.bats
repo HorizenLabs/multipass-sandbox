@@ -231,14 +231,14 @@ teardown() { teardown_home_override; }
 }
 
 @test "__complete images: includes cached images from HOME" {
-    mkdir -p "${HOME}/.mps/cache/images/custom-image"
+    mkdir -p "${HOME}/mps/cache/images/custom-image"
     run "${MPS_ROOT}/bin/mps" __complete images
     [[ "$status" -eq 0 ]]
     [[ "$output" == *"custom-image"* ]]
 }
 
 @test "__complete images: deduplicates layer and cached images" {
-    mkdir -p "${HOME}/.mps/cache/images/base"
+    mkdir -p "${HOME}/mps/cache/images/base"
     run "${MPS_ROOT}/bin/mps" __complete images
     [[ "$status" -eq 0 ]]
     local count=0
@@ -256,8 +256,8 @@ teardown() { teardown_home_override; }
 }
 
 @test "__complete cloud_init: includes personal templates from HOME" {
-    mkdir -p "${HOME}/.mps/cloud-init"
-    echo "# personal" > "${HOME}/.mps/cloud-init/personal.yaml"
+    mkdir -p "${HOME}/mps/cloud-init"
+    echo "# personal" > "${HOME}/mps/cloud-init/personal.yaml"
     run "${MPS_ROOT}/bin/mps" __complete cloud_init
     [[ "$status" -eq 0 ]]
     [[ "$output" == *"personal"* ]]

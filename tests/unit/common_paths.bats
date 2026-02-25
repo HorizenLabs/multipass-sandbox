@@ -51,15 +51,26 @@ teardown() {
 # mps_resolve_mount_source
 # ================================================================
 
-@test "mps_resolve_mount_source: returns CWD when no arg" {
+@test "mps_resolve_mount_source: returns physical CWD when no arg" {
     result="$(mps_resolve_mount_source "")"
-    expected="$(pwd)"
+    expected="$(pwd -P)"
     [[ "$result" == "$expected" ]]
 }
 
-@test "mps_resolve_mount_source: returns absolute path unchanged" {
+@test "mps_resolve_mount_source: resolves absolute path to physical path" {
     result="$(mps_resolve_mount_source "${TEST_TEMP_DIR}")"
-    [[ "$result" == "${TEST_TEMP_DIR}" ]]
+    expected="$(cd "${TEST_TEMP_DIR}" && pwd -P)"
+    [[ "$result" == "$expected" ]]
+}
+
+@test "mps_resolve_mount_source: resolves symlinks to physical path" {
+    local real_dir="${TEST_TEMP_DIR}/real-target"
+    local link_dir="${TEST_TEMP_DIR}/symlinked"
+    mkdir -p "$real_dir"
+    ln -sfn "$real_dir" "$link_dir"
+
+    result="$(mps_resolve_mount_source "$link_dir")"
+    [[ "$result" == "$real_dir" ]]
 }
 
 # ================================================================
@@ -85,7 +96,9 @@ teardown() {
 @test "mps_resolve_mount: explicit path overrides automount opt-out" {
     export MPS_NO_AUTOMOUNT=true
     mps_resolve_mount "${TEST_TEMP_DIR}"
-    [[ "$MPS_MOUNT_SOURCE" == "${TEST_TEMP_DIR}" ]]
+    local expected
+    expected="$(cd "${TEST_TEMP_DIR}" && pwd -P)"
+    [[ "$MPS_MOUNT_SOURCE" == "$expected" ]]
 }
 
 # ================================================================
@@ -131,4 +144,67 @@ teardown() {
     result="$(mps_parse_extra_mounts)"
     [[ "$result" == *"${TEST_TEMP_DIR}/a:/mnt/a"* ]]
     [[ "$result" == *"${TEST_TEMP_DIR}/b:/mnt/b"* ]]
+}
+
+# ================================================================
+# _mps_snap_confined
+# ================================================================
+
+@test "_mps_snap_confined: returns false in test environment (no snap)" {
+    run _mps_snap_confined
+    [[ "$status" -ne 0 ]]
+}
+
+# ================================================================
+# _mps_check_snap_path
+# ================================================================
+
+@test "_mps_check_snap_path: no-op when snap not confined" {
+    # Default test env has no snap — all paths should pass
+    _mps_check_snap_path "${HOME}/.hidden/foo" "Test"
+    _mps_check_snap_path "${HOME}/visible/foo" "Test"
+    _mps_check_snap_path "/tmp/anything" "Test"
+}
+
+@test "_mps_check_snap_path: dies on HOME dotdir when snap confined" {
+    # Mock _mps_snap_confined to return true
+    _mps_snap_confined() { return 0; }
+    export -f _mps_snap_confined
+
+    run _mps_check_snap_path "${HOME}/.hidden/foo" "Mount"
+    [[ "$status" -ne 0 ]]
+    [[ "$output" == *"hidden directory"* ]]
+    [[ "$output" == *"snap confinement"* ]]
+}
+
+@test "_mps_check_snap_path: allows visible dir under HOME when snap confined" {
+    _mps_snap_confined() { return 0; }
+    export -f _mps_snap_confined
+
+    _mps_check_snap_path "${HOME}/visible/foo" "Mount"
+}
+
+@test "_mps_check_snap_path: allows paths outside HOME when snap confined" {
+    _mps_snap_confined() { return 0; }
+    export -f _mps_snap_confined
+
+    _mps_check_snap_path "/tmp/some/path" "Transfer"
+}
+
+@test "_mps_check_snap_path: allows nested dotdirs when snap confined" {
+    # Only top-level dotdirs under HOME are blocked; nested ones are fine
+    _mps_snap_confined() { return 0; }
+    export -f _mps_snap_confined
+
+    _mps_check_snap_path "${HOME}/visible/.hidden/foo" "Cloud-init"
+}
+
+@test "mps_validate_mount_source: dies on hidden HOME path when snap confined" {
+    _mps_snap_confined() { return 0; }
+    export -f _mps_snap_confined
+
+    run mps_validate_mount_source "${HOME}/.secret/project"
+    [[ "$status" -ne 0 ]]
+    [[ "$output" == *"hidden directory"* ]]
+    [[ "$output" == *"snap confinement"* ]]
 }

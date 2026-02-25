@@ -85,4 +85,5 @@ A blockchain software development company needs an internal tool to spin up isol
 
 ## Known Issues / TODO
 
-(none currently)
+- [x] **Snap confinement breaks image launch on native Ubuntu**: Fixed — moved `~/.mps/` to `~/mps/` (non-hidden path avoids snap `home` interface restrictions). Added `_mps_snap_confined()` + `_mps_check_snap_path()` pre-flight checks that block user-provided hidden paths (mounts, transfers, cloud-init, images) with clear error messages when snap confinement is active.
+- [ ] **Enable AppArmor in CI e2e job**: GitHub Actions runners ship with AppArmor disabled. Enable it (`sudo systemctl start apparmor`) in the e2e CI job to reproduce snap confinement issues that only affect native Ubuntu users.

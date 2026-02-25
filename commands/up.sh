@@ -178,11 +178,7 @@ _up_restore_mounts() {
         mps_resolve_mount "$arg_path"
 
         if [[ -n "${MPS_MOUNT_SOURCE:-}" && -n "${MPS_MOUNT_TARGET:-}" ]]; then
-            # Rule 2: warn if mounting $HOME
-            if [[ "${MPS_MOUNT_SOURCE}" == "${HOME:-}" ]]; then
-                mps_log_warn "Mounting your entire home directory exposes dotfiles (.ssh, .gnupg, etc.) inside the VM."
-                mps_log_warn "Consider mounting a project subdirectory instead, or use --no-mount."
-            fi
+            mps_validate_mount_source "$MPS_MOUNT_SOURCE"
 
             if [[ -n "$mount_info" ]] && echo "$mount_info" | jq -e ".[\"${MPS_MOUNT_TARGET}\"]" &>/dev/null; then
                 mps_log_debug "Auto-mount at '${MPS_MOUNT_TARGET}' already present."

@@ -14,7 +14,7 @@ load ../test_helper
 
 setup() {
     setup_home_override
-    mkdir -p "$HOME/.mps/instances" "$HOME/.mps/cache/images"
+    mkdir -p "$HOME/mps/instances" "$HOME/mps/cache/images"
     setup_multipass_stub
     # shellcheck source=../../lib/multipass.sh
     source "${MPS_ROOT}/lib/multipass.sh"
@@ -172,7 +172,7 @@ teardown() { teardown_home_override; }
 
 @test "cmd_status: shows mount list with origin annotations" {
     # Create metadata so origin derivation works
-    local meta_dir="${HOME}/.mps/instances"
+    local meta_dir="${HOME}/mps/instances"
     mkdir -p "$meta_dir"
     cat > "${meta_dir}/fixture-primary.json" <<'METAJSON'
 {

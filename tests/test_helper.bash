@@ -58,7 +58,7 @@ setup_ssh_stub() {
 # ---------- Integration stub functions ----------
 
 setup_integration_stubs() {
-    mps_resolve_image()            { echo "file://${HOME}/.mps/cache/images/base/1.0.0/amd64.img"; }
+    mps_resolve_image()            { echo "file://${HOME}/mps/cache/images/base/1.0.0/amd64.img"; }
     mps_auto_forward_ports()       { :; }
     mps_forward_port()             { :; }
     mps_reset_port_forwards()      { :; }

@@ -18,7 +18,7 @@ load ../test_helper
 # Usage: _create_local_meta <name> <ver> <arch> <sha256>
 _create_local_meta() {
     local name="$1" ver="$2" arch="$3" sha256="$4"
-    local dir="${HOME}/.mps/cache/images/${name}/${ver}"
+    local dir="${HOME}/mps/cache/images/${name}/${ver}"
     mkdir -p "$dir"
     printf '{"sha256": "%s"}\n' "$sha256" > "${dir}/${arch}.meta.json"
 }
@@ -28,7 +28,7 @@ _create_local_meta() {
 _create_instance_meta() {
     local short_name="$1" img_name="$2" ver="$3" arch="$4" sha256="$5"
     local source="${6:-cache}"
-    local dir="${HOME}/.mps/instances"
+    local dir="${HOME}/mps/instances"
     mkdir -p "$dir"
     cat > "${dir}/${short_name}.json" <<EOF
 {
@@ -341,11 +341,11 @@ teardown() {
     [[ "$status" -ne 0 ]]
 }
 
-@test "_mps_fetch_manifest: caches to ~/.mps/cache/manifest.json" {
+@test "_mps_fetch_manifest: caches to ~/mps/cache/manifest.json" {
     _mps_fetch_manifest >/dev/null
-    [[ -f "${HOME}/.mps/cache/manifest.json" ]]
+    [[ -f "${HOME}/mps/cache/manifest.json" ]]
     local cached
-    cached="$(cat "${HOME}/.mps/cache/manifest.json")"
+    cached="$(cat "${HOME}/mps/cache/manifest.json")"
     echo "$cached" | jq -e '.schema_version == 2'
 }
 
@@ -369,7 +369,7 @@ teardown() {
     _create_local_meta "base" "1.0.0" "$arch" \
         "aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111"
     # Touch meta to distant past so HEAD returns 200 (not 304)
-    touch -t 200001010000 "${HOME}/.mps/cache/images/base/1.0.0/${arch}.meta.json"
+    touch -t 200001010000 "${HOME}/mps/cache/images/base/1.0.0/${arch}.meta.json"
     # Use a manifest where latest==1.0.0 so version-update check doesn't fire
     local manifest='{"schema_version":2,"images":{"base":{"latest":"1.0.0","versions":{"1.0.0":{"'"$arch"'":{"sha256":"aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111"}}}}}}'
     run _mps_check_image_staleness "$manifest" "base" "1.0.0" "$arch"
@@ -382,7 +382,7 @@ teardown() {
     arch="$(mps_detect_arch)"
     _create_local_meta "base" "1.0.0" "$arch" \
         "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
-    touch -t 200001010000 "${HOME}/.mps/cache/images/base/1.0.0/${arch}.meta.json"
+    touch -t 200001010000 "${HOME}/mps/cache/images/base/1.0.0/${arch}.meta.json"
     # Use a manifest where latest==1.0.0 so version-update check doesn't fire
     local manifest='{"schema_version":2,"images":{"base":{"latest":"1.0.0","versions":{"1.0.0":{"'"$arch"'":{"sha256":"aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111"}}}}}}'
     run _mps_check_image_staleness "$manifest" "base" "1.0.0" "$arch"
@@ -410,7 +410,7 @@ teardown() {
     _create_local_meta "base" "1.1.0" "$arch" \
         "cccc3333cccc3333cccc3333cccc3333cccc3333cccc3333cccc3333cccc3333"
     # Touch meta to future → HEAD gets 304
-    touch -t 203001010000 "${HOME}/.mps/cache/images/base/1.1.0/${arch}.meta.json"
+    touch -t 203001010000 "${HOME}/mps/cache/images/base/1.1.0/${arch}.meta.json"
     local manifest
     manifest='{"schema_version":2,"images":{"base":{"latest":"1.1.0","versions":{"1.1.0":{"'"$arch"'":{"sha256":"cccc3333cccc3333cccc3333cccc3333cccc3333cccc3333cccc3333cccc3333"}}}}}}'
     run _mps_check_image_staleness "$manifest" "base" "1.1.0" "$arch"
@@ -440,7 +440,7 @@ teardown() {
     # Set up matching local SHA with manifest SHA
     _create_local_meta "base" "1.1.0" "$arch" \
         "cccc3333cccc3333cccc3333cccc3333cccc3333cccc3333cccc3333cccc3333"
-    touch -t 200001010000 "${HOME}/.mps/cache/images/base/1.1.0/${arch}.meta.json"
+    touch -t 200001010000 "${HOME}/mps/cache/images/base/1.1.0/${arch}.meta.json"
     local manifest
     manifest='{"schema_version":2,"images":{"base":{"latest":"1.1.0","versions":{"1.1.0":{"'"$arch"'":{"sha256":"cccc3333cccc3333cccc3333cccc3333cccc3333cccc3333cccc3333cccc3333"}}}}}}'
     # Point at unreachable server so sidecar fetch fails
@@ -459,8 +459,8 @@ teardown() {
     arch="$(mps_detect_arch)"
     _create_local_meta "base" "1.1.0" "$arch" \
         "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
-    touch -t 200001010000 "${HOME}/.mps/cache/images/base/1.1.0/${arch}.meta.json"
-    local img_path="${HOME}/.mps/cache/images/base/1.1.0/${arch}.img"
+    touch -t 200001010000 "${HOME}/mps/cache/images/base/1.1.0/${arch}.meta.json"
+    local img_path="${HOME}/mps/cache/images/base/1.1.0/${arch}.img"
     mkdir -p "$(dirname "$img_path")"
     touch "$img_path"
     run _mps_warn_image_staleness "file://${img_path}"
@@ -472,7 +472,7 @@ teardown() {
     arch="$(mps_detect_arch)"
     _create_local_meta "base" "1.0.0" "$arch" \
         "aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111"
-    local img_path="${HOME}/.mps/cache/images/base/1.0.0/${arch}.img"
+    local img_path="${HOME}/mps/cache/images/base/1.0.0/${arch}.img"
     mkdir -p "$(dirname "$img_path")"
     touch "$img_path"
     run _mps_warn_image_staleness "file://${img_path}"
@@ -485,15 +485,15 @@ teardown() {
     arch="$(mps_detect_arch)"
     _create_local_meta "base" "1.1.0" "$arch" \
         "cccc3333cccc3333cccc3333cccc3333cccc3333cccc3333cccc3333cccc3333"
-    touch -t 203001010000 "${HOME}/.mps/cache/images/base/1.1.0/${arch}.meta.json"
-    local img_path="${HOME}/.mps/cache/images/base/1.1.0/${arch}.img"
+    touch -t 203001010000 "${HOME}/mps/cache/images/base/1.1.0/${arch}.meta.json"
+    local img_path="${HOME}/mps/cache/images/base/1.1.0/${arch}.img"
     mkdir -p "$(dirname "$img_path")"
     touch "$img_path"
     # Provide manifest where latest==1.1.0 (no version update path)
     # Pre-populate the manifest cache so _mps_fetch_manifest returns it
-    mkdir -p "${HOME}/.mps/cache"
+    mkdir -p "${HOME}/mps/cache"
     echo '{"schema_version":2,"images":{"base":{"latest":"1.1.0","versions":{"1.1.0":{"'"$arch"'":{"sha256":"cccc3333cccc3333cccc3333cccc3333cccc3333cccc3333cccc3333cccc3333"}}}}}}' \
-        > "${HOME}/.mps/cache/manifest.json"
+        > "${HOME}/mps/cache/manifest.json"
     run _mps_warn_image_staleness "file://${img_path}"
     [[ -z "$output" ]]
 }
@@ -503,7 +503,7 @@ teardown() {
     arch="$(mps_detect_arch)"
     _create_local_meta "base" "1.0.0" "$arch" \
         "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
-    local img_path="${HOME}/.mps/cache/images/base/1.0.0/${arch}.img"
+    local img_path="${HOME}/mps/cache/images/base/1.0.0/${arch}.img"
     mkdir -p "$(dirname "$img_path")"
     touch "$img_path"
     MPS_IMAGE_CHECK_UPDATES=false run _mps_warn_image_staleness "file://${img_path}"
@@ -513,7 +513,7 @@ teardown() {
 @test "_mps_warn_image_staleness: silent for non-SemVer version" {
     local arch
     arch="$(mps_detect_arch)"
-    local img_path="${HOME}/.mps/cache/images/base/local/${arch}.img"
+    local img_path="${HOME}/mps/cache/images/base/local/${arch}.img"
     mkdir -p "$(dirname "$img_path")"
     touch "$img_path"
     run _mps_warn_image_staleness "file://${img_path}"
@@ -557,8 +557,8 @@ teardown() {
     _create_local_meta "base" "1.1.0" "$arch" \
         "cccc3333cccc3333cccc3333cccc3333cccc3333cccc3333cccc3333cccc3333"
     # Also create the .img file so _mps_resolve_latest_version finds it
-    touch "${HOME}/.mps/cache/images/base/1.0.0/${arch}.img"
-    touch "${HOME}/.mps/cache/images/base/1.1.0/${arch}.img"
+    touch "${HOME}/mps/cache/images/base/1.0.0/${arch}.img"
+    touch "${HOME}/mps/cache/images/base/1.1.0/${arch}.img"
     run _mps_check_instance_staleness "test-inst"
     [[ "$status" -eq 0 ]]
     [[ "$output" == "update:1.1.0" ]]
@@ -571,8 +571,8 @@ teardown() {
     _create_local_meta "base" "1.0.0" "$arch" "$sha"
     _create_instance_meta "test-inst" "base" "1.0.0" "$arch" "$sha"
     # Create a manifest with different SHA for this version+arch
-    mkdir -p "${HOME}/.mps/cache"
-    cat > "${HOME}/.mps/cache/manifest.json" <<EOF
+    mkdir -p "${HOME}/mps/cache"
+    cat > "${HOME}/mps/cache/manifest.json" <<EOF
 {
     "schema_version": 2,
     "images": {
@@ -599,8 +599,8 @@ EOF
     _create_local_meta "base" "1.0.0" "$arch" "$sha"
     _create_instance_meta "test-inst" "base" "1.0.0" "$arch" "$sha"
     # Create a manifest pointing to a newer latest
-    mkdir -p "${HOME}/.mps/cache"
-    cat > "${HOME}/.mps/cache/manifest.json" <<EOF
+    mkdir -p "${HOME}/mps/cache"
+    cat > "${HOME}/mps/cache/manifest.json" <<EOF
 {
     "schema_version": 2,
     "images": {
@@ -656,8 +656,8 @@ EOF
     _create_instance_meta "test-upd" "base" "1.0.0" "$arch" "$sha"
     _create_local_meta "base" "1.1.0" "$arch" \
         "cccc3333cccc3333cccc3333cccc3333cccc3333cccc3333cccc3333cccc3333"
-    touch "${HOME}/.mps/cache/images/base/1.0.0/${arch}.img"
-    touch "${HOME}/.mps/cache/images/base/1.1.0/${arch}.img"
+    touch "${HOME}/mps/cache/images/base/1.0.0/${arch}.img"
+    touch "${HOME}/mps/cache/images/base/1.1.0/${arch}.img"
     run _mps_warn_instance_staleness "test-upd"
     [[ "$output" == *"1.1.0"* ]]
     [[ "$output" == *"available locally"* ]]
@@ -669,8 +669,8 @@ EOF
     local sha="aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111"
     _create_local_meta "base" "1.0.0" "$arch" "$sha"
     _create_instance_meta "test-skip" "base" "1.0.0" "$arch" "$sha"
-    mkdir -p "${HOME}/.mps/cache"
-    cat > "${HOME}/.mps/cache/manifest.json" <<EOF
+    mkdir -p "${HOME}/mps/cache"
+    cat > "${HOME}/mps/cache/manifest.json" <<EOF
 {
     "schema_version": 2,
     "images": {
@@ -722,11 +722,11 @@ EOF
 }
 
 @test "_mps_check_cli_update: uses cached file within 24h TTL" {
-    mkdir -p "${HOME}/.mps/cache"
+    mkdir -p "${HOME}/mps/cache"
     cp "${MPS_ROOT}/tests/fixtures/http/mps-release-newer.json" \
-        "${HOME}/.mps/cache/mps-release.json"
+        "${HOME}/mps/cache/mps-release.json"
     # Touch to now (fresh cache)
-    touch "${HOME}/.mps/cache/mps-release.json"
+    touch "${HOME}/mps/cache/mps-release.json"
     export MPS_ROOT="${TEST_TEMP_DIR}/fakerepo"
     mkdir -p "$MPS_ROOT"
     git -C "$MPS_ROOT" init -q

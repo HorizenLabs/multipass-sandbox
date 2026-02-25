@@ -50,7 +50,7 @@ Backblaze B2 for storage, Cloudflare proxy for public serving. Files at bucket r
 - `MPS_IMAGE_BASE_URL` — public Cloudflare-proxied URL (maps 1:1 to bucket root)
 - Manifest: stored in B2 (seeded inline on first publish), SemVer versions + `latest` pointer per image
 - Architecture-aware: separate `amd64`/`arm64` images per version
-- SHA256 checksums verified on pull; local cache at `~/.mps/cache/images/`
+- SHA256 checksums verified on pull; local cache at `~/mps/cache/images/`
 - `file_size` (bytes) stored in manifest arch entries for autoindex display
 - Static `index.html` pages generated from manifest after every publish (root, per-flavor, per-version)
 - B2 credentials (`B2_APPLICATION_KEY_ID`, `B2_APPLICATION_KEY`) passed as env vars at runtime. Old image file versions cleaned up; manifest versions kept for audit trail.

@@ -2,7 +2,7 @@
 # Integration tests for __complete instances path in bin/mps.
 #
 # The __complete early-exit path (bin/mps:153-157) never sources lib/common.sh,
-# so setup is minimal — no function stubs, no HOME/.mps/instances, no resource
+# so setup is minimal — no function stubs, no HOME/mps/instances, no resource
 # pre-sets needed. Tests invoke bin/mps as a subprocess via BATS `run`.
 
 load ../test_helper

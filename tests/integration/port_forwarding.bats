@@ -14,7 +14,7 @@ load ../test_helper
 
 setup() {
     setup_home_override
-    mkdir -p "$HOME/.mps/instances" "$HOME/.mps/cache/images" "$HOME/.mps/sockets"
+    mkdir -p "$HOME/mps/instances" "$HOME/mps/cache/images" "$HOME/mps/sockets"
     setup_multipass_stub
     setup_ssh_stub
     # shellcheck source=../../lib/multipass.sh
@@ -22,7 +22,7 @@ setup() {
     export TEST_TEMP_DIR
 
     # Stub only non-port functions (image, staleness, confirm)
-    mps_resolve_image()            { echo "file://${HOME}/.mps/cache/images/base/1.0.0/amd64.img"; }
+    mps_resolve_image()            { echo "file://${HOME}/mps/cache/images/base/1.0.0/amd64.img"; }
     mps_confirm()                  { return 0; }
     mps_check_image_requirements() { :; }
     _mps_fetch_manifest()          { return 1; }
@@ -39,7 +39,7 @@ setup() {
     touch "$_TEST_SSH_KEY"
     chmod 600 "$_TEST_SSH_KEY"
 
-    local meta="${HOME}/.mps/instances/fixture-primary.json"
+    local meta="${HOME}/mps/instances/fixture-primary.json"
     cat > "$meta" <<EOF
 {
     "name": "fixture-primary",
@@ -98,7 +98,7 @@ teardown() { teardown_home_override; }
 }
 
 @test "forward_port: returns 1 when SSH not configured (no metadata)" {
-    local meta="${HOME}/.mps/instances/fixture-primary.json"
+    local meta="${HOME}/mps/instances/fixture-primary.json"
     cat > "$meta" <<'JSON'
 {"name": "fixture-primary", "full_name": "mps-fixture-primary"}
 JSON

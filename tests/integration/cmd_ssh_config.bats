@@ -12,7 +12,7 @@ load ../test_helper
 
 setup() {
     setup_home_override
-    mkdir -p "$HOME/.mps/instances" "$HOME/.mps/cache/images" "$HOME/.ssh/config.d"
+    mkdir -p "$HOME/mps/instances" "$HOME/mps/cache/images" "$HOME/.ssh/config.d"
     setup_multipass_stub
     # shellcheck source=../../lib/multipass.sh
     source "${MPS_ROOT}/lib/multipass.sh"
@@ -80,7 +80,7 @@ teardown() { teardown_home_override; }
 }
 
 @test "ssh-config inject_key: updates instance metadata with ssh fields" {
-    local meta="${HOME}/.mps/instances/fixture-primary.json"
+    local meta="${HOME}/mps/instances/fixture-primary.json"
     echo '{"name":"fixture-primary","full_name":"mps-fixture-primary"}' > "$meta"
 
     _ssh_config_inject_key "mps-fixture-primary" "fixture-primary" \
@@ -95,7 +95,7 @@ teardown() { teardown_home_override; }
 }
 
 @test "ssh-config inject_key: skips if already injected" {
-    local meta="${HOME}/.mps/instances/fixture-primary.json"
+    local meta="${HOME}/mps/instances/fixture-primary.json"
     printf '{"name":"fixture-primary","full_name":"mps-fixture-primary","ssh":{"injected":true,"key":"%s"}}\n' \
         "$HOME/.ssh/id_ed25519" > "$meta"
 
