@@ -346,7 +346,7 @@ phase_create() {
     _e2e_pass "mps create succeeded"
 
     local list_json
-    list_json="$("${MPS_ROOT}/bin/mps" list --json 2>&1)"
+    list_json="$("${MPS_ROOT}/bin/mps" list --json 2>/dev/null)"
     FULL_NAME="$(echo "$list_json" | jq -r '.[]? | .name' | head -1)"
     SHORT="$(echo "$FULL_NAME" | sed 's/^mps-//')"
 
@@ -357,7 +357,7 @@ phase_create() {
     _e2e_log "Instance: FULL_NAME=${FULL_NAME} SHORT=${SHORT}"
 
     local status_json state
-    status_json="$("${MPS_ROOT}/bin/mps" status --json 2>&1)"
+    status_json="$("${MPS_ROOT}/bin/mps" status --json 2>/dev/null)"
     state="$(echo "$status_json" | jq -r '.info[].state' 2>/dev/null | head -1)"
     if [[ "$state" != "Running" ]]; then
         _e2e_fail "FATAL: instance state is '${state}', expected 'Running'"
@@ -515,7 +515,7 @@ phase_status() {
     assert_contains "status contains Running" "$status_out" "Running"
 
     local status_json json_state
-    status_json="$("${MPS_ROOT}/bin/mps" status --json 2>&1)"
+    status_json="$("${MPS_ROOT}/bin/mps" status --json 2>/dev/null)"
     assert_exit_zero "status --json is valid JSON" bash -c "echo '$status_json' | jq ."
     json_state="$(echo "$status_json" | jq -r '.info[].state' | head -1)"
     assert_eq "status --json state" "$json_state" "Running"
@@ -533,7 +533,7 @@ phase_ssh() {
     _e2e_log_phase "7: SSH Config"
 
     local ssh_out
-    ssh_out="$("${MPS_ROOT}/bin/mps" ssh-config --ssh-key "$E2E_SSH_KEY" --print 2>&1)"
+    ssh_out="$("${MPS_ROOT}/bin/mps" ssh-config --ssh-key "$E2E_SSH_KEY" --print 2>&1)" || true
     assert_contains "ssh-config --print contains Host" "$ssh_out" "Host ${SHORT}"
 
     "${MPS_ROOT}/bin/mps" ssh-config --ssh-key "$E2E_SSH_KEY" --append 2>/dev/null || true
@@ -547,7 +547,7 @@ phase_ssh() {
     assert_eq "SSH connectivity" "$ssh_result" "ssh-ok"
 
     local ssh_out2
-    ssh_out2="$("${MPS_ROOT}/bin/mps" ssh-config --ssh-key "$E2E_SSH_KEY" --print 2>&1)"
+    ssh_out2="$("${MPS_ROOT}/bin/mps" ssh-config --ssh-key "$E2E_SSH_KEY" --print 2>&1)" || true
     assert_contains "ssh-config idempotent" "$ssh_out2" "Host ${SHORT}"
 }
 
@@ -686,7 +686,7 @@ phase_down_up_tunnels() {
 
     # Verify stopped
     local status_json state
-    status_json="$("${MPS_ROOT}/bin/mps" status --json 2>&1)"
+    status_json="$("${MPS_ROOT}/bin/mps" status --json 2>/dev/null)"
     state="$(echo "$status_json" | jq -r '.info[].state' | head -1)"
     assert_eq "down: state Stopped" "$state" "Stopped"
 
@@ -708,7 +708,7 @@ phase_down_up_tunnels() {
     "${MPS_ROOT}/bin/mps" up 2>/dev/null || true
 
     # Verify running
-    status_json="$("${MPS_ROOT}/bin/mps" status --json 2>&1)"
+    status_json="$("${MPS_ROOT}/bin/mps" status --json 2>/dev/null)"
     state="$(echo "$status_json" | jq -r '.info[].state' | head -1)"
     assert_eq "up: state Running" "$state" "Running"
 
