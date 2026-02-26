@@ -39,8 +39,8 @@ Internal CLI tool for spinning up isolated VM-based development environments usi
 - `.github/actions/verify-gpg-tag/` — Composite action for GPG tag signature verification
 - `vendor/hl-claude-marketplace` — Git submodule: private Claude Code plugin marketplace (relative URL)
 - `.claude/skills/` — Claude Code skills (`audit-docs`: doc staleness audit, `init-template`: cloud-init template generator)
-- `tests/` — BATS test suites (`unit/`, `integration/`), shared `test_helper.bash`, `stubs/` (multipass, ssh, sudo, http_server.py), coverage scripts (`coverage-trap.sh`, `coverage-report.sh`), `tap-summary.sh`, `capture-fixtures.sh`
-- `.planning/` — Implementation plan, architecture decisions, CI design, status tracking
+- `tests/` — BATS test suites (`unit/`, `integration/`), shared `test_helper.bash`, `stubs/` (multipass, ssh, sudo, http_server.py), coverage scripts (`coverage-trap.sh`, `coverage-report.sh`), `tap-summary.sh`, `capture-fixtures.sh`, `ci-preflight.sh` (snap confinement checks), `e2e.sh` (full VM lifecycle), `TESTING.md` (strategy and coverage map)
+- `.planning/` — Implementation plan, architecture decisions, status tracking
 
 ## Commands
 
@@ -116,6 +116,8 @@ make publish-base VERSION=1.0.0        # Local: upload + manifest (both archs)
 make publish-release-meta VERSION=0.3.0 # Publish mps-release.json to B2 (CLI update check)
 make build-bash32                      # Build Bash 3.2.57 binary for compat linting
 make lint-bash32                       # Check client scripts for Bash 3.2 compatibility
+make test-e2e                          # Run E2E tests against live VM (with coverage)
+make test-e2e-report                   # Merge coverage from all tiers (unit/integration/e2e)
 make capture-fixtures                  # Capture fresh multipass JSON fixtures (requires multipass on host)
 make install                           # Install mps (symlink to PATH, runs on host)
 make uninstall        # Uninstall mps (remove symlink, cleanup artifacts, runs on host)
@@ -136,6 +138,7 @@ The Makefile detects host uid:gid and the entrypoint uses setpriv to step down f
   - **Major** (`1.0.0` → `2.0.0`): Breaking changes (Ubuntu version bump, tool removed, major restructure)
 - **Publishing** uses a fan-in pattern for CI with credential-isolated publisher container — see DECISIONS.md "Image Distribution" for CI/local flow details.
 - **CLI update metadata**: `mps-release.json` published to CDN root (`mpsandbox.horizenlabs.io/mps-release.json`) by `release.yml`. Contains `version`, `tag`, `commit_sha`. Clients check at most once per 24h via `_mps_check_cli_update()` in `lib/common.sh`.
+- **Git tags**: `mps/v*` for tool releases (must match `VERSION` file), `images/v*` for all image flavors (shared version). GPG-signed by authorized maintainers.
 
 ## Workflow
 
@@ -162,5 +165,5 @@ The Makefile detects host uid:gid and the entrypoint uses setpriv to step down f
 
 - Implementation plan and status: `.planning/STATUS.md`
 - Architecture decisions: `.planning/DECISIONS.md`
-- Testing strategy and coverage map: `.planning/TESTING.md` (E2E design: `.planning/E2E.md`)
+- Testing strategy and coverage map: `tests/TESTING.md`
 - CI/CD pipeline design: `.github/CI.md`

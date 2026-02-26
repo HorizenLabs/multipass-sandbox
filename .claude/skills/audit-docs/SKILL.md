@@ -1,6 +1,6 @@
 ---
 name: audit-docs
-description: Audit planning docs (CLAUDE.md, .planning/*, .github/CI.md, .planning/TESTING.md) for staleness and context bloat. Run before/after commits.
+description: Audit planning docs (CLAUDE.md, .planning/*, .github/CI.md, tests/TESTING.md) for staleness and context bloat. Run before/after commits.
 allowed-tools: Read, Glob, Grep, Bash, Task
 ---
 
@@ -15,7 +15,7 @@ Audit documentation for staleness, missing entries, and context window bloat. Re
 | `CLAUDE.md` | Project structure, commands, conventions, build system | Yes (auto) |
 | `.planning/DECISIONS.md` | Architecture decisions, reference tables | Yes (manual) |
 | `.planning/STATUS.md` | Implementation plan, context, phase status and checklists | Yes (manual) |
-| `.planning/TESTING.md` | Testing strategy, coverage map, test counts | No (reference — audit only when tests change) |
+| `tests/TESTING.md` | Testing strategy, coverage map, test counts | No (reference — audit only when tests change) |
 | `.github/CI.md` | CI/CD pipeline design (code reviewer reference) | No (reference — audit only when CI changes) |
 
 ## Audit Steps
@@ -118,7 +118,7 @@ done
 
 ### 13. Context Optimization
 
-This step monitors doc health for context window efficiency. The session-start docs (CLAUDE.md + .planning/*) are loaded into every conversation.
+This step monitors doc health for context window efficiency. The session-start docs (CLAUDE.md + .planning/* + .github/CI.md) are loaded into every conversation.
 
 **Size check**: Report line counts and byte sizes for each session-start doc. Flag if total exceeds 500 lines or 30KB.
 

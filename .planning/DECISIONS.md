@@ -94,30 +94,6 @@ Non-OS dependencies installed with integrity verification where possible.
 
 Cloud-init layers: yq (rhash checksums), hadolint (.sha256 sidecar), cosign (cosign_checksums.txt), Echidna (sigstore bundle via cosign), shellcheck (no checksums published).
 
-## Build System Stamp Files
-
-`.stamps/` directory tracks Docker image build state in Make.
-
-- `.stamps/{builder,linter,publisher}` depend on respective `docker/Dockerfile.*` + `docker/entrypoint.sh`
-- `.stamps/image-<flavor>-amd64` — depend on builder stamp + common image deps + per-flavor layer file + parent flavor stamp (non-base only, layered chain)
-- `.stamps/image-<flavor>-arm64` — depend on builder stamp + common image deps + cumulative layer files (from-scratch, no parent stamp dep)
-- `make clean` removes stamp files; `.stamps/` is in `.gitignore`
-
-## SSH Key Management
-
-`mps ssh-config` is the **only** command that injects SSH keys. Key resolution: `--ssh-key` flag → `MPS_SSH_KEY` config → auto-detect from `~/.ssh/` (ed25519 > ecdsa > rsa). Injection is idempotent (`.ssh.injected: true` in instance JSON metadata). `mps port forward` requires SSH pre-configured.
-
-## Git Tagging Strategy
-
-Prefixed tags for independent artifact versioning. All image flavors share a single version.
-
-| Tag pattern | Artifact | Example |
-|---|---|---|
-| `mps/v*` | Tool release | `mps/v0.1.0` |
-| `images/v*` | All image flavors | `images/v1.0.0` |
-
-Tool version tracked in `VERSION` file (plain SemVer, no `v` prefix). `mps/v*` tag must match — CI validates.
-
 ## Claude Code Plugin Marketplaces
 
 Two marketplaces registered at image build time via Packer `shell` provisioner (not cloud-init):

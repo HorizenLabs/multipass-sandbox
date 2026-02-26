@@ -15,7 +15,7 @@
 | **Integration** | Commands with mocked multipass/network | Docker (linter) | Bash 4+ AND Bash 3.2 | Medium |
 | **E2E** | Full VM lifecycle, real multipass + KVM | Native host (CI or local) | Host bash | Slow |
 
-Unit and integration tests exist today. E2E tier is designed but not yet implemented — see [E2E.md](E2E.md).
+All three tiers are implemented and wired into CI.
 
 ## Dual-Interpreter Testing
 
@@ -34,7 +34,7 @@ Test files themselves must also be Bash 3.2-compatible (no associative arrays, n
 | `mps/v*` tag (release) | Unit + Integration + E2E | ~30 min |
 | `images/v*` tag | Image build + E2E (interleaved) + upload | ~73 min x86 / ~80 min arm64 |
 
-Runner sizing TBD based on real-world timing data.
+Runner sizing: `warp-ubuntu-latest-x64-2x` for CI/release, `warp-ubuntu-latest-x64-4x` for image builds.
 
 ### E2E Platform Coverage
 
@@ -448,10 +448,6 @@ Multipass stub for VM discovery, `du` stub, `brew` stub, stdin piping for intera
 | Directory cleanup | `uninstall.bats` | 2 | Empty ~/mps removed, non-empty preserved |
 | Summary + misc | `uninstall.bats` | 4 | Lists removed, nothing removed, MPS_INSTALL_DIR override, source dir |
 
-### Not Yet Covered: Full Workflows
-
-- **Full workflows** — E2E only (real VMs, real mounts, real port forwards)
-
 ---
 
 ## Test Counts
@@ -472,7 +468,7 @@ Multipass stub for VM discovery, `du` stub, `brew` stub, stdin piping for intera
 | `completion.bats` | 69 | Unit | `tests/unit/` |
 | `stub_smoke.bats` | 20 | Integration | `tests/integration/` |
 | `mp_lifecycle.bats` | 40 | Integration | `tests/integration/` |
-| `network.bats` | 65 | Integration | `tests/integration/` |
+| `network.bats` | 61 | Integration | `tests/integration/` |
 | `cmd_query.bats` | 21 | Integration | `tests/integration/` |
 | `cmd_lifecycle.bats` | 67 | Integration | `tests/integration/` |
 | `cmd_exec.bats` | 27 | Integration | `tests/integration/` |
@@ -486,7 +482,7 @@ Multipass stub for VM discovery, `du` stub, `brew` stub, stdin piping for intera
 | `entry_point.bats` | 11 | Integration | `tests/integration/` |
 | `install.bats` | 37 | Integration | `tests/integration/` |
 | `uninstall.bats` | 26 | Integration | `tests/integration/` |
-| **Total** | **921** | | |
+| **Total** | **917** | | |
 
 *Last updated: 2026-02-26*
 

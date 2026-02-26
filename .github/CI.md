@@ -1,10 +1,10 @@
-# GitHub Actions CI/CD Pipeline (Phase 7)
+# GitHub Actions CI/CD Pipeline
 
 ## Context
 
-The mpsandbox project has a mature, fully containerized build system (Makefile + Docker) but no CI/CD. Phase 7 adds GitHub Actions workflows for lint/test on push/PR, image build/publish on tag push + weekly cron, and tool releases. WarpBuild runners provide native KVM for fast QEMU builds on amd64; arm64 runners lack KVM, so arm64 builds use TCG emulation with a parallel from-scratch strategy.
+The mpsandbox project uses a fully containerized build system (Makefile + Docker) with GitHub Actions CI/CD for lint/test on push/PR, image build/publish on tag push + weekly cron, and tool releases. WarpBuild runners provide native KVM for fast QEMU builds on amd64; arm64 runners lack KVM, so arm64 builds use TCG emulation with a parallel from-scratch strategy.
 
-## Files to Create
+## Workflows
 
 1. `.github/workflows/ci.yml` — lint + test
 2. `.github/workflows/images.yml` — image build + publish + CF cache purge
@@ -205,7 +205,7 @@ Clients fetch this file (at most once per 24h) to compare against the local `VER
 | `CF_ZONE_ID` | Cloudflare zone ID (for per-upload sidecar cache purge) |
 | `CF_API_TOKEN` | Cloudflare API token with Zone Cache Purge permission |
 
-### Environment: `publish` (used by `publish` in images.yml + `publish-release-json` in release.yml)
+### Environment: `publish` (used by `publish` in images.yml + `release` in release.yml)
 
 | Secret | Purpose |
 |---|---|
