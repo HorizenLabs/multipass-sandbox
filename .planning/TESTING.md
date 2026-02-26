@@ -31,8 +31,8 @@ Test files themselves must also be Bash 3.2-compatible (no associative arrays, n
 | Trigger | Tiers | Budget |
 |---------|-------|--------|
 | PR / push to `main` | Unit + Integration (Bash 4+ with coverage ∥ Bash 3.2) | <20 min wall time |
-| `mps/v*` tag (release) | Unit + Integration + E2E | ~2h |
-| `images/v*` tag | Image build + potentially E2E | TBD — E2E could run against x86 artifacts while arm64 builds (~75 min free window) |
+| `mps/v*` tag (release) | Unit + Integration + E2E | ~30 min |
+| `images/v*` tag | Image build + E2E (interleaved) + upload | ~73 min x86 / ~80 min arm64 |
 
 Runner sizing TBD based on real-world timing data.
 

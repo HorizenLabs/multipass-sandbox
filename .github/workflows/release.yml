@@ -41,6 +41,9 @@ jobs:
           tag: ${{ steps.resolve.outputs.tag }}
           maintainer-keys: ${{ vars.MAINTAINER_KEYS }}
 
+      - name: Snap confinement preflight
+        run: bash tests/ci-preflight.sh
+
       - name: Validate version matches VERSION file
         run: |
           FILE_VERSION="$(cat VERSION)"
@@ -65,6 +68,27 @@ jobs:
 
       - name: Test
         run: make test
+
+      - name: E2E test
+        run: MPS_E2E_INSTALL=true make test-e2e
+
+      - name: Aggregate coverage (unit + integration + e2e)
+        run: make test-e2e-report
+
+      - name: Coverage job summary
+        if: "!cancelled()"
+        run: |
+          if [[ -f coverage/summary.md ]]; then
+            cat coverage/summary.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload coverage artifact
+        if: "!cancelled()"
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage/
+          retention-days: 30
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2

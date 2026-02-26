@@ -251,11 +251,62 @@ ssh-keygen -t ed25519 -C "multipass-sandbox-ci-submodule" -f mps-submodule-deplo
 rm mps-submodule-deploy-key mps-submodule-deploy-key.pub
 ```
 
+## E2E Test Integration
+
+### Snap Confinement Preflight (`tests/ci-preflight.sh`)
+
+Fail-fast script that runs early in both `release.yml` and `images.yml` (amd64 job), before any substantive work. Checks:
+1. **AppArmor kernel module** — `/sys/module/apparmor/parameters/enabled == Y`
+2. **Snap strict confinement** — `snap debug confinement == strict`
+3. **Snap seed loaded** — `sudo snap wait system seed.loaded` (prevents snap install hangs on GH runners)
+
+Bash 3.2-compatible (auto-linted via `CLIENT_SCRIPTS` discovery).
+
+### `release.yml` — E2E Gate
+
+After `make test` (unit + integration with coverage), before "Create GitHub Release":
+1. `MPS_E2E_INSTALL=true make test-e2e` — runs full E2E lifecycle using pull-from-registry flow. `MPS_E2E_INSTALL=true` exercises `install.sh`/`uninstall.sh` bookends, also installing multipass+jq as a dependency check.
+2. `make test-e2e-report` — merges coverage from all three tiers (unit/integration/e2e) into `coverage/lcov.info` + `coverage/summary.md`, enforcing 90% aggregate threshold.
+3. Coverage summary appended to `$GITHUB_STEP_SUMMARY`; artifacts uploaded (30-day retention).
+
+No PR comment step — releases are tag-triggered, not PRs.
+
+### `images.yml` — Build→E2E→Upload Pipeline (amd64)
+
+The amd64 build loop is restructured from build→upload to build→e2e→upload:
+
+```
+for flavor in CHAIN:
+    make image-<flavor>-amd64        # foreground (Docker/Packer, CPU-bound)
+    wait_prev                        # wait for previous background e2e+upload
+    e2e_and_upload <flavor> &        # background (e2e THEN upload, sequential)
+```
+
+The `e2e_and_upload()` function:
+1. Runs `MPS_E2E_IMAGE=images/artifacts/mps-<flavor>-amd64.qcow2.img MPS_E2E_INSTALL=true make test-e2e`
+2. If E2E passes → runs `upload_with_retry` (existing retry logic with 3 attempts + exponential backoff)
+3. If E2E fails → returns 1 (blocks upload, propagates failure via `wait_prev`)
+
+**Concurrency guarantees:**
+- `wait_prev` before starting next background task ensures only one E2E at a time
+- E2E for flavor N overlaps with BUILD for flavor N+1 (not another E2E)
+- Multipass VM (micro profile: 1 CPU, ~256M) and Docker/Packer build coexist on 4x runner
+
+**Timing:** 4 flavors × (15min build + 10min e2e + 3min upload) with overlap ≈ 73min. ARM64 matrix takes ~80min → x86 still fits within the critical path.
+
+**ARM64:** No E2E on arm64 (no KVM on arm64 CI runners — Multipass requires KVM for VM creation).
+
+### `MPS_E2E_INSTALL=true` Environment Variable
+
+When set, `tests/e2e.sh` runs `install.sh`/`uninstall.sh` as Phase 0/15 bookends. In CI, this serves dual purpose:
+- Installs `multipass` + `jq` dependencies on the runner (exercising the installer E2E)
+- Validates the installer itself works on a fresh system
+
 ## Verification
 
 1. Push a commit to `main` → CI workflow runs lint successfully
-2. Push signed tag `images/v1.0.0` → full image pipeline (GPG verify, build both archs, upload, manifest, CF purge)
-3. Push signed tag `mps/v0.1.0` → release workflow (GPG verify, lint, create GH release)
+2. Push signed tag `images/v1.0.0` → full image pipeline (GPG verify, preflight, build both archs, E2E validate amd64, upload, manifest, CF purge)
+3. Push signed tag `mps/v0.1.0` → release workflow (GPG verify, preflight, lint, test, E2E, create GH release)
 4. Push unsigned tag → workflow fails at GPG verification step
 5. Wait for Sunday cron → weekly rebuild picks up latest tag, verifies its signature
 6. Manual dispatch with `version: 1.0.0`, `flavors: base` → single-flavor rebuild

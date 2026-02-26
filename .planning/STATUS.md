@@ -73,8 +73,9 @@ A blockchain software development company needs an internal tool to spin up isol
 - [x] Cloud-init test template: `#:example`/`#:end` markers in `default.yaml`
 
 ### CI integration of e2e tests
-- [ ] TODO (separate follow-up: CI workflow YAML, runner selection, artifact download)
-  - [ ] Enable AppArmor in CI e2e job: GitHub Actions runners ship with AppArmor disabled. Enable it (`sudo systemctl start apparmor`) to reproduce snap confinement issues that only affect native Ubuntu users.
+- [x] Snap confinement preflight (`tests/ci-preflight.sh`)
+- [x] `images.yml` — E2E between build and upload in amd64 pipeline
+- [x] `release.yml` — E2E gate before GitHub Release creation
 
 ## Phase 12 — PowerShell Parity (Windows): NOT STARTED
 

@@ -116,6 +116,9 @@ jobs:
         with:
           ref: ${{ needs.resolve.outputs.tag }}
 
+      - name: Snap confinement preflight
+        run: bash tests/ci-preflight.sh
+
       - name: Configure SSH for submodule
         env:
           DEPLOY_KEY: ${{ secrets.SUBMODULE_DEPLOY_KEY }}
@@ -169,7 +172,7 @@ jobs:
           make build-docker-builder
           make build-docker-publisher
 
-      - name: Build and upload images (layered chain)
+      - name: Build, validate, and upload images (layered chain)
         env:
           B2_APPLICATION_KEY_ID: ${{ secrets.B2_APPLICATION_KEY_ID }}
           B2_APPLICATION_KEY: ${{ secrets.B2_APPLICATION_KEY }}
@@ -187,7 +190,6 @@ jobs:
           upload_with_retry() {
             local target="$1" version="$2" log_file="$3"
             local attempt=1 backoff=30
-            : > "$log_file"
             while [[ $attempt -le $MAX_UPLOAD_ATTEMPTS ]]; do
               if make "$target" VERSION="$version" >> "$log_file" 2>&1; then
                 return 0
@@ -202,24 +204,42 @@ jobs:
             return 1
           }
 
-          # Ordered build chain — each flavor builds while the previous uploads.
-          # Uploads are serialized (one at a time) to avoid B2 rate-limiting.
+          # E2E validate then upload (runs in background subshell)
+          e2e_and_upload() {
+            local flavor="$1" version="$2" log_file="$3"
+
+            echo "--- E2E: ${flavor}-${ARCH} ---" >> "$log_file"
+            if MPS_E2E_IMAGE="images/artifacts/mps-${flavor}-${ARCH}.qcow2.img" \
+               MPS_E2E_INSTALL=true \
+               make test-e2e >> "$log_file" 2>&1; then
+              echo "--- E2E ${flavor}-${ARCH}: passed ---" >> "$log_file"
+            else
+              echo "--- E2E ${flavor}-${ARCH}: FAILED ---" >> "$log_file"
+              return 1
+            fi
+
+            echo "--- Upload: ${flavor}-${ARCH} ---" >> "$log_file"
+            upload_with_retry "upload-${flavor}-${ARCH}" "$version" "$log_file"
+          }
+
+          # Ordered build chain — each flavor builds while the previous validates+uploads.
+          # Background tasks are serialized (one at a time) via wait_prev.
           CHAIN=(base protocol-dev smart-contract-dev smart-contract-audit)
-          UPLOAD_FAILED=0
+          FAILED=0
           LOG_DIR="$(mktemp -d)"
           PREV_PID=""
           PREV_NAME=""
 
-          # Wait for the previous upload and report result
-          wait_prev_upload() {
+          # Wait for the previous background task and report result
+          wait_prev() {
             if [[ -z "$PREV_PID" ]]; then return; fi
             if wait "$PREV_PID"; then
-              echo "=== Upload ${PREV_NAME}-${ARCH}: success ==="
+              echo "=== E2E + Upload ${PREV_NAME}-${ARCH}: success ==="
             else
-              echo "::error::Upload failed: ${PREV_NAME}-${ARCH} (after ${MAX_UPLOAD_ATTEMPTS} attempts)"
-              UPLOAD_FAILED=1
+              echo "::error::E2E or upload failed: ${PREV_NAME}-${ARCH}"
+              FAILED=1
             fi
-            echo "--- ${PREV_NAME}-${ARCH} upload log ---"
+            echo "--- ${PREV_NAME}-${ARCH} log ---"
             cat "${LOG_DIR}/${PREV_NAME}.log"
             echo "--- end ${PREV_NAME}-${ARCH} ---"
           }
@@ -233,21 +253,24 @@ jobs:
             echo "=== Building ${flavor}-${ARCH} ==="
             make "image-${flavor}-${ARCH}"
 
-            # Wait for previous upload before starting next (serialize uploads)
-            wait_prev_upload
+            # Wait for previous background task before starting next
+            wait_prev
 
-            echo "=== Uploading ${flavor}-${ARCH} (background) ==="
-            upload_with_retry "upload-${flavor}-${ARCH}" "$V" "${LOG_DIR}/${flavor}.log" &
+            # Initialize log file before background task
+            : > "${LOG_DIR}/${flavor}.log"
+
+            echo "=== Validating + uploading ${flavor}-${ARCH} (background) ==="
+            e2e_and_upload "$flavor" "$V" "${LOG_DIR}/${flavor}.log" &
             PREV_PID="$!"
             PREV_NAME="$flavor"
           done
 
-          # Wait for the final upload
-          wait_prev_upload
+          # Wait for the final background task
+          wait_prev
 
           rm -rf "$LOG_DIR"
 
-          if [[ "$UPLOAD_FAILED" -ne 0 ]]; then
+          if [[ "$FAILED" -ne 0 ]]; then
             exit 1
           fi
 
