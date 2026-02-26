@@ -63,9 +63,12 @@ _path_without_aria2c() {
 setup() {
     setup_home_override
 
-    # Start the HTTP server
+    # Per-test fixture directory — avoids races when Bash 4 and 3.2 tests
+    # run in parallel and create/delete dynamic fixtures at the same paths.
     HTTP_READY="${TEST_TEMP_DIR}/http_ready"
-    HTTP_FIXTURES="${MPS_ROOT}/tests/fixtures/http"
+    HTTP_FIXTURES="${TEST_TEMP_DIR}/http_fixtures"
+    mkdir -p "$HTTP_FIXTURES"
+    cp "${MPS_ROOT}/tests/fixtures/http/"* "$HTTP_FIXTURES/"
 
     python3 "${MPS_ROOT}/tests/stubs/http_server.py" \
         "$HTTP_FIXTURES" "$HTTP_READY" &
