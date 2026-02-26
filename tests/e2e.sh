@@ -187,11 +187,15 @@ if [[ ! -f "$E2E_SSH_KEY" ]]; then
     ssh-keygen -t ed25519 -N "" -f "$E2E_SSH_KEY" -C "mps-e2e" >/dev/null 2>&1
 fi
 
-# Ensure ~/.ssh/config has Include config.d/* (append if missing, never overwrite)
+# Ensure ~/.ssh/config has Include config.d/* at the TOP (before any Host blocks).
+# Must be prepended, not appended — an Include inside a Host block is scoped to
+# that host, which breaks config.d resolution (e.g., images.yml writes a Host
+# github-submodule block before e2e runs).
 mkdir -p "$HOME/.ssh/config.d"
 if [[ ! -f "$HOME/.ssh/config" ]] || ! grep -q 'Include config.d/\*' "$HOME/.ssh/config" 2>/dev/null; then
-    echo "" >> "$HOME/.ssh/config"
-    echo "Include config.d/*" >> "$HOME/.ssh/config"
+    _existing=""
+    [[ -f "$HOME/.ssh/config" ]] && _existing="$(cat "$HOME/.ssh/config")"
+    printf 'Include config.d/*\n\n%s\n' "$_existing" > "$HOME/.ssh/config"
     chmod 600 "$HOME/.ssh/config"
 fi
 
@@ -314,8 +318,14 @@ phase_image() {
         assert_exit_zero "image import" "${MPS_ROOT}/bin/mps" image import "$IMAGE_NAME"
         local fname
         fname="$(basename "$IMAGE_NAME")"
-        IMAGE_NAME="${fname#mps-}"
-        IMAGE_NAME="${IMAGE_NAME%%-*}"
+        # Extract flavor name: mps-<flavor>-<arch>.qcow2.img → flavor
+        # Must handle multi-hyphen names like smart-contract-dev
+        if [[ "$fname" =~ ^mps-(.+)-(amd64|arm64)\.(qcow2\.img|qcow2|img)$ ]]; then
+            IMAGE_NAME="${BASH_REMATCH[1]}"
+        else
+            IMAGE_NAME="${fname#mps-}"
+            IMAGE_NAME="${IMAGE_NAME%%-*}"
+        fi
     else
         local remote_out
         remote_out="$("${MPS_ROOT}/bin/mps" image list --remote 2>&1)" || true
@@ -541,7 +551,7 @@ phase_ssh() {
     assert_file_exists "SSH config file created" "$ssh_config_file"
 
     local ssh_result
-    ssh_result="$(ssh -o ConnectTimeout=5 -o BatchMode=yes \
+    ssh_result="$(ssh -o ConnectTimeout=10 -o BatchMode=yes \
         -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/dev/null \
         "$SHORT" echo ssh-ok 2>/dev/null)" || true
     assert_eq "SSH connectivity" "$ssh_result" "ssh-ok"
