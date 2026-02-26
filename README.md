@@ -380,7 +380,7 @@ The primary use case for `mps ssh-config` is connecting to sandboxes from VS Cod
 mps ssh-config --append
 
 # 2. Ensure ~/.ssh/config includes the config.d directory
-#    Add this line if not already present:
+#    Add this line at the TOP of the file (before any Host blocks):
 #    Include config.d/*
 
 # 3. In VS Code: Cmd/Ctrl+Shift+P -> "Remote-SSH: Connect to Host" -> select <name>

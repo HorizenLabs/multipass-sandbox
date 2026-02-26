@@ -276,7 +276,7 @@ ${_color_bold}Examples:${_color_reset}
 
 ${_color_bold}VS Code Integration:${_color_reset}
     1. Run: mps ssh-config --append --name dev
-    2. Ensure ~/.ssh/config has: Include config.d/*
+    2. Ensure ~/.ssh/config has (at the top): Include config.d/*
     3. In VS Code, use Remote-SSH to connect to 'mps-dev'
 
 ${_color_bold}Port Forwarding:${_color_reset}
