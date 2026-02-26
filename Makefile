@@ -220,7 +220,7 @@ test-coverage-integration: $(LINTER_STAMP)
 		bats tests/integration/' | tests/tap-summary.sh
 
 test-coverage-report:
-	$(DOCKER_RUN) bash tests/coverage-report.sh $(COVERAGE_DIR)/ $(COVERAGE_DIR)/unit $(COVERAGE_DIR)/integration
+	$(DOCKER_RUN) bash tests/coverage-report.sh $(COVERAGE_DIR) $(COVERAGE_DIR)/unit $(COVERAGE_DIR)/integration
 
 # ---------- E2E tests (host-native, requires multipass + KVM) ----------
 test-e2e: ## Run e2e tests with coverage (requires multipass on host)
@@ -232,7 +232,7 @@ test-e2e: ## Run e2e tests with coverage (requires multipass on host)
 
 test-e2e-report: ## Merge e2e coverage with unit/integration
 	_MPS_COV_PREFIX=$(CURDIR) \
-	bash tests/coverage-report.sh $(COVERAGE_DIR)/ $(COVERAGE_DIR)/unit $(COVERAGE_DIR)/integration $(COVERAGE_DIR)/e2e
+	bash tests/coverage-report.sh $(COVERAGE_DIR) $(COVERAGE_DIR)/unit $(COVERAGE_DIR)/integration $(COVERAGE_DIR)/e2e
 
 # ---------- Lint (all) ----------
 lint: lint-bash lint-bash32 lint-powershell lint-dockerfile lint-makefile lint-yaml lint-hcl lint-actions ## Run all linters

@@ -32,6 +32,15 @@ jobs:
         if: "!cancelled() && hashFiles('coverage/summary.md') != ''"
         run: cat coverage/summary.md >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Install lcov
+        if: "!cancelled() && github.event_name == 'pull_request' && hashFiles('coverage/lcov.info') != ''"
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libcapture-tiny-perl libdatetime-perl libtimedate-perl libjson-perl libperlio-gzip-perl > /dev/null
+          curl -fsSL https://github.com/linux-test-project/lcov/releases/download/v2.4/lcov-2.4.tar.gz | tar xz
+          sudo make -C lcov-2.4 install
+          echo "ignore_errors = deprecated" > "$HOME/.lcovrc"
+
       - name: Coverage PR comment
         if: "!cancelled() && github.event_name == 'pull_request' && hashFiles('coverage/lcov.info') != ''"
         uses: zgosalvez/github-actions-report-lcov@v4
