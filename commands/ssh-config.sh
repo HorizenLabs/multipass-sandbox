@@ -78,7 +78,22 @@ _ssh_config_inject_key() {
     # Create temp file inside VM with mktemp (unpredictable name).
     local tmp_dest
     tmp_dest="$(multipass exec "$instance_name" -- mktemp /tmp/mps_pubkey_XXXXXXXX.pub)"
-    if ! multipass transfer "$pubkey_path" "${instance_name}:${tmp_dest}"; then
+
+    # Stage pubkey in a snap-accessible location: snap confinement blocks
+    # multipass from reading hidden directories like ~/.ssh/.
+    local _state_dir _tmp_pubkey
+    _state_dir="$(mps_state_dir)"
+    _tmp_pubkey="$(mktemp "${_state_dir}/tmp_pubkey_XXXXXXXX")"
+    cp "$pubkey_path" "$_tmp_pubkey"
+    chmod 600 "$_tmp_pubkey"
+
+    local _transfer_ok=true
+    if ! multipass transfer "$_tmp_pubkey" "${instance_name}:${tmp_dest}"; then
+        _transfer_ok=false
+    fi
+    rm -f "${_tmp_pubkey:?}"
+
+    if [[ "$_transfer_ok" != "true" ]]; then
         mps_die "Failed to transfer SSH public key to '${short_name}'"
     fi
     if ! multipass exec "$instance_name" -- bash -c \

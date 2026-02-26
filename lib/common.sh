@@ -1123,6 +1123,8 @@ _mps_cli_update_warn() {
     fi
 
     # Versions equal — check if tag has been force-pushed (commit_sha mismatch)
+    [[ "$remote_version" == "$MPS_VERSION" ]] || return 0
+
     local remote_sha=""
     remote_sha="$(jq -r '.commit_sha // empty' "$cache_file" 2>/dev/null)" || return 0
     if [[ -z "$remote_sha" || ${#remote_sha} -lt 7 ]]; then
