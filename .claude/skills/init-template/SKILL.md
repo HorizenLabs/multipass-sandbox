@@ -24,7 +24,7 @@ Follow these steps in order.
 Use `AskUserQuestion` to ask:
 
 **Question 1** — "What scope should this template have?"
-- **Personal**: Stored at `~/.mps/cloud-init/<name>.yaml`, applies to all your sandboxes unless overridden per-project. Not checked into any repo.
+- **Personal**: Stored at `~/mps/cloud-init/<name>.yaml`, applies to all your sandboxes unless overridden per-project. Not checked into any repo.
 - **Project**: Stored at `<project>/.mps/<name>.yaml`, checked into git and shared with the team.
 
 If **project** scope, use `AskUserQuestion` to ask two follow-up questions:
@@ -37,7 +37,7 @@ If **project** scope, use `AskUserQuestion` to ask two follow-up questions:
 
 If **personal** scope, use `AskUserQuestion` to ask for a template name (e.g., `personal`, `security`, `web-dev`) with the same note about auto-naming.
 
-> [INTERNAL] The name becomes the filename (`~/.mps/cloud-init/<name>.yaml`) and the value for `MPS_DEFAULT_CLOUD_INIT` in `~/.mps/config`.
+> [INTERNAL] The name becomes the filename (`~/mps/cloud-init/<name>.yaml`) and the value for `MPS_DEFAULT_CLOUD_INIT` in `~/mps/config`.
 
 ### Step 2 — Choose target image flavor
 
@@ -161,7 +161,7 @@ Use `AskUserQuestion` with 4 single-select questions in one call:
 
 > [INTERNAL]
 >
-> - **Personal**: Write to `~/.mps/cloud-init/<name>.yaml`. Create the directory if it doesn't exist (`mkdir -p`).
+> - **Personal**: Write to `~/mps/cloud-init/<name>.yaml`. Create the directory if it doesn't exist (`mkdir -p`).
 > - **Project**: Write to `<project-dir>/.mps/<name>.yaml`. Create the `.mps/` directory if it doesn't exist (`mkdir -p`).
 
 ### Step 7 — Configure sandbox settings
@@ -195,28 +195,28 @@ Use `AskUserQuestion` to ask about sandbox settings for `.mps.env`:
 
 > [INTERNAL] Always set these in `.mps.env` (they ensure all developers use the same sandbox configuration):
 > - `MPS_CLOUD_INIT=.mps/<name>.yaml` (using the template name from step 1)
-> - `MPS_PROFILE=<chosen profile>` — ALWAYS set this, even if it's `lite`. Personal `~/.mps/config` defaults could override a missing profile, causing different devs to get different instance specs. Pinning the profile in `.mps.env` prevents "works on my machine" issues.
+> - `MPS_PROFILE=<chosen profile>` — ALWAYS set this, even if it's `lite`. Personal `~/mps/config` defaults could override a missing profile, causing different devs to get different instance specs. Pinning the profile in `.mps.env` prevents "works on my machine" issues.
 > - `MPS_IMAGE=<flavor>` — ALWAYS set this, even if it's `base`. Same reason as profile — a developer's personal config could override the default, putting them on a different image than the rest of the team.
 >
 > Only write other settings (ports, mounts, name) if they differ from defaults. Comment out optional settings with explanations.
 >
-> Mention: if `.mps.env` contains developer-specific overrides (like `MPS_NAME`), consider adding it to `.gitignore` and committing only `.mps/<name>.yaml`. Alternatively, commit `.mps.env` with shared defaults and let developers override via `~/.mps/config`.
+> Mention: if `.mps.env` contains developer-specific overrides (like `MPS_NAME`), consider adding it to `.gitignore` and committing only `.mps/<name>.yaml`. Alternatively, commit `.mps.env` with shared defaults and let developers override via `~/mps/config`.
 
 #### For personal scope
 
 Use `AskUserQuestion`:
 
 **Question** — "Set this as your default template? It will apply to all new sandboxes unless a project overrides it with its own `.mps.env`."
-- **Yes** — Set as default in `~/.mps/config`
+- **Yes** — Set as default in `~/mps/config`
 - **No** — Save the template but don't change defaults. Use it explicitly with `--cloud-init <name>`.
 
-> [INTERNAL] If yes, update `~/.mps/config` (create if needed) to set `MPS_DEFAULT_CLOUD_INIT=<name>`. If the file already has a `MPS_DEFAULT_CLOUD_INIT` line, replace it. Mention what the previous default was (if any) so the developer knows what changed.
+> [INTERNAL] If yes, update `~/mps/config` (create if needed) to set `MPS_DEFAULT_CLOUD_INIT=<name>`. If the file already has a `MPS_DEFAULT_CLOUD_INIT` line, replace it. Mention what the previous default was (if any) so the developer knows what changed.
 >
-> If no, just confirm the template was saved and remind them how to use it: `mps create --cloud-init <name>` or `MPS_DEFAULT_CLOUD_INIT=<name>` in `~/.mps/config` later.
+> If no, just confirm the template was saved and remind them how to use it: `mps create --cloud-init <name>` or `MPS_DEFAULT_CLOUD_INIT=<name>` in `~/mps/config` later.
 
-Then ask if they want to configure other personal defaults in `~/.mps/config`:
+Then ask if they want to configure other personal defaults in `~/mps/config`:
 
-**Question** — "Want to set any other personal defaults in `~/.mps/config`? These apply to all sandboxes unless overridden per-project."
+**Question** — "Want to set any other personal defaults in `~/mps/config`? These apply to all sandboxes unless overridden per-project."
 - **Yes** — Configure additional defaults
 - **No** — Skip, move on
 
@@ -239,7 +239,7 @@ Then ask if they want to configure other personal defaults in `~/.mps/config`:
 > - **No (Recommended)** — Keep update checks enabled
 > - **Yes** — Set `MPS_CHECK_UPDATES=false`
 >
-> Only write settings that differ from defaults. If `~/.mps/config` already exists, read it first and preserve existing values the developer doesn't change. Add comments for each setting.
+> Only write settings that differ from defaults. If `~/mps/config` already exists, read it first and preserve existing values the developer doesn't change. Add comments for each setting.
 
 ### Step 8 — Print summary
 

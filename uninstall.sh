@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-set -euo pipefail
 
 # Multi Pass Sandbox (mps) — Uninstaller
 # Reverses install.sh and cleans up mps runtime artifacts.
@@ -27,162 +26,170 @@ confirm() {
 MPS_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 INSTALL_DIR="${MPS_INSTALL_DIR:-${HOME}/.local/bin}"
 
-# Track what was removed for the summary
-removed=()
+_mps_uninstall_main() {
+    # Track what was removed for the summary
+    removed=()
 
-info "${_color_bold}mps uninstaller${_color_reset}"
-echo ""
+    info "${_color_bold}mps uninstaller${_color_reset}"
+    echo ""
 
-# ---------- 1. Remove Symlink ----------
+    # ---------- 1. Remove Symlink ----------
 
-symlink_path="${INSTALL_DIR}/mps"
-if [[ -L "$symlink_path" ]]; then
-    # Verify it points to our bin/mps (readlink without -f for macOS compat)
-    link_target="$(readlink "$symlink_path")"
-    if [[ "$link_target" == "${MPS_ROOT}/bin/mps" ]]; then
-        info "Removing symlink: ${symlink_path} → ${link_target}"
-        rm -f "$symlink_path"
-        removed+=("Symlink: ${symlink_path}")
+    symlink_path="${INSTALL_DIR}/mps"
+    if [[ -L "$symlink_path" ]]; then
+        # Verify it points to our bin/mps (readlink without -f for macOS compat)
+        link_target="$(readlink "$symlink_path")"
+        if [[ "$link_target" == "${MPS_ROOT}/bin/mps" ]]; then
+            info "Removing symlink: ${symlink_path} → ${link_target}"
+            rm -f "$symlink_path"
+            removed+=("Symlink: ${symlink_path}")
+        else
+            warn "Symlink ${symlink_path} points to ${link_target}, not ${MPS_ROOT}/bin/mps. Skipping."
+        fi
+    elif [[ -e "$symlink_path" ]]; then
+        warn "${symlink_path} exists but is not a symlink. Skipping."
     else
-        warn "Symlink ${symlink_path} points to ${link_target}, not ${MPS_ROOT}/bin/mps. Skipping."
+        info "No symlink found at ${symlink_path}."
     fi
-elif [[ -e "$symlink_path" ]]; then
-    warn "${symlink_path} exists but is not a symlink. Skipping."
-else
-    info "No symlink found at ${symlink_path}."
-fi
 
-# ---------- 2. Bash Completion ----------
+    # ---------- 2. Bash Completion ----------
 
-# Check known completion locations for our symlink
-comp_locations=(
-    "${HOME}/.local/share/bash-completion/completions/mps"
-)
-# Add Homebrew path if available
-brew_prefix="$(brew --prefix 2>/dev/null || true)"
-if [[ -n "$brew_prefix" ]]; then
-    comp_locations+=("${brew_prefix}/etc/bash_completion.d/mps")
-fi
-
-for comp_path in ${comp_locations[@]+"${comp_locations[@]}"}; do
-    if [[ -L "$comp_path" ]]; then
-        rm -f "$comp_path"
-        removed+=("Bash completion: ${comp_path}")
-        info "Removed bash completion: ${comp_path}"
-    elif [[ -f "$comp_path" ]]; then
-        rm -f "$comp_path"
-        removed+=("Bash completion: ${comp_path}")
-        info "Removed bash completion: ${comp_path}"
+    # Check known completion locations for our symlink
+    comp_locations=(
+        "${HOME}/.local/share/bash-completion/completions/mps"
+    )
+    # Add Homebrew path if available
+    brew_prefix="$(brew --prefix 2>/dev/null || true)"
+    if [[ -n "$brew_prefix" ]]; then
+        comp_locations+=("${brew_prefix}/etc/bash_completion.d/mps")
     fi
-done
 
-# ---------- 3. VM Cleanup ----------
+    for comp_path in ${comp_locations[@]+"${comp_locations[@]}"}; do
+        if [[ -L "$comp_path" ]]; then
+            rm -f "$comp_path"
+            removed+=("Bash completion: ${comp_path}")
+            info "Removed bash completion: ${comp_path}"
+        elif [[ -f "$comp_path" ]]; then
+            rm -f "$comp_path"
+            removed+=("Bash completion: ${comp_path}")
+            info "Removed bash completion: ${comp_path}"
+        fi
+    done
 
-if command -v multipass &>/dev/null && command -v jq &>/dev/null; then
-    mps_vms="$(multipass list --format json 2>/dev/null | jq -r '.list[]? | select(.name | startswith("mps-")) | "\(.name) (\(.state))"' 2>/dev/null || true)"
-    if [[ -n "$mps_vms" ]]; then
-        echo ""
-        info "Found mps VMs:"
-        while IFS= read -r vm_line; do
-            info "  $vm_line"
-        done <<< "$mps_vms"
-        echo ""
-        if confirm "Stop and delete all mps VMs (with --purge)?"; then
-            vm_names="$(multipass list --format json 2>/dev/null | jq -r '.list[]? | select(.name | startswith("mps-")) | .name' 2>/dev/null || true)"
-            while IFS= read -r vm_name; do
-                [[ -z "$vm_name" ]] && continue
-                info "  Stopping and deleting ${vm_name}..."
-                multipass stop "$vm_name" 2>/dev/null || true
-                multipass delete "$vm_name" --purge 2>/dev/null || true
-                removed+=("VM: ${vm_name}")
-            done <<< "$vm_names"
+    # ---------- 3. VM Cleanup ----------
+
+    if command -v multipass &>/dev/null && command -v jq &>/dev/null; then
+        mps_vms="$(multipass list --format json 2>/dev/null | jq -r '.list[]? | select(.name | startswith("mps-")) | "\(.name) (\(.state))"' 2>/dev/null || true)"
+        if [[ -n "$mps_vms" ]]; then
+            echo ""
+            info "Found mps VMs:"
+            while IFS= read -r vm_line; do
+                info "  $vm_line"
+            done <<< "$mps_vms"
+            echo ""
+            if confirm "Stop and delete all mps VMs (with --purge)?"; then
+                vm_names="$(multipass list --format json 2>/dev/null | jq -r '.list[]? | select(.name | startswith("mps-")) | .name' 2>/dev/null || true)"
+                while IFS= read -r vm_name; do
+                    [[ -z "$vm_name" ]] && continue
+                    info "  Stopping and deleting ${vm_name}..."
+                    multipass stop "$vm_name" 2>/dev/null || true
+                    multipass delete "$vm_name" --purge 2>/dev/null || true
+                    removed+=("VM: ${vm_name}")
+                done <<< "$vm_names"
+            fi
+        else
+            info "No mps VMs found."
         fi
     else
-        info "No mps VMs found."
+        info "multipass or jq not available — skipping VM cleanup."
     fi
-else
-    info "multipass or jq not available — skipping VM cleanup."
-fi
 
-# ---------- 4. SSH Configs ----------
+    # ---------- 4. SSH Configs ----------
 
-ssh_config_dir="${HOME}/.ssh/config.d"
-if [[ -d "$ssh_config_dir" ]]; then
-    ssh_configs=()
-    while IFS= read -r -d '' f; do
-        ssh_configs+=("$f")
-    done < <(find "$ssh_config_dir" -maxdepth 1 -name 'mps-*' -print0 2>/dev/null || true)
-    if [[ ${#ssh_configs[@]} -gt 0 ]]; then
-        for f in ${ssh_configs[@]+"${ssh_configs[@]}"}; do
-            rm -f "$f"
-            removed+=("SSH config: ${f}")
-        done
-        info "Removed ${#ssh_configs[@]} SSH config file(s) from ${ssh_config_dir}."
+    ssh_config_dir="${HOME}/.ssh/config.d"
+    if [[ -d "$ssh_config_dir" ]]; then
+        ssh_configs=()
+        while IFS= read -r -d '' f; do
+            ssh_configs+=("$f")
+        done < <(find "$ssh_config_dir" -maxdepth 1 -name 'mps-*' -print0 2>/dev/null || true)
+        if [[ ${#ssh_configs[@]} -gt 0 ]]; then
+            for f in ${ssh_configs[@]+"${ssh_configs[@]}"}; do
+                rm -f "$f"
+                removed+=("SSH config: ${f}")
+            done
+            info "Removed ${#ssh_configs[@]} SSH config file(s) from ${ssh_config_dir}."
+        fi
     fi
-fi
 
-# ---------- 5. Instance Metadata ----------
+    # ---------- 5. Instance Metadata ----------
 
-instances_dir="${HOME}/.mps/instances"
-if [[ -d "$instances_dir" ]]; then
-    instance_files=()
-    while IFS= read -r -d '' f; do
-        instance_files+=("$f")
-    done < <(find "$instances_dir" -maxdepth 1 \( -name '*.json' -o -name '*.ports.json' -o -name '*.env' -o -name '*.ports' \) -print0 2>/dev/null || true)
-    if [[ ${#instance_files[@]} -gt 0 ]]; then
-        for f in ${instance_files[@]+"${instance_files[@]}"}; do
-            rm -f "$f"
-            removed+=("Instance metadata: ${f##*/}")
-        done
-        info "Removed ${#instance_files[@]} instance metadata file(s)."
+    instances_dir="${HOME}/mps/instances"
+    if [[ -d "$instances_dir" ]]; then
+        instance_files=()
+        while IFS= read -r -d '' f; do
+            instance_files+=("$f")
+        done < <(find "$instances_dir" -maxdepth 1 \( -name '*.json' -o -name '*.ports.json' -o -name '*.env' -o -name '*.ports' \) -print0 2>/dev/null || true)
+        if [[ ${#instance_files[@]} -gt 0 ]]; then
+            for f in ${instance_files[@]+"${instance_files[@]}"}; do
+                rm -f "$f"
+                removed+=("Instance metadata: ${f##*/}")
+            done
+            info "Removed ${#instance_files[@]} instance metadata file(s)."
+        fi
     fi
-fi
 
-# ---------- 6. Cached Images ----------
+    # ---------- 6. Cached Images ----------
 
-cache_dir="${HOME}/.mps/cache"
-if [[ -d "$cache_dir" ]]; then
-    cache_size="$(du -sh "$cache_dir" 2>/dev/null | cut -f1 || echo "unknown")"
+    cache_dir="${HOME}/mps/cache"
+    if [[ -d "$cache_dir" ]]; then
+        cache_size="$(du -sh "$cache_dir" 2>/dev/null | cut -f1 || echo "unknown")"
+        echo ""
+        if confirm "Remove cached images (${cache_size} in ${cache_dir})?"; then
+            rm -rf "${cache_dir:?}"
+            removed+=("Image cache: ${cache_dir}")
+            info "Removed image cache."
+        fi
+    fi
+
+    # ---------- 7. User Config ----------
+
+    user_config="${HOME}/mps/config"
+    if [[ -f "$user_config" ]]; then
+        echo ""
+        if confirm "Remove user config (~/mps/config)?"; then
+            rm -f "$user_config"
+            removed+=("User config: ${user_config}")
+            info "Removed user config."
+        fi
+    fi
+
+    # ---------- 8. Cleanup ~/mps ----------
+
+    if [[ -d "${HOME}/mps" ]]; then
+        # Remove instances dir if empty
+        rmdir "${HOME}/mps/instances" 2>/dev/null || true
+        # Remove top-level dir if empty
+        rmdir "${HOME}/mps" 2>/dev/null && removed+=("Directory: ~/mps") || true
+    fi
+
+    # ---------- 9. Summary ----------
+
     echo ""
-    if confirm "Remove cached images (${cache_size} in ${cache_dir})?"; then
-        rm -rf "${cache_dir:?}"
-        removed+=("Image cache: ${cache_dir}")
-        info "Removed image cache."
+    if [[ ${#removed[@]} -gt 0 ]]; then
+        info "${_color_bold}Removed:${_color_reset}"
+        for item in ${removed[@]+"${removed[@]}"}; do
+            info "  - ${item}"
+        done
+    else
+        info "Nothing was removed."
     fi
-fi
 
-# ---------- 7. User Config ----------
-
-user_config="${HOME}/.mps/config"
-if [[ -f "$user_config" ]]; then
     echo ""
-    if confirm "Remove user config (~/.mps/config)?"; then
-        rm -f "$user_config"
-        removed+=("User config: ${user_config}")
-        info "Removed user config."
-    fi
+    info "Uninstall complete. The mps source directory remains at: ${MPS_ROOT}"
+}
+
+# Source guard: run main only when executed directly (not sourced)
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    set -euo pipefail
+    _mps_uninstall_main
 fi
-
-# ---------- 8. Cleanup ~/.mps ----------
-
-if [[ -d "${HOME}/.mps" ]]; then
-    # Remove instances dir if empty
-    rmdir "${HOME}/.mps/instances" 2>/dev/null || true
-    # Remove top-level dir if empty
-    rmdir "${HOME}/.mps" 2>/dev/null && removed+=("Directory: ~/.mps") || true
-fi
-
-# ---------- 9. Summary ----------
-
-echo ""
-if [[ ${#removed[@]} -gt 0 ]]; then
-    info "${_color_bold}Removed:${_color_reset}"
-    for item in ${removed[@]+"${removed[@]}"}; do
-        info "  - ${item}"
-    done
-else
-    info "Nothing was removed."
-fi
-
-echo ""
-info "Uninstall complete. The mps source directory remains at: ${MPS_ROOT}"

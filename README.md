@@ -57,7 +57,9 @@ mps destroy --force
 make install
 ```
 
-The installer checks for `multipass` and `jq`, creates `~/.mps/` directories, symlinks `mps` onto your PATH, and offers to update your shell profile if needed. Override the install directory with `MPS_INSTALL_DIR`.
+The installer checks for `multipass` and `jq`, creates `~/mps/` directories, symlinks `mps` onto your PATH, and offers to update your shell profile if needed. Override the install directory with `MPS_INSTALL_DIR`.
+
+> **Snap Confinement (Ubuntu):** Multipass installed via snap cannot access hidden directories (dotdirs) directly under `$HOME` — this is an AppArmor restriction of the snap `home` interface. MPS uses `~/mps/` (not `~/.mps/`) to avoid this. If you provide paths under a hidden directory (e.g., `~/.secret/project` as a mount source, transfer path, or cloud-init file), MPS will detect active snap confinement and refuse the operation with a clear error. Workaround: move files to a non-hidden path or copy them to a staging directory.
 
 ### Uninstall
 
@@ -168,7 +170,7 @@ mps create --transfer ./setup.sh:/home/ubuntu/setup.sh
 Configuration is loaded in cascade (later values win):
 
 1. `config/defaults.env` — shipped defaults
-2. `~/.mps/config` — user global overrides
+2. `~/mps/config` — user global overrides
 3. `.mps.env` — per-project (in your repo)
 4. Profile — resource fractions from `templates/profiles/<name>.env`
 5. Auto-scaling — vCPU/memory computed from host hardware fractions
@@ -250,7 +252,7 @@ Sandboxes are designed to be disposable — image staleness checks will regularl
 # Use the default template (enabled plugins, commented-out examples)
 mps create
 
-# Use a named template from templates/cloud-init/ or ~/.mps/cloud-init/
+# Use a named template from templates/cloud-init/ or ~/mps/cloud-init/
 mps create --cloud-init mytemplate
 
 # Use any file path directly
@@ -259,11 +261,11 @@ mps create --cloud-init ./my-cloud-init.yaml
 # Set a per-project default in .mps.env (name flows into auto-naming)
 MPS_CLOUD_INIT=.mps/dev.yaml
 
-# Set a personal default in ~/.mps/config
+# Set a personal default in ~/mps/config
 MPS_DEFAULT_CLOUD_INIT=personal
 ```
 
-Named templates are resolved in order: `templates/cloud-init/` (project), then `~/.mps/cloud-init/` (personal).
+Named templates are resolved in order: `templates/cloud-init/` (project), then `~/mps/cloud-init/` (personal).
 
 ### The default template
 
@@ -280,7 +282,7 @@ The shipped `default` template (`templates/cloud-init/default.yaml`) enables Hor
 Create a `#cloud-config` YAML file and place it in one of these locations:
 
 1. **Project-shared** (`<project>/.mps/<name>.yaml`): Checked into git, shared by the team. Set `MPS_CLOUD_INIT=.mps/<name>.yaml` in `.mps.env`. Use a descriptive name — it flows into auto-naming (e.g., `dev.yaml` → `myproject-dev`). The `.mps/` directory keeps MPS config out of the project root.
-2. **Personal** (`~/.mps/cloud-init/<name>.yaml`): Personal defaults, not in any repo. Reference by name (e.g., `--cloud-init personal`) or set `MPS_DEFAULT_CLOUD_INIT=<name>` in `~/.mps/config`.
+2. **Personal** (`~/mps/cloud-init/<name>.yaml`): Personal defaults, not in any repo. Reference by name (e.g., `--cloud-init personal`) or set `MPS_DEFAULT_CLOUD_INIT=<name>` in `~/mps/config`.
 3. **MPS built-in** (`templates/cloud-init/<name>.yaml`): For templates shipped with MPS itself.
 4. **Any file path** (e.g., `--cloud-init ~/configs/dev-setup.yaml`)
 

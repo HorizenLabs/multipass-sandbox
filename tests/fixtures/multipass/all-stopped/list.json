@@ -1,0 +1,24 @@
+{
+  "list": [
+    {
+      "ipv4": [
+        "10.179.45.173"
+      ],
+      "name": "fixture-foreign",
+      "release": "Ubuntu 24.04 LTS",
+      "state": "Running"
+    },
+    {
+      "ipv4": [],
+      "name": "mps-fixture-secondary",
+      "release": "Ubuntu 24.04 LTS",
+      "state": "Stopped"
+    },
+    {
+      "ipv4": [],
+      "name": "mps-fixture-primary",
+      "release": "Ubuntu 24.04 LTS",
+      "state": "Stopped"
+    }
+  ]
+}

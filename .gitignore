@@ -25,6 +25,9 @@ Thumbs.db
 .vscode/
 .idea/
 
+# Coverage
+coverage/
+
 # Temp
 *.tmp
 *.log

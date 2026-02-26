@@ -1,0 +1,15 @@
+{
+    "images": {
+        "base": {
+            "latest": "1.0.0",
+            "description": "Base Ubuntu image",
+            "min_profile": "lite",
+            "versions": {
+                "1.0.0": {
+                    "amd64": {"sha256": "abc123", "build_date": "2025-01-01T00:00:00Z"},
+                    "arm64": {"sha256": "def456", "build_date": "2025-01-01T00:00:00Z"}
+                }
+            }
+        }
+    }
+}

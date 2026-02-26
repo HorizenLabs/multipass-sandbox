@@ -165,8 +165,10 @@ cmd_ssh_config() {
     instance_name="$(mps_resolve_instance_name "$arg_name")"
 
     # ---- Prepare running instance (state check, staleness, port forwards) ----
+    mps_prepare_running_instance "$instance_name" >/dev/null
+
     local short_name
-    short_name="$(mps_prepare_running_instance "$instance_name")"
+    short_name="$(mps_short_name "$instance_name")"
 
     # ---- Resolve key, inject into VM, get private key path ----
     local ssh_key

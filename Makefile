@@ -3,6 +3,7 @@
 # for reproducibility between local dev and CI/CD.
 
 SHELL := /bin/bash
+.SHELLFLAGS := -o pipefail -c
 .DEFAULT_GOAL := help
 
 # ---------- Docker builder config ----------
@@ -15,6 +16,9 @@ PUBLISHER_TAG   := latest
 HOST_UID       := $(shell id -u)
 HOST_GID       := $(shell id -g)
 WORKDIR        := /workdir
+
+# ---------- Coverage config ----------
+COVERAGE_DIR    := coverage
 
 # Docker run for lint/test (uses linter image — no QEMU needed)
 DOCKER_RUN := docker run --rm \
@@ -39,8 +43,8 @@ docker run --rm \
 endef
 
 # ---------- File sets ----------
-BASH_SCRIPTS    := $(shell find bin/ lib/ commands/ images/ completions/ -name '*.sh' -o -name '*.bash' -o -name 'mps' 2>/dev/null | grep -v '.ps1') install.sh uninstall.sh
-CLIENT_SCRIPTS  := $(shell find bin/ lib/ commands/ completions/ -name '*.sh' -o -name '*.bash' -o -name 'mps' 2>/dev/null | grep -v '.ps1') install.sh uninstall.sh
+BASH_SCRIPTS    := $(shell find bin/ lib/ commands/ images/ completions/ tests/ -type f \( -name '*.sh' -o -name '*.bash' -o -name '*.bats' -o -name 'mps' -o -name 'multipass' \) 2>/dev/null | grep -v '.ps1') install.sh uninstall.sh
+CLIENT_SCRIPTS  := $(shell find bin/ lib/ commands/ completions/ tests/ -type f \( -name '*.sh' -o -name '*.bash' -o -name 'mps' -o -name 'multipass' \) 2>/dev/null | grep -v '.ps1' | grep -v 'tests/coverage-') install.sh uninstall.sh
 PS_SCRIPTS      := $(shell find . -name '*.ps1' 2>/dev/null)
 YAML_FILES      := $(shell find templates/ images/layers/ .github/ISSUE_TEMPLATE/ -name '*.yaml' -o -name '*.yml' 2>/dev/null)
 HCL_FILES       := $(shell find images/ -name '*.pkr.hcl' 2>/dev/null)
@@ -91,7 +95,11 @@ UPLOAD_PHONY      := $(foreach f,$(FLAVORS),$(foreach a,$(ARCHS),upload-$(f)-$(a
 PUBLISH_PHONY     := $(foreach f,$(FLAVORS),publish-$(f) $(foreach a,$(ARCHS),publish-$(f)-$(a)))
 CLEAN_IMAGE_PHONY := $(foreach f,$(FLAVORS),clean-image-$(f) $(foreach a,$(ARCHS),clean-image-$(f)-$(a)))
 
-.PHONY: all help install uninstall test clean \
+.PHONY: all help install uninstall test clean capture-fixtures \
+	test-unit test-unit-bash4 test-unit-bash32 \
+	test-integration test-integration-bash4 test-integration-bash32 \
+	test-coverage-unit test-coverage-integration test-coverage-report \
+	test-e2e test-e2e-report \
 	build-docker-builder build-docker-linter build-docker-publisher build-bash32 \
 	lint lint-bash lint-bash32 lint-powershell lint-dockerfile lint-makefile lint-yaml lint-hcl lint-actions \
 	clean-docker-builder clean-docker-linter clean-docker-publisher clean-images \
@@ -160,8 +168,71 @@ uninstall: ## Uninstall mps (remove symlink, cleanup artifacts, runs on host)
 	@./uninstall.sh
 
 # ---------- Test ----------
-test: $(LINTER_STAMP) ## Run BATS tests inside linter container
-	$(DOCKER_RUN) bats tests/
+test: $(LINTER_STAMP) ## Run all tests with coverage (Bash 4+ instrumented + Bash 3.2 compat)
+	@rm -rf $(COVERAGE_DIR)
+	+$(MAKE) test-coverage-unit test-coverage-integration test-unit-bash32 test-integration-bash32 -j4 --output-sync=target
+	+$(MAKE) test-coverage-report
+
+test-unit: $(LINTER_STAMP) ## Run unit tests only
+	+$(MAKE) test-unit-bash4 test-unit-bash32 -j2 --output-sync=target
+
+test-integration: $(LINTER_STAMP) ## Run integration tests only
+	+$(MAKE) test-integration-bash4 test-integration-bash32 -j2 --output-sync=target
+
+test-unit-bash4: $(LINTER_STAMP)
+	@echo "==> Unit tests (Bash 4+)"
+	$(DOCKER_RUN) bats tests/unit/ | tests/tap-summary.sh
+
+test-unit-bash32: $(LINTER_STAMP)
+	@echo "==> Unit tests (Bash 3.2)"
+	$(DOCKER_RUN) bash -c '\
+		mkdir -p /tmp/bash32-shim && \
+		ln -sf /usr/local/bin/bash-3.2 /tmp/bash32-shim/bash && \
+		PATH="/tmp/bash32-shim:$$PATH" bats tests/unit/' | tests/tap-summary.sh
+
+test-integration-bash4: $(LINTER_STAMP)
+	@echo "==> Integration tests (Bash 4+)"
+	$(DOCKER_RUN) bats tests/integration/ | tests/tap-summary.sh
+
+test-integration-bash32: $(LINTER_STAMP)
+	@echo "==> Integration tests (Bash 3.2)"
+	$(DOCKER_RUN) bash -c '\
+		mkdir -p /tmp/bash32-shim && \
+		ln -sf /usr/local/bin/bash-3.2 /tmp/bash32-shim/bash && \
+		PATH="/tmp/bash32-shim:$$PATH" bats tests/integration/' | tests/tap-summary.sh
+
+capture-fixtures: ## Capture fresh multipass JSON fixtures (requires multipass on host)
+	bash tests/capture-fixtures.sh
+
+# ---------- Test coverage helpers (xtrace + grep, Bash 4+ only) ----------
+test-coverage-unit: $(LINTER_STAMP)
+	@echo "==> Coverage: Unit tests (Bash 4+)"
+	$(DOCKER_RUN) bash -c '\
+		export _MPS_COV_DIR=$(COVERAGE_DIR)/unit && \
+		export BASH_ENV=/workdir/tests/coverage-trap.sh && \
+		bats tests/unit/' | tests/tap-summary.sh
+
+test-coverage-integration: $(LINTER_STAMP)
+	@echo "==> Coverage: Integration tests (Bash 4+)"
+	$(DOCKER_RUN) bash -c '\
+		export _MPS_COV_DIR=$(COVERAGE_DIR)/integration && \
+		export BASH_ENV=/workdir/tests/coverage-trap.sh && \
+		bats tests/integration/' | tests/tap-summary.sh
+
+test-coverage-report:
+	$(DOCKER_RUN) bash tests/coverage-report.sh $(COVERAGE_DIR) $(COVERAGE_DIR)/unit $(COVERAGE_DIR)/integration
+
+# ---------- E2E tests (host-native, requires multipass + KVM) ----------
+test-e2e: ## Run e2e tests with coverage (requires multipass on host)
+	rm -rf $(COVERAGE_DIR)/e2e
+	_MPS_COV_DIR=$(CURDIR)/$(COVERAGE_DIR)/e2e \
+	_MPS_COV_PREFIX=$(CURDIR) \
+	BASH_ENV=$(CURDIR)/tests/coverage-trap.sh \
+	bash tests/e2e.sh
+
+test-e2e-report: ## Merge e2e coverage with unit/integration
+	_MPS_COV_PREFIX=$(CURDIR) \
+	bash tests/coverage-report.sh $(COVERAGE_DIR) $(COVERAGE_DIR)/unit $(COVERAGE_DIR)/integration $(COVERAGE_DIR)/e2e
 
 # ---------- Lint (all) ----------
 lint: lint-bash lint-bash32 lint-powershell lint-dockerfile lint-makefile lint-yaml lint-hcl lint-actions ## Run all linters
@@ -423,4 +494,4 @@ clean-images: $(foreach f,$(FLAVORS),clean-image-$(f)) ## Remove all built VM im
 	@rm -f images/cloud-init.yaml
 
 clean: clean-docker-builder clean-docker-linter clean-docker-publisher clean-images ## Remove all build artifacts, images, and Docker containers
-	@rm -rf build/ dist/
+	@rm -rf build/ dist/ $(COVERAGE_DIR)

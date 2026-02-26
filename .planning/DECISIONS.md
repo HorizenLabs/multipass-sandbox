@@ -50,7 +50,7 @@ Backblaze B2 for storage, Cloudflare proxy for public serving. Files at bucket r
 - `MPS_IMAGE_BASE_URL` — public Cloudflare-proxied URL (maps 1:1 to bucket root)
 - Manifest: stored in B2 (seeded inline on first publish), SemVer versions + `latest` pointer per image
 - Architecture-aware: separate `amd64`/`arm64` images per version
-- SHA256 checksums verified on pull; local cache at `~/.mps/cache/images/`
+- SHA256 checksums verified on pull; local cache at `~/mps/cache/images/`
 - `file_size` (bytes) stored in manifest arch entries for autoindex display
 - Static `index.html` pages generated from manifest after every publish (root, per-flavor, per-version)
 - B2 credentials (`B2_APPLICATION_KEY_ID`, `B2_APPLICATION_KEY`) passed as env vars at runtime. Old image file versions cleaned up; manifest versions kept for audit trail.
@@ -93,30 +93,6 @@ Non-OS dependencies installed with integrity verification where possible.
 | Bash 3.2.57 | bash32 | GPG signature (Chet Ramey, `7C0135FB…64EA74AB`) |
 
 Cloud-init layers: yq (rhash checksums), hadolint (.sha256 sidecar), cosign (cosign_checksums.txt), Echidna (sigstore bundle via cosign), shellcheck (no checksums published).
-
-## Build System Stamp Files
-
-`.stamps/` directory tracks Docker image build state in Make.
-
-- `.stamps/{builder,linter,publisher}` depend on respective `docker/Dockerfile.*` + `docker/entrypoint.sh`
-- `.stamps/image-<flavor>-amd64` — depend on builder stamp + common image deps + per-flavor layer file + parent flavor stamp (non-base only, layered chain)
-- `.stamps/image-<flavor>-arm64` — depend on builder stamp + common image deps + cumulative layer files (from-scratch, no parent stamp dep)
-- `make clean` removes stamp files; `.stamps/` is in `.gitignore`
-
-## SSH Key Management
-
-`mps ssh-config` is the **only** command that injects SSH keys. Key resolution: `--ssh-key` flag → `MPS_SSH_KEY` config → auto-detect from `~/.ssh/` (ed25519 > ecdsa > rsa). Injection is idempotent (`.ssh.injected: true` in instance JSON metadata). `mps port forward` requires SSH pre-configured.
-
-## Git Tagging Strategy
-
-Prefixed tags for independent artifact versioning. All image flavors share a single version.
-
-| Tag pattern | Artifact | Example |
-|---|---|---|
-| `mps/v*` | Tool release | `mps/v0.1.0` |
-| `images/v*` | All image flavors | `images/v1.0.0` |
-
-Tool version tracked in `VERSION` file (plain SemVer, no `v` prefix). `mps/v*` tag must match — CI validates.
 
 ## Claude Code Plugin Marketplaces
 

@@ -5,9 +5,11 @@
 # For the full provisioning layers, see images/layers/.
 
 # --- Install additional packages ---
+#:example
 # packages:
 #   - postgresql-client
 #   - redis-tools
+#:end
 
 # --- Run commands on first boot ---
 runcmd:
@@ -27,6 +29,7 @@ runcmd:
       claude plugin install context-utils@hl-agent-skills --scope user
     '
   # --- Trail of Bits security skills (uncomment to enable) ---
+#:example
   # - |
   #   sudo -u ubuntu bash -c '
   #     export HOME=/home/ubuntu
@@ -59,18 +62,22 @@ runcmd:
   #     claude plugin install variant-analysis@trailofbits --scope user
   #     claude plugin install yara-authoring@trailofbits --scope user
   #   '
+#:end
   # --- GSD framework (uncomment to enable) ---
   # Meta-prompting and spec-driven development system for Claude Code.
   # https://github.com/gsd-build/get-shit-done
+#:example
   # - |
   #   sudo -u ubuntu bash -c '
   #     export HOME=/home/ubuntu
   #     export PATH="$HOME/.bun/bin:$HOME/.local/bin:$PATH"
   #     bunx get-shit-done-cc@latest --claude --global
   #   '
+#:end
   # --- SuperClaude framework (uncomment to enable) ---
   # Slash commands and MCP servers for Claude Code.
   # https://github.com/SuperClaude-Org/SuperClaude_Framework
+#:example
   # - |
   #   sudo -u ubuntu bash -c '
   #     export HOME=/home/ubuntu
@@ -78,9 +85,11 @@ runcmd:
   #     uv tool install superclaude
   #     superclaude install
   #   '
+#:end
   # --- Superpowers (uncomment to enable) ---
   # Plugin marketplace skills for Claude Code.
   # https://github.com/obra/superpowers
+#:example
   # - |
   #   sudo -u ubuntu bash -c '
   #     export HOME=/home/ubuntu
@@ -88,9 +97,11 @@ runcmd:
   #     claude plugin marketplace add obra/superpowers-marketplace
   #     claude plugin install superpowers@superpowers-marketplace --scope user
   #   '
+#:end
   # --- BMAD Method (uncomment to enable) ---
   # Spec-driven development methodology and agent framework.
   # https://github.com/bmad-code-org/BMAD-METHOD
+#:example
   # - |
   #   sudo -u ubuntu bash -c '
   #     export HOME=/home/ubuntu
@@ -98,30 +109,40 @@ runcmd:
   #     [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
   #     npx bmad-method install --directory ~ --modules bmm --tools claude-code --yes
   #   '
+#:end
   # --- GitHub Spec Kit (uncomment to enable) ---
   # Spec-driven development CLI for AI coding agents.
   # https://github.com/github/spec-kit
+#:example
   # - |
   #   sudo -u ubuntu bash -c '
   #     export HOME=/home/ubuntu
   #     export PATH="$HOME/.local/bin:$PATH"
   #     uv tool install specify-cli --from git+https://github.com/github/spec-kit.git
   #   '
-
-# runcmd:
-#   - echo "Hello from cloud-init" > /tmp/hello.txt
-#   - apt-get install -y <package>
+#:end
+  # --- Custom commands (uncomment to enable) ---
+  # - apt-get install -y <package>
+#:example
+  # - echo "Hello from cloud-init" > /tmp/hello.txt
+#:end
 
 # --- Write files ---
+#:example
 # write_files:
 #   - path: /home/ubuntu/.env
 #     content: |
 #       DATABASE_URL=postgres://localhost/mydb
 #     owner: ubuntu:ubuntu
 #     permissions: '0600'
+#:end
 
 # --- Set hostname ---
+#:example
 # hostname: my-sandbox
+#:end
 
 # --- Set timezone ---
+#:example
 # timezone: America/New_York
+#:end

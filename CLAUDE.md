@@ -11,7 +11,7 @@ Internal CLI tool for spinning up isolated VM-based development environments usi
 - **Image builds**: Packer (QCOW2, `.qcow2.img` extension), published to Backblaze B2 (served via Cloudflare)
 - **Image versioning**: SemVer (x.y.z) with `latest` pointer, weekly rebuilds for OS patches
 - **Build/Test**: All run inside Docker containers (`mps-builder` for image builds, `mps-linter` for lint/test, `mps-publisher` for B2 uploads)
-- **Tests**: BATS (planned)
+- **Tests**: BATS (unit + integration in Docker linter container, dual Bash 4+ / 3.2)
 
 ## Project Structure
 
@@ -19,6 +19,7 @@ Internal CLI tool for spinning up isolated VM-based development environments usi
 - `lib/common.sh` — Logging, config cascade, path conversion, mount resolution, auto-naming, auto-scaling resources
 - `lib/multipass.sh` — Thin wrappers around `multipass` CLI with `--format json` + `jq`
 - `commands/*.sh` — One file per subcommand (create, up, down, destroy, shell, exec, list, status, ssh-config, image, mount, port, transfer), each exports `cmd_<name>()` function
+- `completions/mps.bash` — Bash tab-completion via `_mps_completions()`, installed by `install.sh`
 - `templates/cloud-init/` — Minimal cloud-init templates for VM launch customization
 - `images/layers/` — Composable cloud-init layer files (base, protocol-dev, smart-contract-dev, smart-contract-audit)
 - `images/build.sh` — Image build script (takes flavor arg, merges layers with yq)
@@ -38,7 +39,8 @@ Internal CLI tool for spinning up isolated VM-based development environments usi
 - `.github/actions/verify-gpg-tag/` — Composite action for GPG tag signature verification
 - `vendor/hl-claude-marketplace` — Git submodule: private Claude Code plugin marketplace (relative URL)
 - `.claude/skills/` — Claude Code skills (`audit-docs`: doc staleness audit, `init-template`: cloud-init template generator)
-- `.planning/` — Implementation plan, architecture decisions, CI design, status tracking
+- `tests/` — BATS test suites (`unit/`, `integration/`), shared `test_helper.bash`, `stubs/` (multipass, ssh, sudo, http_server.py), coverage scripts (`coverage-trap.sh`, `coverage-report.sh`), `tap-summary.sh`, `capture-fixtures.sh`, `ci-preflight.sh` (snap confinement checks), `e2e.sh` (full VM lifecycle), `TESTING.md` (strategy and coverage map)
+- `.planning/` — Implementation plan, architecture decisions, status tracking
 
 ## Commands
 
@@ -57,7 +59,7 @@ Internal CLI tool for spinning up isolated VM-based development environments usi
   - Override with `--name` flag or `MPS_NAME` in `.mps.env`
   - Long names truncated with short hash suffix (max 40 chars for Multipass)
   - `--no-mount` without `--name` errors (can't derive folder name)
-- Config cascade: `config/defaults.env` → `~/.mps/config` → `.mps.env` → profile → auto-scaling → CLI flags. No `ENV_VAR=x mps cmd` overrides — use `~/.mps/config` or `.mps.env` to test config knobs. Key config keys: `MPS_CHECK_UPDATES` (CLI update check, default true), `MPS_IMAGE_CHECK_UPDATES` (image and instance staleness checks, default true), `MPS_PORTS` (space-separated `host:guest` pairs, auto-forwarded on up/create).
+- Config cascade: `config/defaults.env` → `~/mps/config` → `.mps.env` → profile → auto-scaling → CLI flags. No `ENV_VAR=x mps cmd` overrides — use `~/mps/config` or `.mps.env` to test config knobs. Key config keys: `MPS_CHECK_UPDATES` (CLI update check, default true), `MPS_IMAGE_CHECK_UPDATES` (image and instance staleness checks, default true), `MPS_PORTS` (space-separated `host:guest` pairs, auto-forwarded on up/create).
 - **Default profile**: `lite` (auto-scales CPU/memory from host hardware fractions with min/cap)
 - **Profiles**: micro (1/8 CPU, 1/16 mem), lite (1/4, 1/6), standard (1/3, 1/4), heavy (1/2, 1/3)
 - **Image metadata**: `x-mps:` blocks in layer YAMLs define disk_size, min_profile, min_disk/memory/cpus
@@ -86,7 +88,7 @@ Internal CLI tool for spinning up isolated VM-based development environments usi
   - `wait -n` — use explicit PID tracking with `wait $pid`
 - **Safe `rm -rf`**: Any `rm -rf` (or `rm -r`) that uses a variable **must** guard with `${var:?}` — e.g., `rm -rf "${dir:?}"`. Prevents catastrophic deletion if the variable is unexpectedly empty. Literal paths (e.g., `rm -rf /tmp/*`) do not need the guard.
 - **Windows/PowerShell**: Deferred to a future phase. `install.ps1` exists as a placeholder.
-- **CI/local parity**: All CI operations (except GitHub-specific actions like creating releases) must be runnable locally via `make` targets. The pattern is: shell script with the logic → Makefile target wrapping it in `docker run` → CI workflow calls `make`. Keep inline shell in YAML to an absolute minimum (env setup, conditionals); never put business logic there.
+- **CI/local parity**: All CI operations (except GitHub-specific actions like creating releases) must be runnable locally via `make` targets. The pattern is: shell script with the logic → Makefile target wrapping it in `docker run` → CI workflow calls `make`. **CI/YAML boundary**: shell scripts own all logic; GitHub Actions YAML is limited to GitHub-specific glue (checkout, permissions, PR comments, artifact upload, notifications). If a step has an `if`/`for`/validation, it belongs in a script — not inline YAML.
 
 ## Build System
 
@@ -97,7 +99,9 @@ make build-docker-builder   # Build the builder image (Packer, QEMU — no crede
 make build-docker-publisher # Build the publisher image (b2, jq, yq — credential-isolated)
 make lint             # Run all linters (shellcheck, lint-bash32, hadolint, yamllint, checkmake, packer fmt, py-psscriptanalyzer, actionlint)
 make lint-actions      # Lint GitHub Actions workflows with actionlint
-make test             # Run BATS tests
+make test             # Run all tests with coverage (Bash 4+ instrumented + Bash 3.2 compat)
+make test-unit        # Run unit tests only (both Bash versions, no coverage)
+make test-integration # Run integration tests only (both Bash versions, no coverage)
 make image-base       # Build base VM image (both archs in parallel via sub-make -j2)
 make image-base-amd64 # Build base VM image (amd64 only)
 make image-base-arm64 # Build base VM image (arm64 only)
@@ -112,6 +116,9 @@ make publish-base VERSION=1.0.0        # Local: upload + manifest (both archs)
 make publish-release-meta VERSION=0.3.0 # Publish mps-release.json to B2 (CLI update check)
 make build-bash32                      # Build Bash 3.2.57 binary for compat linting
 make lint-bash32                       # Check client scripts for Bash 3.2 compatibility
+make test-e2e                          # Run E2E tests against live VM (with coverage)
+make test-e2e-report                   # Merge coverage from all tiers (unit/integration/e2e)
+make capture-fixtures                  # Capture fresh multipass JSON fixtures (requires multipass on host)
 make install                           # Install mps (symlink to PATH, runs on host)
 make uninstall        # Uninstall mps (remove symlink, cleanup artifacts, runs on host)
 ```
@@ -131,12 +138,13 @@ The Makefile detects host uid:gid and the entrypoint uses setpriv to step down f
   - **Major** (`1.0.0` → `2.0.0`): Breaking changes (Ubuntu version bump, tool removed, major restructure)
 - **Publishing** uses a fan-in pattern for CI with credential-isolated publisher container — see DECISIONS.md "Image Distribution" for CI/local flow details.
 - **CLI update metadata**: `mps-release.json` published to CDN root (`mpsandbox.horizenlabs.io/mps-release.json`) by `release.yml`. Contains `version`, `tag`, `commit_sha`. Clients check at most once per 24h via `_mps_check_cli_update()` in `lib/common.sh`.
+- **Git tags**: `mps/v*` for tool releases (must match `VERSION` file), `images/v*` for all image flavors (shared version). GPG-signed by authorized maintainers.
 
 ## Workflow
 
-- After modifying any linted file, run `make lint` before committing. Linted files:
-  - **Bash**: `bin/mps`, `lib/*.sh`, `commands/*.sh`, `images/**/*.sh`, `install.sh`, `uninstall.sh`
-  - **Bash 3.2 compat**: `bin/mps`, `lib/*.sh`, `commands/*.sh`, `install.sh`, `uninstall.sh` (client scripts only — no `images/`)
+- After modifying any linted or tested file, run `make lint` and `make test` before committing. Linted files:
+  - **Bash**: `bin/mps`, `lib/*.sh`, `commands/*.sh`, `completions/*.bash`, `tests/**/*.bats`, `tests/**/*.bash`, `tests/**/*.sh`, `tests/stubs/multipass`, `images/**/*.sh`, `install.sh`, `uninstall.sh`
+  - **Bash 3.2 compat**: `bin/mps`, `lib/*.sh`, `commands/*.sh`, `completions/*.bash`, `tests/**/*.bash`, `tests/**/*.sh` (excluding `coverage-*`), `tests/stubs/multipass`, `install.sh`, `uninstall.sh` (client scripts only — no `images/`, `*.bats`, or `tests/coverage-*`; BATS 3.2 compat is verified by `make test` which runs under both bash versions)
   - **PowerShell**: `*.ps1`
   - **Dockerfile**: `docker/Dockerfile.builder`, `docker/Dockerfile.linter`, `docker/Dockerfile.publisher`, `docker/Dockerfile.bash32`
   - **Makefile**: `Makefile`
@@ -145,14 +153,17 @@ The Makefile detects host uid:gid and the entrypoint uses setpriv to step down f
   - **GitHub Actions**: `.github/workflows/*.yml`
 - Linting requires Docker. The linter image is built automatically if missing (`make lint` depends on the stamp file).
 - Fix all lint errors before committing — do not bypass with `--no-verify` or inline disables unless there is a documented reason.
+- **Test coverage**: `make test` always generates coverage. Minimum threshold is 90% — do not merge changes that drop total coverage below this. Check the coverage summary at the end of `make test` output.
 - **checkmake quirks**: `minphony` only parses the first line of `.PHONY` declarations — keep `test` and `clean` on the first line. `maxbodylength` default max is 15 lines per target body (configured in `checkmake.ini`).
 - **Local verification**: `multipass` and `jq` are installed on the dev machine — run `mps` commands directly to verify changes.
 - **Snap confinement**: Multipass is installed as a snap, which restricts file access to the user's home directory. Use paths under `$HOME` (not `/tmp`) for `mps transfer` tests and temp files that interact with the VM.
 - **End-to-end verification**: After implementing changes to command files (`commands/*.sh`) or core libraries (`lib/*.sh`), run the verification steps from the plan against a live VM on the host — not just `make lint`. If the plan includes a test script, execute it. Create a temporary instance (e.g., `--profile micro --name <test-name>`) and clean it up with `mps destroy` afterward.
 - **Automated verification in plans**: Plans must always include an automated verification script — never manual testing steps. The script should create temporary instances, assert expected behavior, and clean up afterward.
+- **Capture long command output with tee.** For `make test`, `make lint`, etc., always use: `make test 2>&1 | tee /tmp/mps-test.log` (with optional chained `| head`, `| tail` as needed. To inspect results (grep for failures, check summaries), use `Read /tmp/mps-test.log` — don't re-run the command just to parse output differently.
 
 ## Planning & Status
 
 - Implementation plan and status: `.planning/STATUS.md`
 - Architecture decisions: `.planning/DECISIONS.md`
+- Testing strategy and coverage map: `tests/TESTING.md`
 - CI/CD pipeline design: `.github/CI.md`

@@ -57,8 +57,10 @@ cmd_transfer() {
     instance_name="$(mps_resolve_instance_name "$arg_name")"
 
     # ---- Prepare running instance (state check, staleness, port forwards) ----
+    mps_prepare_running_instance "$instance_name" >/dev/null
+
     local short_name
-    short_name="$(mps_prepare_running_instance "$instance_name")"
+    short_name="$(mps_short_name "$instance_name")"
 
     # ---- Separate sources and destination ----
     local -a sources=("${file_args[@]:0:${#file_args[@]}-1}")
@@ -133,11 +135,14 @@ _transfer_resolve_path() {
         echo "${instance_name}:${guest_path}"
     else
         # Host path: resolve to absolute
+        local resolved
         if [[ "$path" == /* ]]; then
-            echo "$path"
+            resolved="$path"
         else
-            echo "${MPS_PROJECT_DIR:-$(pwd)}/${path}"
+            resolved="${MPS_PROJECT_DIR:-$(pwd)}/${path}"
         fi
+        _mps_check_snap_path "$resolved" "Transfer"
+        echo "$resolved"
     fi
 }
 
