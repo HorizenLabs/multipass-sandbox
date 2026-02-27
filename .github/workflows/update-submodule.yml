@@ -79,6 +79,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          git config user.name "mpsandbox[bot]"
+          git config user.email "noreply@horizenlabs.io"
           BRANCH="chore/update-submodule-$(date -u +%Y%m%d)"
           git checkout -b "$BRANCH"
           git -C vendor/hl-claude-marketplace checkout origin/main
