@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   update-submodule:
@@ -86,16 +86,37 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
-          git config user.name "mpsandbox[bot]"
-          git config user.email "noreply@horizenlabs.io"
           BRANCH="chore/update-submodule-$(date -u +%Y%m%d)"
-          git checkout -b "$BRANCH"
-          git -C vendor/hl-claude-marketplace checkout origin/main
-          git add vendor/hl-claude-marketplace
-          git commit -m "chore: update hl-claude-marketplace submodule (${{ steps.check.outputs.old_sha }}..${{ steps.check.outputs.new_sha }})"
-          git push origin "$BRANCH"
+          NEW_SUBMODULE_SHA="$(git -C vendor/hl-claude-marketplace rev-parse origin/main)"
+          PARENT_SHA="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq '.object.sha')"
+          BASE_TREE="$(gh api "repos/${GITHUB_REPOSITORY}/git/commits/${PARENT_SHA}" --jq '.tree.sha')"
+
+          # Create tree with updated submodule pointer (gitlink mode 160000)
+          NEW_TREE="$(gh api "repos/${GITHUB_REPOSITORY}/git/trees" \
+            --input <(jq -n \
+              --arg base "$BASE_TREE" \
+              --arg sha "$NEW_SUBMODULE_SHA" \
+              '{base_tree: $base, tree: [{path: "vendor/hl-claude-marketplace", mode: "160000", type: "commit", sha: $sha}]}') \
+            --jq '.sha')"
+
+          # Create commit via API — GitHub signs it automatically
+          COMMIT_SHA="$(gh api "repos/${GITHUB_REPOSITORY}/git/commits" \
+            --input <(jq -n \
+              --arg msg "chore: update hl-claude-marketplace submodule (${{ steps.check.outputs.old_sha }}..${{ steps.check.outputs.new_sha }})" \
+              --arg tree "$NEW_TREE" \
+              --arg parent "$PARENT_SHA" \
+              '{message: $msg, tree: $tree, parents: [$parent]}') \
+            --jq '.sha')"
+
+          # Create branch ref pointing to the signed commit
+          gh api "repos/${GITHUB_REPOSITORY}/git/refs" \
+            --input <(jq -n \
+              --arg ref "refs/heads/${BRANCH}" \
+              --arg sha "$COMMIT_SHA" \
+              '{ref: $ref, sha: $sha}')
 
           gh pr create \
+            --head "$BRANCH" \
             --title "chore: update hl-claude-marketplace submodule" \
             --body "$(cat <<'EOF'
           Updates `vendor/hl-claude-marketplace` — ${{ steps.check.outputs.commit_count }} new commit(s) (${{ steps.check.outputs.old_sha }} → ${{ steps.check.outputs.new_sha }}).
