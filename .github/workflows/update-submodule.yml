@@ -8,7 +8,6 @@ on:
 
 permissions:
   contents: write
-  pull-requests: write
 
 jobs:
   update-submodule:
@@ -74,10 +73,18 @@ jobs:
             echo "skip=false" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Generate app token
+        if: steps.check.outputs.has_updates == 'true' && steps.existing.outputs.skip == 'false'
+        id: app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.MPS_BOT_APP_ID }}
+          private-key: ${{ secrets.MPS_BOT_PRIVATE_KEY }}
+
       - name: Create PR
         if: steps.check.outputs.has_updates == 'true' && steps.existing.outputs.skip == 'false'
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           git config user.name "mpsandbox[bot]"
           git config user.email "noreply@horizenlabs.io"
@@ -92,8 +99,6 @@ jobs:
             --title "chore: update hl-claude-marketplace submodule" \
             --body "$(cat <<'EOF'
           Updates `vendor/hl-claude-marketplace` — ${{ steps.check.outputs.commit_count }} new commit(s) (${{ steps.check.outputs.old_sha }} → ${{ steps.check.outputs.new_sha }}).
-
-          > **Note:** CI may not trigger automatically on this PR ([`GITHUB_TOKEN` limitation](https://docs.github.com/en/actions/security-for-github-actions/security-guides/automatic-token-authentication#using-the-github_token-in-a-workflow)). Close and reopen to trigger, or merge if the submodule change is low-risk.
           EOF
           )"
 

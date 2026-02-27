@@ -219,6 +219,8 @@ Clients fetch this file (at most once per 24h) to compare against the local `VER
 | Secret | Purpose |
 |---|---|
 | `SUBMODULE_DEPLOY_KEY` | SSH private key for `HorizenLabs/hl-claude-marketplace` |
+| `MPS_BOT_APP_ID` | GitHub App ID for `mpsandbox[bot]` (PR creation) |
+| `MPS_BOT_PRIVATE_KEY` | GitHub App private key for `mpsandbox[bot]` (PR creation) |
 
 ### Job → Environment Mapping
 
@@ -230,7 +232,7 @@ Clients fetch this file (at most once per 24h) to compare against the local `VER
 | `images.yml` | `build-arm64` | `build` | B2, CF, deploy key, SLACK_WEBHOOK_URL |
 | `images.yml` | `publish` | `publish` | B2, CF, SLACK_WEBHOOK_URL |
 | `release.yml` | `release` | `publish` | B2, CF, SLACK_WEBHOOK_URL + MAINTAINER_KEYS var |
-| `update-submodule.yml` | `update-submodule` | `submodule` | deploy key, SLACK_WEBHOOK_URL |
+| `update-submodule.yml` | `update-submodule` | `submodule` | deploy key, MPS_BOT app token, SLACK_WEBHOOK_URL |
 
 ## Deploy Key Setup
 
