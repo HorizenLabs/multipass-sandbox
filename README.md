@@ -269,7 +269,7 @@ Named templates are resolved in order: `templates/cloud-init/` (project), then `
 
 ### The default template
 
-The shipped `default` template (`templates/cloud-init/default.yaml`) enables HorizenLabs Claude Code marketplace plugins (`zkverify-product-ideation`, `zkverify-product-development`, `context-utils`) and includes commented-out examples for:
+The shipped `default` template (`templates/cloud-init/default.yaml`) enables HorizenLabs Claude Code marketplace plugins (`hl-product-ideation`, `zkverify-product-development`, `context-utils`) and includes commented-out examples for:
 
 - **Packages**: Install additional apt packages (`packages:` block)
 - **Run commands**: Execute scripts on first boot (`runcmd:` block)

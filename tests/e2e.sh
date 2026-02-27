@@ -477,7 +477,7 @@ phase_cloud_init() {
     plugin_list="$(_ubuntu_exec 'claude plugin list' 2>&1)" || true
 
     # HorizenLabs (always active)
-    assert_contains "plugin: zkverify-product-ideation" "$plugin_list" "zkverify-product-ideation"
+    assert_contains "plugin: hl-product-ideation" "$plugin_list" "hl-product-ideation"
     assert_contains "plugin: zkverify-product-development" "$plugin_list" "zkverify-product-development"
     assert_contains "plugin: context-utils" "$plugin_list" "context-utils"
 

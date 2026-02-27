@@ -24,7 +24,7 @@ runcmd:
       export HOME=/home/ubuntu
       export PATH="$HOME/.claude/bin:$HOME/.local/bin:$PATH"
       # HorizenLabs marketplace (hl-agent-skills)
-      claude plugin install zkverify-product-ideation@hl-agent-skills --scope user
+      claude plugin install hl-product-ideation@hl-agent-skills --scope user
       claude plugin install zkverify-product-development@hl-agent-skills --scope user
       claude plugin install context-utils@hl-agent-skills --scope user
     '
