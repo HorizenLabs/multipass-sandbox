@@ -73,18 +73,25 @@ teardown() { teardown_home_override; }
 # mp_launch
 # ================================================================
 
-@test "mp_launch: constructs correct multipass command with all args" {
+@test "mp_launch: constructs correct multipass command with all args (bytes)" {
     run mp_launch "mps-test" "22.04" "4" "4G" "30G" ""
     [[ "$status" -eq 0 ]]
     log="$(cat "$MOCK_MP_CALL_LOG")"
-    [[ "$log" == *"launch 22.04 --name mps-test --cpus 4 --memory 4G --disk 30G --timeout 600"* ]]
+    [[ "$log" == *"launch 22.04 --name mps-test --cpus 4 --memory 4294967296 --disk 32212254720 --timeout 600"* ]]
 }
 
-@test "mp_launch: defaults to base image and env resources" {
+@test "mp_launch: defaults to base image and env resources (bytes)" {
     run mp_launch "mps-test"
     [[ "$status" -eq 0 ]]
     log="$(cat "$MOCK_MP_CALL_LOG")"
-    [[ "$log" == *"launch base --name mps-test --cpus 2 --memory 2G --disk 20G --timeout 600"* ]]
+    [[ "$log" == *"launch base --name mps-test --cpus 2 --memory 2147483648 --disk 21474836480 --timeout 600"* ]]
+}
+
+@test "mp_launch: GiB suffix also accepted (converts to bytes)" {
+    run mp_launch "mps-test" "22.04" "4" "4GiB" "30GiB" ""
+    [[ "$status" -eq 0 ]]
+    log="$(cat "$MOCK_MP_CALL_LOG")"
+    [[ "$log" == *"--memory 4294967296 --disk 32212254720"* ]]
 }
 
 @test "mp_launch: includes --cloud-init when provided" {

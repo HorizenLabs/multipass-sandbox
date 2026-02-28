@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
 # Tests for parsing/conversion functions in lib/common.sh:
-#   _mps_parse_size_mb, _mps_semver_gt, _mps_is_mps_image
+#   _mps_parse_size_mb, _mps_size_to_bytes, _mps_semver_gt, _mps_is_mps_image
 
 load ../test_helper
 
@@ -28,9 +28,43 @@ load ../test_helper
     [[ "$result" -eq 512 ]]
 }
 
-@test "_mps_parse_size_mb: parses bare number as megabytes" {
-    result="$(_mps_parse_size_mb "256")"
-    [[ "$result" -eq 256 ]]
+@test "_mps_parse_size_mb: parses bare number as bytes" {
+    # 1073741824 bytes = 1024 MB
+    result="$(_mps_parse_size_mb "1073741824")"
+    [[ "$result" -eq 1024 ]]
+}
+
+@test "_mps_parse_size_mb: parses GB suffix" {
+    result="$(_mps_parse_size_mb "4GB")"
+    [[ "$result" -eq 4096 ]]
+}
+
+@test "_mps_parse_size_mb: parses MB suffix" {
+    result="$(_mps_parse_size_mb "512MB")"
+    [[ "$result" -eq 512 ]]
+}
+
+@test "_mps_parse_size_mb: parses kilobytes" {
+    # 1048576K = 1048576 * 1024 bytes = 1024 MB
+    result="$(_mps_parse_size_mb "1048576K")"
+    [[ "$result" -eq 1024 ]]
+}
+
+@test "_mps_parse_size_mb: parses KB suffix" {
+    # 1024KB = 1024 * 1024 bytes = 1 MB
+    result="$(_mps_parse_size_mb "1024KB")"
+    [[ "$result" -eq 1 ]]
+}
+
+@test "_mps_parse_size_mb: parses KiB suffix" {
+    result="$(_mps_parse_size_mb "1024KiB")"
+    [[ "$result" -eq 1 ]]
+}
+
+@test "_mps_parse_size_mb: parses B suffix" {
+    # 1073741824B = 1024 MB
+    result="$(_mps_parse_size_mb "1073741824B")"
+    [[ "$result" -eq 1024 ]]
 }
 
 @test "_mps_parse_size_mb: parses 1G as 1024" {
@@ -51,6 +85,101 @@ load ../test_helper
 
 @test "_mps_parse_size_mb: returns 0 for empty string" {
     run _mps_parse_size_mb ""
+    [[ "$output" == "0" ]]
+    [[ "$status" -eq 1 ]]
+}
+
+@test "_mps_parse_size_mb: parses GiB uppercase" {
+    result="$(_mps_parse_size_mb "4GiB")"
+    [[ "$result" -eq 4096 ]]
+}
+
+@test "_mps_parse_size_mb: parses gib lowercase" {
+    result="$(_mps_parse_size_mb "4gib")"
+    [[ "$result" -eq 4096 ]]
+}
+
+@test "_mps_parse_size_mb: parses MiB uppercase" {
+    result="$(_mps_parse_size_mb "512MiB")"
+    [[ "$result" -eq 512 ]]
+}
+
+@test "_mps_parse_size_mb: parses mib lowercase" {
+    result="$(_mps_parse_size_mb "512mib")"
+    [[ "$result" -eq 512 ]]
+}
+
+@test "_mps_parse_size_mb: parses 20GiB correctly" {
+    result="$(_mps_parse_size_mb "20GiB")"
+    [[ "$result" -eq 20480 ]]
+}
+
+# ================================================================
+# _mps_size_to_bytes
+# ================================================================
+
+@test "_mps_size_to_bytes: 1G = 1073741824" {
+    result="$(_mps_size_to_bytes "1G")"
+    [[ "$result" -eq 1073741824 ]]
+}
+
+@test "_mps_size_to_bytes: 1GB = 1073741824" {
+    result="$(_mps_size_to_bytes "1GB")"
+    [[ "$result" -eq 1073741824 ]]
+}
+
+@test "_mps_size_to_bytes: 1GiB = 1073741824" {
+    result="$(_mps_size_to_bytes "1GiB")"
+    [[ "$result" -eq 1073741824 ]]
+}
+
+@test "_mps_size_to_bytes: 1024M = 1073741824" {
+    result="$(_mps_size_to_bytes "1024M")"
+    [[ "$result" -eq 1073741824 ]]
+}
+
+@test "_mps_size_to_bytes: 1024MB = 1073741824" {
+    result="$(_mps_size_to_bytes "1024MB")"
+    [[ "$result" -eq 1073741824 ]]
+}
+
+@test "_mps_size_to_bytes: 1024MiB = 1073741824" {
+    result="$(_mps_size_to_bytes "1024MiB")"
+    [[ "$result" -eq 1073741824 ]]
+}
+
+@test "_mps_size_to_bytes: 1048576K = 1073741824" {
+    result="$(_mps_size_to_bytes "1048576K")"
+    [[ "$result" -eq 1073741824 ]]
+}
+
+@test "_mps_size_to_bytes: 1048576KB = 1073741824" {
+    result="$(_mps_size_to_bytes "1048576KB")"
+    [[ "$result" -eq 1073741824 ]]
+}
+
+@test "_mps_size_to_bytes: 1048576KiB = 1073741824" {
+    result="$(_mps_size_to_bytes "1048576KiB")"
+    [[ "$result" -eq 1073741824 ]]
+}
+
+@test "_mps_size_to_bytes: 1073741824B = 1073741824" {
+    result="$(_mps_size_to_bytes "1073741824B")"
+    [[ "$result" -eq 1073741824 ]]
+}
+
+@test "_mps_size_to_bytes: bare number = bytes" {
+    result="$(_mps_size_to_bytes "1073741824")"
+    [[ "$result" -eq 1073741824 ]]
+}
+
+@test "_mps_size_to_bytes: case insensitive (4gib)" {
+    result="$(_mps_size_to_bytes "4gib")"
+    [[ "$result" -eq 4294967296 ]]
+}
+
+@test "_mps_size_to_bytes: returns 0 for invalid input" {
+    run _mps_size_to_bytes "abc"
     [[ "$output" == "0" ]]
     [[ "$status" -eq 1 ]]
 }

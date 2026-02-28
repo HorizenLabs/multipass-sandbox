@@ -177,21 +177,33 @@ _mps_load_env_file() {
 
 # ---------- Auto-Scaling Resources ----------
 
-# Parse a size string like "4G", "512M", "1g" into megabytes (integer).
-_mps_parse_size_mb() {
-    local size="$1"
-    local num unit
-    num="${size%%[GgMm]*}"
-    unit="${size##*[0-9.]}"
-    if [[ ! "$num" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
+# Convert a size string to raw bytes (integer).  All units are base-2.
+# Accepts (case insensitive): 4G, 4GB, 4GiB, 512M, 512MB, 512MiB,
+# 1024K, 1024KB, 1024KiB, 1073741824B, or bare number (= bytes).
+_mps_size_to_bytes() {
+    local raw="$1"
+    local size
+    size="$(printf '%s' "$raw" | tr '[:upper:]' '[:lower:]')"
+    local num="${size%%[a-z]*}"
+    local unit="${size#"$num"}"
+    if [[ -z "$num" || ! "$num" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
         echo "0"
         return 1
     fi
     case "$unit" in
-        G|g) awk -v n="$num" 'BEGIN { printf "%d", n * 1024 }' ;;
-        M|m) awk -v n="$num" 'BEGIN { printf "%d", n }' ;;
-        *)   awk -v n="$num" 'BEGIN { printf "%d", n }' ;;
+        gib|gb|g)  awk -v n="$num" 'BEGIN { printf "%.0f", n * 1073741824 }' ;;
+        mib|mb|m)  awk -v n="$num" 'BEGIN { printf "%.0f", n * 1048576 }' ;;
+        kib|kb|k)  awk -v n="$num" 'BEGIN { printf "%.0f", n * 1024 }' ;;
+        b|"")      awk -v n="$num" 'BEGIN { printf "%.0f", n }' ;;
+        *)         echo "0"; return 1 ;;
     esac
+}
+
+# Parse a size string into megabytes (integer).  See _mps_size_to_bytes for formats.
+_mps_parse_size_mb() {
+    local bytes
+    bytes="$(_mps_size_to_bytes "$1")" || { echo "0"; return 1; }
+    awk -v b="$bytes" 'BEGIN { printf "%d", b / 1048576 }'
 }
 
 # Detect host hardware and compute MPS_CPUS/MPS_MEMORY from profile fractions.
@@ -1558,10 +1570,10 @@ mps_validate_resources() {
         mps_die "vCPU count must be at least 1 (got $cpus)"
     fi
 
-    if [[ -n "$memory" && ! "$memory" =~ ^[0-9]+[GgMm]?$ ]]; then
+    if [[ -n "$memory" && ! "$memory" =~ ^[0-9]+([Gg]([Ii]?[Bb])?|[Mm]([Ii]?[Bb])?|[Kk]([Ii]?[Bb])?|[Bb])?$ ]]; then
         mps_die "Invalid memory: $memory (e.g., 4G, 512M)"
     fi
-    if [[ -n "$memory" && "$memory" =~ ^[0-9]+[GgMm]?$ ]]; then
+    if [[ -n "$memory" && "$memory" =~ ^[0-9]+([Gg]([Ii]?[Bb])?|[Mm]([Ii]?[Bb])?|[Kk]([Ii]?[Bb])?|[Bb])?$ ]]; then
         local mem_mb
         mem_mb="$(_mps_parse_size_mb "$memory")"
         if [[ "$mem_mb" -lt 512 ]]; then
@@ -1569,10 +1581,10 @@ mps_validate_resources() {
         fi
     fi
 
-    if [[ -n "$disk" && ! "$disk" =~ ^[0-9]+[GgMm]?$ ]]; then
+    if [[ -n "$disk" && ! "$disk" =~ ^[0-9]+([Gg]([Ii]?[Bb])?|[Mm]([Ii]?[Bb])?|[Kk]([Ii]?[Bb])?|[Bb])?$ ]]; then
         mps_die "Invalid disk: $disk (e.g., 50G, 100G)"
     fi
-    if [[ -n "$disk" && "$disk" =~ ^[0-9]+[GgMm]?$ ]]; then
+    if [[ -n "$disk" && "$disk" =~ ^[0-9]+([Gg]([Ii]?[Bb])?|[Mm]([Ii]?[Bb])?|[Kk]([Ii]?[Bb])?|[Bb])?$ ]]; then
         local disk_mb
         disk_mb="$(_mps_parse_size_mb "$disk")"
         if [[ "$disk_mb" -lt 1024 ]]; then

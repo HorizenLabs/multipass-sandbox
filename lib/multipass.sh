@@ -19,11 +19,16 @@ mp_launch() {
     local _display
     _display="$(mps_short_name "$instance_name")"
 
+    # Convert to raw bytes for multipass to eliminate GiB/GB ambiguity
+    local memory_bytes disk_bytes
+    memory_bytes="$(_mps_size_to_bytes "$memory")"
+    disk_bytes="$(_mps_size_to_bytes "$disk")"
+
     local -a cmd=(multipass launch "$image"
         --name "$instance_name"
         --cpus "$cpus"
-        --memory "$memory"
-        --disk "$disk"
+        --memory "$memory_bytes"
+        --disk "$disk_bytes"
         --timeout 600
     )
 

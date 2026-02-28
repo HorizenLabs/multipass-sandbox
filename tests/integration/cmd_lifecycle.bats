@@ -218,15 +218,15 @@ METAJSON
     [[ -f "${HOME}/mps/instances/test-create.json" ]]
 }
 
-@test "cmd_create: call log shows correct launch args" {
+@test "cmd_create: call log shows correct launch args (bytes to multipass)" {
     run cmd_create --name test-create --no-mount --cpus 4 --memory 4G --disk 30G
     [[ "$status" -eq 0 ]]
     log="$(cat "$MOCK_MP_CALL_LOG")"
     [[ "$log" == *"launch"* ]]
     [[ "$log" == *"--name mps-test-create"* ]]
     [[ "$log" == *"--cpus 4"* ]]
-    [[ "$log" == *"--memory 4G"* ]]
-    [[ "$log" == *"--disk 30G"* ]]
+    [[ "$log" == *"--memory 4294967296"* ]]
+    [[ "$log" == *"--disk 32212254720"* ]]
 }
 
 @test "cmd_create: saves instance metadata JSON" {
@@ -260,8 +260,8 @@ METAJSON
     run cmd_create --name test-profile --no-mount --profile micro
     [[ "$status" -eq 0 ]]
     log="$(cat "$MOCK_MP_CALL_LOG")"
-    # micro profile sets disk=10G
-    [[ "$log" == *"--disk 10G"* ]]
+    # micro profile sets disk=10G → passed as bytes to multipass
+    [[ "$log" == *"--disk 10737418240"* ]]
 }
 
 @test "cmd_create --no-mount without --name: dies with error" {
@@ -918,7 +918,7 @@ METAJSON
 @test "_status_human_bytes: KiB range formats correctly" {
     run _status_human_bytes 500000
     [[ "$status" -eq 0 ]]
-    [[ "$output" == *"KiB"* ]]
+    [[ "$output" == *"K"* ]]
 }
 
 @test "_status_human_bytes: bytes range formats correctly" {

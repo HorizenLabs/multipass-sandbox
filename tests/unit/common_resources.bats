@@ -12,8 +12,16 @@ load ../test_helper
     mps_validate_resources "4" "8G" "50G"
 }
 
+@test "mps_validate_resources: accepts GiB suffix" {
+    mps_validate_resources "4" "8GiB" "50GiB"
+}
+
 @test "mps_validate_resources: accepts megabyte memory" {
     mps_validate_resources "2" "512M" "20G"
+}
+
+@test "mps_validate_resources: accepts MiB suffix" {
+    mps_validate_resources "2" "512MiB" "20GiB"
 }
 
 @test "mps_validate_resources: accepts empty values (optional)" {
@@ -58,6 +66,22 @@ load ../test_helper
 
 @test "mps_validate_resources: accepts lowercase units" {
     mps_validate_resources "2" "2g" "20g"
+}
+
+@test "mps_validate_resources: accepts GB/MB suffixes" {
+    mps_validate_resources "4" "8GB" "50GB"
+}
+
+@test "mps_validate_resources: accepts K/KB/KiB suffixes" {
+    mps_validate_resources "2" "524288K" "10485760KB"
+}
+
+@test "mps_validate_resources: accepts B suffix" {
+    mps_validate_resources "2" "536870912B" "1073741824B"
+}
+
+@test "mps_validate_resources: accepts bare number (bytes)" {
+    mps_validate_resources "2" "536870912" "1073741824"
 }
 
 # ================================================================
