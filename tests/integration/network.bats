@@ -579,6 +579,49 @@ STUB
     [[ "$output" == "update:1.1.0" ]]
 }
 
+@test "_mps_check_instance_staleness: update when old version removed but newer exists in cache" {
+    local arch
+    arch="$(mps_detect_arch)"
+    local sha="aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111"
+    # Instance was created from 1.0.0 but that version has been removed from cache
+    _create_instance_meta "test-inst" "base" "1.0.0" "$arch" "$sha"
+    # Only 1.0.1 exists in cache (1.0.0 was removed after pull + cleanup)
+    _create_local_meta "base" "1.0.1" "$arch" \
+        "cccc3333cccc3333cccc3333cccc3333cccc3333cccc3333cccc3333cccc3333"
+    touch "${HOME}/mps/cache/images/base/1.0.1/${arch}.img"
+    run _mps_check_instance_staleness "test-inst"
+    [[ "$status" -eq 0 ]]
+    [[ "$output" == "update:1.0.1" ]]
+}
+
+@test "_mps_check_instance_staleness: update:manifest when old version removed and manifest has newer" {
+    local arch
+    arch="$(mps_detect_arch)"
+    local sha="aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111"
+    # Instance created from 1.0.0, but that version removed from cache
+    _create_instance_meta "test-inst" "base" "1.0.0" "$arch" "$sha"
+    # No local versions at all, but manifest knows about 2.0.0
+    mkdir -p "${HOME}/mps/cache"
+    cat > "${HOME}/mps/cache/manifest.json" <<EOF
+{
+    "schema_version": 2,
+    "images": {
+        "base": {
+            "latest": "2.0.0",
+            "versions": {
+                "1.0.0": {
+                    "${arch}": { "sha256": "${sha}" }
+                }
+            }
+        }
+    }
+}
+EOF
+    run _mps_check_instance_staleness "test-inst"
+    [[ "$status" -eq 0 ]]
+    [[ "$output" == "update:manifest:2.0.0" ]]
+}
+
 @test "_mps_check_instance_staleness: stale:manifest when cached manifest SHA differs" {
     local arch
     arch="$(mps_detect_arch)"

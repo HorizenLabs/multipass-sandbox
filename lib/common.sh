@@ -971,18 +971,9 @@ _mps_check_instance_staleness() {
         return 0
     fi
 
-    # Read cached image .meta.json
-    local cache_meta
-    cache_meta="$(mps_cache_dir)/images/${img_name}/${img_version}/${img_arch}.meta.json"
-    if [[ ! -f "$cache_meta" ]]; then
-        echo "unknown"
-        return 0
-    fi
-
-    local cached_sha256=""
-    cached_sha256="$(_mps_read_meta_json "$cache_meta" '.sha256')"
-
     # Check for newer SemVer version in local cache (only for SemVer tags)
+    # This runs before the cache_meta check — detecting a newer local version
+    # doesn't require the old version's metadata to still exist in cache.
     local has_update=""
     if [[ "$img_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
         local image_dir
@@ -996,15 +987,22 @@ _mps_check_instance_staleness() {
         fi
     fi
 
-    # Priority: update > stale > up-to-date
     if [[ -n "$has_update" ]]; then
         echo "update:${has_update}"
         return 0
     fi
 
-    if [[ -n "$cached_sha256" && "$img_sha256" != "$cached_sha256" ]]; then
-        echo "stale"
-        return 0
+    # SHA256 rebuild detection: compare instance SHA against cached image metadata.
+    # Only possible when the exact version is still in cache.
+    local cache_meta
+    cache_meta="$(mps_cache_dir)/images/${img_name}/${img_version}/${img_arch}.meta.json"
+    if [[ -f "$cache_meta" ]]; then
+        local cached_sha256=""
+        cached_sha256="$(_mps_read_meta_json "$cache_meta" '.sha256')"
+        if [[ -n "$cached_sha256" && "$img_sha256" != "$cached_sha256" ]]; then
+            echo "stale"
+            return 0
+        fi
     fi
 
     # ---- Manifest-based enhancement (no network) ----
@@ -1031,6 +1029,12 @@ _mps_check_instance_staleness() {
             echo "stale:manifest"
             return 0
         fi
+    fi
+
+    # If old version was removed and no manifest data available, we can't determine status
+    if [[ ! -f "$cache_meta" ]]; then
+        echo "unknown"
+        return 0
     fi
 
     echo "up-to-date"
