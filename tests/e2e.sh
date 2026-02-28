@@ -8,11 +8,13 @@
 # Usage:
 #   bash tests/e2e.sh                       # default: pull "base" image
 #   MPS_E2E_IMAGE=base bash tests/e2e.sh    # same as above
-#   MPS_E2E_IMAGE=/path/to.qcow2.img bash tests/e2e.sh  # import local
+#   MPS_E2E_IMAGE=/path/to.qcow2.img bash tests/e2e.sh       # import local
+#   MPS_E2E_PROFILE=lite bash tests/e2e.sh                    # override profile
 #   MPS_E2E_INSTALL=true bash tests/e2e.sh  # also test install/uninstall
 #
 # Environment:
 #   MPS_E2E_IMAGE      Image name to pull or file path to import (default: base)
+#   MPS_E2E_PROFILE    Override profile (default: read min_profile from layer YAML, or micro)
 #   MPS_E2E_INSTALL    Run install.sh/uninstall.sh bookends (default: false)
 
 set -euo pipefail
@@ -347,8 +349,18 @@ phase_create() {
 
     cd "${E2E_TMPDIR}/project"
 
+    # Resolve profile: env var > layer YAML min_profile > micro fallback
+    local e2e_profile="${MPS_E2E_PROFILE:-}"
+    if [[ -z "$e2e_profile" ]]; then
+        local layer_yaml="${MPS_ROOT}/images/layers/${IMAGE_NAME}.yaml"
+        if [[ -f "$layer_yaml" ]]; then
+            e2e_profile="$(grep 'min_profile:' "$layer_yaml" | awk '{print $2}')"
+        fi
+    fi
+    e2e_profile="${e2e_profile:-micro}"
+
     local create_out
-    create_out="$("${MPS_ROOT}/bin/mps" create --profile micro 2>&1)" || {
+    create_out="$("${MPS_ROOT}/bin/mps" create --profile "$e2e_profile" --image "$IMAGE_NAME" 2>&1)" || {
         _e2e_fail "FATAL: mps create failed"
         echo "$create_out" >&2
         return 1
