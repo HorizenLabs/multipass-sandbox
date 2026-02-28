@@ -58,3 +58,41 @@ jobs:
           name: coverage
           path: coverage/
           retention-days: 30
+
+  changes:
+    if: github.event_name == 'pull_request'
+    runs-on: warp-ubuntu-latest-x64-2x
+    outputs:
+      needs_e2e: ${{ steps.filter.outputs.needs_e2e }}
+    steps:
+      - name: Detect cloud-init-affecting changes
+        id: filter
+        run: |
+          PATHS="templates/cloud-init/"
+          CHANGED="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${{ github.event.pull_request.number }}/files" \
+            --paginate --jq '.[].filename')"
+          for prefix in $PATHS; do
+            if echo "$CHANGED" | grep -q "^${prefix}"; then
+              echo "needs_e2e=true" >> "$GITHUB_OUTPUT"
+              echo "E2E needed: changes detected in ${prefix}"
+              exit 0
+            fi
+          done
+          echo "needs_e2e=false" >> "$GITHUB_OUTPUT"
+          echo "E2E not needed: no cloud-init-affecting changes"
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+  e2e:
+    if: needs.changes.outputs.needs_e2e == 'true'
+    needs: [lint-and-test, changes]
+    runs-on: warp-ubuntu-latest-x64-2x
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Snap confinement preflight
+        run: bash tests/ci-preflight.sh
+
+      - name: E2E test
+        run: MPS_E2E_INSTALL=true make test-e2e

@@ -18,6 +18,9 @@ The mpsandbox project uses a fully containerized build system (Makefile + Docker
 
 **Permissions**: `contents: read`, `pull-requests: write` (for PR coverage comments)
 
+### Job: `lint-and-test` (always runs)
+Runner: `warp-ubuntu-latest-x64-2x` — Environment: *(none)*
+
 Steps:
 1. `actions/checkout@v4` (no submodules — lint/test don't need them)
 2. `make lint` (builds linter Docker image automatically via stamp dep)
@@ -25,6 +28,16 @@ Steps:
 4. Coverage job summary — appends `coverage/summary.md` to `$GITHUB_STEP_SUMMARY` (all events)
 5. Coverage PR comment — `zgosalvez/github-actions-report-lcov@v4` posts/updates a coverage summary comment on PRs (`GITHUB_TOKEN`, `minimum-coverage: 90`, `update-comment: true`). PR events only.
 6. Upload `coverage/` directory as artifact (30-day retention)
+
+### Job: `changes` (PR only, no checkout)
+Runner: `warp-ubuntu-latest-x64-2x` — Environment: *(none)*
+
+Detects whether the PR touches `templates/cloud-init/` via the GitHub API (`gh api .../pulls/{number}/files`). No checkout needed — uses only the API. Outputs `needs_e2e` boolean for the `e2e` job. Note: `vendor/` changes are not included — the marketplace is baked into the image at build time, so vendor renames can only be validated by `images.yml` which builds a fresh image.
+
+### Job: `e2e` (conditional, needs: lint-and-test + changes)
+Runner: `warp-ubuntu-latest-x64-2x` — Environment: *(none)*
+
+Only runs when `changes.needs_e2e == true`. No submodules, no secrets — E2E pulls the base image from the public CDN registry. Uses `MPS_E2E_INSTALL=true` to install multipass+jq on the runner (same pattern as `release.yml`). Validates that cloud-init templates and plugin install commands work against the current published image.
 
 ## Workflow 2: `images.yml` — Build + Publish
 
@@ -227,6 +240,8 @@ Clients fetch this file (at most once per 24h) to compare against the local `VER
 | Workflow | Job | Environment | Secrets Accessible |
 |---|---|---|---|
 | `ci.yml` | `lint-and-test` | *(none)* | SLACK_WEBHOOK_URL, GITHUB_TOKEN (auto, PR comments) |
+| `ci.yml` | `changes` | *(none)* | GITHUB_TOKEN (auto, PR file list) |
+| `ci.yml` | `e2e` | *(none)* | GITHUB_TOKEN (auto) |
 | `images.yml` | `resolve` | *(none)* | SLACK_WEBHOOK_URL + MAINTAINER_KEYS var |
 | `images.yml` | `build-amd64` | `build` | B2, CF, deploy key, SLACK_WEBHOOK_URL |
 | `images.yml` | `build-arm64` | `build` | B2, CF, deploy key, SLACK_WEBHOOK_URL |

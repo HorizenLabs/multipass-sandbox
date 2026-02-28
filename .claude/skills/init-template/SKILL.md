@@ -78,7 +78,7 @@ Use `AskUserQuestion`:
 
 Use `AskUserQuestion` with up to 4 questions in a single call (all single-select, no `multiSelect`):
 
-**Question 1** — "Keep the default HorizenLabs plugins?" (zkverify-product-ideation, zkverify-product-development, context-utils)
+**Question 1** — "Keep the default HorizenLabs plugins?" (hl-product-ideation, zkverify-product-development, context-utils)
 - **Yes (Recommended)** — Keep the default plugins enabled
 - **No** — Remove them from the template
 
