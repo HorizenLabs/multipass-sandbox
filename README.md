@@ -496,4 +496,6 @@ make help                     # Show all targets
 
 ## License
 
-Proprietary — internal use only. All rights reserved.
+Licensed under the [Business Source License 1.1](LICENSE). You may use, copy, modify, and redistribute the Licensed Work for non-production purposes. Production use is permitted provided you do not offer it as a competitive hosted or embedded product. After four years from each release, the license converts to [Apache 2.0](https://www.apache.org/licenses/LICENSE-2.0).
+
+See [LICENSE](LICENSE) for full terms. Third-party copyleft notices are in [NOTICES](NOTICES). For alternative licensing, contact devops@horizenlabs.io.
