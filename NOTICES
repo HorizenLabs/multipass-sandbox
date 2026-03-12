@@ -1,0 +1,69 @@
+Third-Party Copyleft Notices
+=============================
+
+Multipass Sandbox (mps) uses or distributes the following copyleft-licensed
+components. MPS does not modify these components; they are invoked as
+standalone executables or installed unmodified into VM images.
+
+Source code for each component is available from the upstream URLs listed.
+
+
+CLI Runtime Dependencies (invoked as external processes)
+--------------------------------------------------------
+
+Multipass          GPLv3       https://github.com/canonical/multipass
+  MPS calls the multipass CLI as a subprocess. Not linked or embedded.
+
+
+Build & Lint Tools (development only, not distributed)
+------------------------------------------------------
+
+ShellCheck         GPLv3       https://github.com/koalaman/shellcheck
+yamllint           GPLv3       https://github.com/adrienverge/yamllint
+
+
+VM Image: base
+--------------
+
+Git                GPLv2       https://git-scm.com
+GCC/binutils       GPLv3       (installed via build-essential in protocol-dev layer)
+GNU libc           LGPLv2.1    (system library, Ubuntu package)
+Linux kernel       GPLv2       https://kernel.org
+Bash               GPLv3       (system shell, Ubuntu package)
+GNU coreutils      GPLv3       (system utilities, Ubuntu package)
+
+All base OS packages are unmodified Ubuntu 24.04 LTS binaries.
+Source packages available via: apt-get source <package>
+
+
+VM Image: smart-contract-audit (additional components)
+------------------------------------------------------
+
+Slither            AGPL-3.0    https://github.com/crytic/slither
+Echidna            AGPL-3.0    https://github.com/crytic/echidna
+Medusa             AGPL-3.0    https://github.com/crytic/medusa
+Halmos             AGPL-3.0    https://github.com/a16z/halmos
+  (Halmos: amd64 only)
+
+These tools are installed as standalone executables in the VM image.
+Users invoke them directly; MPS does not wrap, modify, or link to them.
+Source code is available at the upstream URLs above.
+
+
+Copyleft Compliance Notes
+-------------------------
+
+1. MPS itself is licensed under BSL 1.1 (see LICENSE). No copyleft
+   dependency requires MPS to adopt a copyleft license because:
+   - CLI dependencies (Multipass, jq) are invoked as separate processes
+   - Build tools are not distributed
+   - VM image contents are unmodified upstream binaries (mere aggregation)
+
+2. VM images distributed via CDN contain GPL and AGPL binaries. Per GPL
+   section 5 and AGPL section 13, source code for these components is
+   available from the upstream repositories linked above and via Ubuntu's
+   source package archive.
+
+3. If you redistribute modified versions of the AGPL-licensed tools
+   listed above, you must make your modifications available under the
+   AGPL-3.0. This obligation applies to the individual tools, not to MPS.
