@@ -44,16 +44,25 @@ _create_instance_meta() {
 EOF
 }
 
-# Build a PATH string with aria2c's directory removed
-_path_without_aria2c() {
-    local aria2c_dir="" new_path="" IFS=':'
-    if command -v aria2c &>/dev/null; then
-        aria2c_dir="$(dirname "$(command -v aria2c)")"
-    fi
-    for p in $PATH; do
-        [[ "$p" != "$aria2c_dir" ]] && new_path="${new_path:+${new_path}:}${p}"
-    done
-    echo "$new_path"
+# Force _mps_download_file to use the curl fallback path
+_force_curl_fallback() {
+    _mps_has_aria2c() { return 1; }
+    export -f _mps_has_aria2c
+}
+
+# Create a valid image fixture served by the HTTP server.
+# Writes <arch>.img + <arch>.img.meta.json with matching SHA256.
+# Usage: sha=$(_create_pull_fixture <name> <version> <arch> [content])
+_create_pull_fixture() {
+    local name="$1" ver="$2" arch="$3"
+    local content="${4:-fixture-image-${name}-${ver}-${arch}}"
+    local img_dir="${HTTP_FIXTURES}/${name}/${ver}"
+    mkdir -p "$img_dir"
+    printf '%s' "$content" > "${img_dir}/${arch}.img"
+    local sha
+    sha="$(_mps_sha256 "${img_dir}/${arch}.img" | cut -d' ' -f1)"
+    printf '{"sha256":"%s"}\n' "$sha" > "${img_dir}/${arch}.img.meta.json"
+    echo "$sha"
 }
 
 # ================================================================
@@ -242,10 +251,11 @@ teardown() {
 # _mps_download_file (curl fallback path)
 # ----------------------------------------------------------------
 
-@test "_mps_download_file (curl): downloads file when aria2c hidden from PATH" {
+@test "_mps_download_file (curl): downloads file when aria2c detection overridden" {
+    _force_curl_fallback
     local dest="${TEST_TEMP_DIR}/downloads_curl/testfile.txt"
     mkdir -p "$(dirname "$dest")"
-    PATH="$(_path_without_aria2c)" run _mps_download_file "${MPS_IMAGE_BASE_URL}/testfile.txt" "$dest"
+    run _mps_download_file "${MPS_IMAGE_BASE_URL}/testfile.txt" "$dest"
     [[ "$status" -eq 0 ]]
     [[ -f "$dest" ]]
     local content
@@ -254,10 +264,11 @@ teardown() {
 }
 
 @test "_mps_download_file (curl): overwrites existing file" {
+    _force_curl_fallback
     local dest="${TEST_TEMP_DIR}/downloads_curl/overwrite.txt"
     mkdir -p "$(dirname "$dest")"
     echo "old data" > "$dest"
-    PATH="$(_path_without_aria2c)" run _mps_download_file "${MPS_IMAGE_BASE_URL}/testfile.txt" "$dest"
+    run _mps_download_file "${MPS_IMAGE_BASE_URL}/testfile.txt" "$dest"
     [[ "$status" -eq 0 ]]
     local content
     content="$(cat "$dest")"
@@ -265,20 +276,21 @@ teardown() {
 }
 
 @test "_mps_download_file (curl): returns non-zero on 404" {
+    _force_curl_fallback
     local dest="${TEST_TEMP_DIR}/downloads_curl/missing.txt"
     mkdir -p "$(dirname "$dest")"
-    PATH="$(_path_without_aria2c)" run _mps_download_file "${MPS_IMAGE_BASE_URL}/nonexistent_file.xyz" "$dest"
+    run _mps_download_file "${MPS_IMAGE_BASE_URL}/nonexistent_file.xyz" "$dest"
     [[ "$status" -ne 0 ]]
 }
 
 @test "_mps_download_file (curl): uses curl --progress-bar when aria2c unavailable" {
+    _force_curl_fallback
     local stub_dir="${TEST_TEMP_DIR}/stubs"
     mkdir -p "$stub_dir"
 
     export MOCK_CURL_LOG="${TEST_TEMP_DIR}/curl_calls.log"
     : > "$MOCK_CURL_LOG"
 
-    # Use #!/bin/bash shebang (not /usr/bin/env bash) so it works with restricted PATH
     cat > "${stub_dir}/curl" <<'STUB'
 #!/bin/bash
 echo "CURL_ARGS: $*" >> "${MOCK_CURL_LOG}"
@@ -294,18 +306,8 @@ done
 STUB
     chmod +x "${stub_dir}/curl"
 
-    # Symlink essential commands but deliberately exclude aria2c
-    local cmd real_path
-    for cmd in bash dirname basename touch rm; do
-        real_path="$(command -v "$cmd" 2>/dev/null)" || true
-        if [[ -n "$real_path" ]]; then
-            ln -sf "$real_path" "${stub_dir}/${cmd}"
-        fi
-    done
-
     local dest="${TEST_TEMP_DIR}/downloaded_file"
-    # Set PATH to ONLY our stub dir — no aria2c available
-    PATH="$stub_dir" _mps_download_file "https://example.com/file.img" "$dest"
+    PATH="${stub_dir}:${PATH}" _mps_download_file "https://example.com/file.img" "$dest"
 
     # Verify curl was called with --progress-bar
     [[ -f "$MOCK_CURL_LOG" ]]
@@ -907,7 +909,7 @@ EOF
 # Group D: _mps_pull_image error paths
 # ================================================================
 
-@test "_mps_pull_image: SHA256 mismatch removes file and returns error" {
+@test "_mps_pull_image: SHA256 mismatch removes all artifacts and returns error" {
     local arch
     arch="$(mps_detect_arch)"
     local img_rel="base/1.0.0/${arch}.img"
@@ -921,14 +923,16 @@ EOF
     run _mps_pull_image "base" "1.0.0"
     [[ "$status" -ne 0 ]]
     [[ "$output" == *"Checksum mismatch"* ]]
-    local dest="${HOME}/mps/cache/images/base/1.0.0/${arch}.img"
-    [[ ! -f "$dest" ]]
+    local cache_dir="${HOME}/mps/cache/images/base/1.0.0"
+    [[ ! -f "${cache_dir}/${arch}.img" ]]
+    [[ ! -f "${cache_dir}/${arch}.img.part" ]]
+    [[ ! -f "${cache_dir}/${arch}.img.part.sha256" ]]
     rm -f "$fixtures_img" "$fixtures_meta"
     rmdir "$(dirname "$fixtures_img")" 2>/dev/null || true
     rmdir "$(dirname "$(dirname "$fixtures_img")")" 2>/dev/null || true
 }
 
-@test "_mps_pull_image: download failure cleans up and returns error" {
+@test "_mps_pull_image: download failure returns error without creating .img" {
     local arch
     arch="$(mps_detect_arch)"
     local meta_rel="base/2.0.0/${arch}.img.meta.json"
@@ -996,4 +1000,175 @@ EOF
     rm -f "$fixtures_meta"
     rmdir "$(dirname "$fixtures_meta")" 2>/dev/null || true
     rmdir "$(dirname "$(dirname "$fixtures_meta")")" 2>/dev/null || true
+}
+
+# ================================================================
+# Group F: _mps_pull_image interrupted download recovery
+# ================================================================
+
+# -- Resume: .part kept when .part.sha256 matches server (aria2c) --
+
+@test "_mps_pull_image (aria2c): resumes partial download when SHA matches" {
+    if ! command -v aria2c &>/dev/null; then
+        skip "aria2c not available"
+    fi
+    local arch
+    arch="$(mps_detect_arch)"
+    local expected_sha
+    expected_sha="$(_create_pull_fixture "base" "3.0.0" "$arch")"
+    local cache_dir="${HOME}/mps/cache/images/base/3.0.0"
+    mkdir -p "$cache_dir"
+
+    # Seed a .part file and matching .part.sha256 (simulating interrupted download)
+    echo "partial-data" > "${cache_dir}/${arch}.img.part"
+    echo "$expected_sha" > "${cache_dir}/${arch}.img.part.sha256"
+
+    run _mps_pull_image "base" "3.0.0"
+    [[ "$status" -eq 0 ]]
+    [[ -f "${cache_dir}/${arch}.img" ]]
+    # Artifacts cleaned up
+    [[ ! -f "${cache_dir}/${arch}.img.part" ]]
+    [[ ! -f "${cache_dir}/${arch}.img.part.sha256" ]]
+    [[ ! -f "${cache_dir}/${arch}.img.part.aria2" ]]
+}
+
+# -- Resume: .part kept when .part.sha256 matches server (curl) --
+
+@test "_mps_pull_image (curl): resumes partial download when SHA matches" {
+    _force_curl_fallback
+    local arch
+    arch="$(mps_detect_arch)"
+    local expected_sha
+    expected_sha="$(_create_pull_fixture "base" "3.0.0" "$arch")"
+    local cache_dir="${HOME}/mps/cache/images/base/3.0.0"
+    mkdir -p "$cache_dir"
+
+    # Seed a .part file and matching .part.sha256
+    echo "partial-data" > "${cache_dir}/${arch}.img.part"
+    echo "$expected_sha" > "${cache_dir}/${arch}.img.part.sha256"
+
+    run _mps_pull_image "base" "3.0.0"
+    [[ "$status" -eq 0 ]]
+    [[ -f "${cache_dir}/${arch}.img" ]]
+    [[ ! -f "${cache_dir}/${arch}.img.part" ]]
+    [[ ! -f "${cache_dir}/${arch}.img.part.sha256" ]]
+}
+
+# -- Discard: .part deleted when .part.sha256 has stale hash --
+
+@test "_mps_pull_image (aria2c): discards .part when SHA changed on server" {
+    if ! command -v aria2c &>/dev/null; then
+        skip "aria2c not available"
+    fi
+    local arch
+    arch="$(mps_detect_arch)"
+    _create_pull_fixture "base" "3.1.0" "$arch"
+    local cache_dir="${HOME}/mps/cache/images/base/3.1.0"
+    mkdir -p "$cache_dir"
+
+    # Seed .part with a DIFFERENT (old) SHA — should be discarded
+    echo "stale-partial" > "${cache_dir}/${arch}.img.part"
+    echo "0000000000000000000000000000000000000000000000000000000000000000" \
+        > "${cache_dir}/${arch}.img.part.sha256"
+    touch "${cache_dir}/${arch}.img.part.aria2"
+
+    run _mps_pull_image "base" "3.1.0"
+    [[ "$status" -eq 0 ]]
+    [[ -f "${cache_dir}/${arch}.img" ]]
+    [[ ! -f "${cache_dir}/${arch}.img.part" ]]
+    [[ ! -f "${cache_dir}/${arch}.img.part.sha256" ]]
+    [[ ! -f "${cache_dir}/${arch}.img.part.aria2" ]]
+}
+
+@test "_mps_pull_image (curl): discards .part when SHA changed on server" {
+    _force_curl_fallback
+    local arch
+    arch="$(mps_detect_arch)"
+    _create_pull_fixture "base" "3.1.0" "$arch"
+    local cache_dir="${HOME}/mps/cache/images/base/3.1.0"
+    mkdir -p "$cache_dir"
+
+    echo "stale-partial" > "${cache_dir}/${arch}.img.part"
+    echo "0000000000000000000000000000000000000000000000000000000000000000" \
+        > "${cache_dir}/${arch}.img.part.sha256"
+
+    run _mps_pull_image "base" "3.1.0"
+    [[ "$status" -eq 0 ]]
+    [[ -f "${cache_dir}/${arch}.img" ]]
+    [[ ! -f "${cache_dir}/${arch}.img.part" ]]
+    [[ ! -f "${cache_dir}/${arch}.img.part.sha256" ]]
+}
+
+# -- Discard: .part deleted when no .part.sha256 sidecar --
+
+@test "_mps_pull_image: discards .part when no .part.sha256 sidecar exists" {
+    local arch
+    arch="$(mps_detect_arch)"
+    _create_pull_fixture "base" "3.2.0" "$arch"
+    local cache_dir="${HOME}/mps/cache/images/base/3.2.0"
+    mkdir -p "$cache_dir"
+
+    # .part exists but no .part.sha256 — cannot verify, must discard
+    echo "orphan-partial" > "${cache_dir}/${arch}.img.part"
+
+    run _mps_pull_image "base" "3.2.0"
+    [[ "$status" -eq 0 ]]
+    [[ -f "${cache_dir}/${arch}.img" ]]
+    [[ ! -f "${cache_dir}/${arch}.img.part" ]]
+}
+
+# -- Download failure preserves .part for future resume --
+
+@test "_mps_pull_image: download failure preserves .part and .part.sha256 for resume" {
+    local arch
+    arch="$(mps_detect_arch)"
+    local expected_sha
+    expected_sha="$(_create_pull_fixture "base" "3.3.0" "$arch")"
+    local cache_dir="${HOME}/mps/cache/images/base/3.3.0"
+
+    _mps_download_file() { echo "partial" > "$2"; return 1; }
+    export -f _mps_download_file
+    run _mps_pull_image "base" "3.3.0"
+    [[ "$status" -ne 0 ]]
+    [[ "$output" == *"Failed to download"* ]]
+    # No .img created
+    [[ ! -f "${cache_dir}/${arch}.img" ]]
+    # .part.sha256 preserved for resume
+    [[ -f "${cache_dir}/${arch}.img.part.sha256" ]]
+    local stored
+    stored="$(cat "${cache_dir}/${arch}.img.part.sha256")"
+    [[ "$stored" == "$expected_sha" ]]
+}
+
+# -- Successful pull leaves no download artifacts --
+
+@test "_mps_pull_image (aria2c): successful pull leaves no .part artifacts" {
+    if ! command -v aria2c &>/dev/null; then
+        skip "aria2c not available"
+    fi
+    local arch
+    arch="$(mps_detect_arch)"
+    _create_pull_fixture "base" "3.4.0" "$arch"
+
+    run _mps_pull_image "base" "3.4.0"
+    [[ "$status" -eq 0 ]]
+    local cache_dir="${HOME}/mps/cache/images/base/3.4.0"
+    [[ -f "${cache_dir}/${arch}.img" ]]
+    [[ ! -f "${cache_dir}/${arch}.img.part" ]]
+    [[ ! -f "${cache_dir}/${arch}.img.part.sha256" ]]
+    [[ ! -f "${cache_dir}/${arch}.img.part.aria2" ]]
+}
+
+@test "_mps_pull_image (curl): successful pull leaves no .part artifacts" {
+    _force_curl_fallback
+    local arch
+    arch="$(mps_detect_arch)"
+    _create_pull_fixture "base" "3.4.0" "$arch"
+
+    run _mps_pull_image "base" "3.4.0"
+    [[ "$status" -eq 0 ]]
+    local cache_dir="${HOME}/mps/cache/images/base/3.4.0"
+    [[ -f "${cache_dir}/${arch}.img" ]]
+    [[ ! -f "${cache_dir}/${arch}.img.part" ]]
+    [[ ! -f "${cache_dir}/${arch}.img.part.sha256" ]]
 }

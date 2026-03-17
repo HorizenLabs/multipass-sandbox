@@ -24,11 +24,15 @@ _mps_md5() {
 # ---------- Download Helper ----------
 # Uses aria2c for multi-connection downloads when available, falls back to curl
 
+_mps_has_aria2c() {
+    command -v aria2c &>/dev/null
+}
+
 _mps_download_file() {
     local url="$1"
     local dest="$2"
 
-    if command -v aria2c &>/dev/null; then
+    if _mps_has_aria2c; then
         aria2c -x 8 -s 8 \
             --file-allocation=none \
             --allow-overwrite=true \
