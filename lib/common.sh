@@ -568,15 +568,37 @@ _mps_pull_image() {
     }
     expected_sha256="$(echo "$meta_json" | jq -r '.sha256 // empty')"
 
-    # Download
+    # Download to .part file — atomic rename after verification prevents
+    # interrupted downloads from leaving corrupt .img files in the cache.
+    # A .part.sha256 sidecar records the expected hash so that aria2c can
+    # resume a previous partial download when the server image hasn't changed.
     local cache_dir
     cache_dir="$(mps_cache_dir)/images/${image_name}/${image_version}"
     mkdir -p "$cache_dir"
     local dest_file="${cache_dir}/${arch}.img"
+    local part_file="${dest_file}.part"
+    local part_sha_file="${part_file}.sha256"
+
+    # Decide whether a leftover .part file can be resumed or must be discarded.
+    if [[ -f "$part_file" ]]; then
+        local stored_sha256=""
+        if [[ -f "$part_sha_file" ]]; then
+            stored_sha256="$(cat "$part_sha_file")"
+        fi
+        if [[ -z "$expected_sha256" ]] || [[ "$stored_sha256" != "$expected_sha256" ]]; then
+            # Server image changed or no checksum — discard partial download
+            rm -f "$part_file" "${part_file}.aria2" "$part_sha_file"
+        fi
+    fi
+
+    # Record expected SHA256 so a future interrupted retry can resume safely
+    if [[ -n "$expected_sha256" ]]; then
+        echo "$expected_sha256" > "$part_sha_file"
+    fi
 
     mps_log_info "Downloading ${image_name}:${image_version} (${arch})..."
-    if ! _mps_download_file "$full_url" "$dest_file"; then
-        rm -f "$dest_file"
+    if ! _mps_download_file "$full_url" "$part_file"; then
+        # Leave .part + .part.sha256 intact so aria2c can resume next time.
         mps_log_error "Failed to download image from ${full_url}"
         return 1
     fi
@@ -585,14 +607,18 @@ _mps_pull_image() {
     if [[ -n "$expected_sha256" ]]; then
         mps_log_info "Verifying checksum..."
         local actual_sha256
-        actual_sha256="$(_mps_sha256 "$dest_file" | cut -d' ' -f1)"
+        actual_sha256="$(_mps_sha256 "$part_file" | cut -d' ' -f1)"
         if [[ "$actual_sha256" != "$expected_sha256" ]]; then
-            rm -f "$dest_file"
+            rm -f "$part_file" "${part_file}.aria2" "$part_sha_file"
             mps_log_error "Checksum mismatch! Expected: ${expected_sha256}, Got: ${actual_sha256}"
             return 1
         fi
         mps_log_info "Checksum verified."
     fi
+
+    # Atomic rename — only now does the .img file appear in the cache
+    mv -f "$part_file" "$dest_file"
+    rm -f "$part_sha_file" "${part_file}.aria2"
 
     # Save remote .meta.json verbatim — enables HEAD -z staleness checks.
     # File mtime (set to "now" by this write) is the reference for subsequent checks.
