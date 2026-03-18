@@ -75,6 +75,27 @@ teardown() { teardown_home_override; }
     run cmd_list
     [[ "$status" -eq 0 ]]
     [[ "$output" == *"IMAGE"* ]]
+    # No metadata → falls back to Multipass release
+    [[ "$output" == *"Ubuntu 24.04 LTS"* ]]
+}
+
+@test "cmd_list: shows mps image label from metadata" {
+    mkdir -p "${HOME}/mps/instances"
+    cat > "${HOME}/mps/instances/fixture-primary.json" <<'METAJSON'
+{"image":{"name":"base","version":"1.0.1","source":"pulled"}}
+METAJSON
+    run cmd_list
+    [[ "$status" -eq 0 ]]
+    [[ "$output" == *"base:1.0.1"* ]]
+}
+
+@test "cmd_list: falls back to multipass release for stock images" {
+    mkdir -p "${HOME}/mps/instances"
+    cat > "${HOME}/mps/instances/fixture-primary.json" <<'METAJSON'
+{"image":{"name":"24.04","source":"stock"}}
+METAJSON
+    run cmd_list
+    [[ "$status" -eq 0 ]]
     [[ "$output" == *"Ubuntu 24.04 LTS"* ]]
 }
 
@@ -102,13 +123,26 @@ teardown() { teardown_home_override; }
     [[ "$state" == "Running" ]]
 }
 
-@test "cmd_status: shows image info with hash prefix" {
+@test "cmd_status: shows image info with hash prefix for stock images" {
     run cmd_status --name fixture-primary
     [[ "$status" -eq 0 ]]
     [[ "$output" == *"Image:"* ]]
+    # No metadata → falls back to Multipass release with hash
     [[ "$output" == *"24.04 LTS"* ]]
-    # Hash prefix: first 12 chars of 2f9acc20a381...
     [[ "$output" == *"2f9acc20a381"* ]]
+}
+
+@test "cmd_status: shows mps image label without hash" {
+    mkdir -p "${HOME}/mps/instances"
+    cat > "${HOME}/mps/instances/fixture-primary.json" <<'METAJSON'
+{"image":{"name":"base","version":"1.0.1","source":"pulled"}}
+METAJSON
+    run cmd_status --name fixture-primary
+    [[ "$status" -eq 0 ]]
+    [[ "$output" == *"Image:"* ]]
+    [[ "$output" == *"base:1.0.1"* ]]
+    # Hash should NOT appear for mps images
+    [[ "$output" != *"2f9acc20a381"* ]]
 }
 
 @test "cmd_status: shows 'up-to-date' for up-to-date instance" {

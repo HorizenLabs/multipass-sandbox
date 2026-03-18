@@ -1199,6 +1199,38 @@ _mps_cli_update_warn() {
 
 # ---------- Metadata Helpers ----------
 
+# Build a display label for an instance's image from mps metadata.
+# Falls back to the Multipass release string for stock or unknown images.
+# Usage: _mps_image_display_label <short_name> <mp_release>
+# Output: "base:1.0.0" (mps image) or "Ubuntu 24.04 LTS" (stock/fallback)
+_mps_image_display_label() {
+    local short_name="$1"
+    local mp_release="$2"
+
+    local meta_file
+    meta_file="$(mps_instance_meta "$short_name")"
+
+    if [[ -f "$meta_file" ]]; then
+        local img_name img_source
+        img_name="$(_mps_read_meta_json "$meta_file" '.image.name')"
+        img_source="$(_mps_read_meta_json "$meta_file" '.image.source')"
+
+        if [[ -n "$img_name" && "$img_source" != "stock" ]]; then
+            local img_version
+            img_version="$(_mps_read_meta_json "$meta_file" '.image.version')"
+            if [[ -n "$img_version" ]]; then
+                echo "${img_name}:${img_version}"
+            else
+                echo "$img_name"
+            fi
+            return 0
+        fi
+    fi
+
+    # Fallback: Multipass release string
+    echo "$mp_release"
+}
+
 # Read a value from a JSON file using a jq expression.
 # Returns empty string on missing file, missing key, or jq error.
 _mps_read_meta_json() {
