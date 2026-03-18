@@ -29,15 +29,26 @@ Steps:
 5. Coverage PR comment — `zgosalvez/github-actions-report-lcov@v4` posts/updates a coverage summary comment on PRs (`GITHUB_TOKEN`, `minimum-coverage: 90`, `update-comment: true`). PR events only.
 6. Upload `coverage/` directory as artifact (30-day retention)
 
-### Job: `changes` (PR only, no checkout)
+### Job: `changes` (always runs)
 Runner: `warp-ubuntu-latest-x64-2x` — Environment: *(none)*
 
-Detects whether the PR touches `templates/cloud-init/` via the GitHub API (`gh api .../pulls/{number}/files`). No checkout needed — uses only the API. Outputs `needs_e2e` boolean for the `e2e` job. Note: `vendor/` changes are not included — the marketplace is baked into the image at build time, so vendor renames can only be validated by `images.yml` which builds a fresh image.
+Detects whether the commit(s) include e2e-affecting changes. Runs on both push and PR events. Uses `tests/ci-detect-e2e.sh` which:
+1. Runs `tests/e2e-image-drift.sh` — compares HEAD against the latest `images/v*` tag for image-affecting paths (`images/layers/`, `images/scripts/`, `images/build.sh`, `images/packer.pkr.hcl`, `images/packer-user-data.pkrtpl.hcl`, `images/arch-config.sh`, `vendor/`)
+2. Checks for `templates/cloud-init/` changes (via `gh api` for PRs, `git diff` for pushes)
+
+Outputs:
+- `needs_e2e` — true if any e2e-triggering change detected (cloud-init OR image drift)
+- `needs_image_build` — true if image-affecting files changed (requires local image build)
+
+### Job: `build-and-e2e` (conditional, needs: lint-and-test + changes)
+Runner: `warp-ubuntu-latest-x64-4x` — Environment: `build`
+
+Runs when `needs_image_build == true` AND the event is a push to main or a same-repo PR (checked via `github.event.pull_request.head.repo.full_name == github.repository`). Fork PRs are excluded — they don't get `build` environment secrets. Checks out with submodules (uses `SUBMODULE_DEPLOY_KEY`), builds the base image locally via `make image-base-amd64`, then runs E2E against the local artifact with `MPS_E2E_IMAGE`.
 
 ### Job: `e2e` (conditional, needs: lint-and-test + changes)
 Runner: `warp-ubuntu-latest-x64-2x` — Environment: *(none)*
 
-Only runs when `changes.needs_e2e == true`. No submodules, no secrets — E2E pulls the base image from the public CDN registry. Uses `MPS_E2E_INSTALL=true` to install multipass+jq on the runner (same pattern as `release.yml`). Validates that cloud-init templates and plugin install commands work against the current published image.
+Runs when `needs_e2e == true` AND `needs_image_build != true` (CDN image is sufficient). No submodules, no secrets — E2E pulls the base image from the public CDN registry. Uses `MPS_E2E_INSTALL=true` to install multipass+jq on the runner. Validates that cloud-init templates work against the current published image.
 
 ## Workflow 2: `images.yml` — Build + Publish
 
@@ -142,21 +153,26 @@ Each job in `images.yml` has a final `if: always() && !success()` step that post
 ## Workflow 3: `release.yml` — Tool Release
 
 **Trigger**: `mps/v*` tag push
-**Runner**: `warp-ubuntu-latest-x64-2x`
+**Runner**: `warp-ubuntu-latest-x64-4x`
 **Permissions**: `contents: write`
 
 ### Job: `release`
-Runner: `warp-ubuntu-latest-x64-2x`
+Runner: `warp-ubuntu-latest-x64-4x`
 Environment: `publish`
 
 Steps:
-1. Checkout (no submodules)
+1. Checkout with full history and tags (`fetch-depth: 0`, `fetch-tags: true`)
 2. **Verify GPG-signed tag** (same logic as images.yml — uses `MAINTAINER_KEYS` variable, keyserver fallback chain)
-3. Validate tag version matches `VERSION` file
-4. Validate required secrets (B2 + CF via `_validate_required_vars`)
-5. `make lint` + `make test` (skip if no tests)
-6. Create GitHub Release via `softprops/action-gh-release@v2` with `install.sh`, `install.ps1`, `VERSION`
-7. `make publish-release-meta VERSION=<version>` — resolves `git rev-parse mps/v<version>^0` on host, runs `images/publish-release-meta.sh` inside publisher container (generates `mps-release.json`, uploads to B2, cleans old versions, purges CF cache)
+3. Snap confinement preflight
+4. Validate tag version matches `VERSION` file
+5. Validate required secrets (B2 + CF via `_validate_required_vars`)
+6. **Detect image drift** — runs `tests/e2e-image-drift.sh` to check if image-affecting files changed since the latest `images/v*` tag
+7. **Conditional local image build** — if drift detected: configure SSH deploy key, init submodules, check KVM, `make image-base-amd64`. Requires `SUBMODULE_DEPLOY_KEY` in the `publish` environment.
+8. `make lint` + `make test`
+9. E2E test — uses `MPS_E2E_IMAGE` (local artifact) when image was built, otherwise pulls from CDN
+10. Coverage aggregation + upload
+11. Create GitHub Release via `softprops/action-gh-release@v2` with `install.sh`, `install.ps1`, `VERSION`
+12. `make publish-release-meta VERSION=<version>` — resolves `git rev-parse mps/v<version>^0` on host, runs `images/publish-release-meta.sh` inside publisher container (generates `mps-release.json`, uploads to B2, cleans old versions, purges CF cache)
 
 **`mps-release.json` format:**
 ```json
@@ -226,6 +242,7 @@ Clients fetch this file (at most once per 24h) to compare against the local `VER
 | `B2_APPLICATION_KEY` | Backblaze B2 key secret |
 | `CF_ZONE_ID` | Cloudflare zone ID for `horizenlabs.io` |
 | `CF_API_TOKEN` | Cloudflare API token with Zone Cache Purge permission |
+| `SUBMODULE_DEPLOY_KEY` | SSH private key for `HorizenLabs/hl-claude-marketplace` (conditional image build in release.yml) |
 
 ### Environment: `submodule` (used by `update-submodule` job in update-submodule.yml)
 
@@ -240,7 +257,8 @@ Clients fetch this file (at most once per 24h) to compare against the local `VER
 | Workflow | Job | Environment | Secrets Accessible |
 |---|---|---|---|
 | `ci.yml` | `lint-and-test` | *(none)* | SLACK_WEBHOOK_URL, GITHUB_TOKEN (auto, PR comments) |
-| `ci.yml` | `changes` | *(none)* | GITHUB_TOKEN (auto, PR file list) |
+| `ci.yml` | `changes` | *(none)* | GITHUB_TOKEN (auto, PR file list + git diff) |
+| `ci.yml` | `build-and-e2e` | `build` | SUBMODULE_DEPLOY_KEY, GITHUB_TOKEN |
 | `ci.yml` | `e2e` | *(none)* | GITHUB_TOKEN (auto) |
 | `images.yml` | `resolve` | *(none)* | SLACK_WEBHOOK_URL + MAINTAINER_KEYS var |
 | `images.yml` | `build-amd64` | `build` | B2, CF, deploy key, SLACK_WEBHOOK_URL |
@@ -270,6 +288,24 @@ rm mps-submodule-deploy-key mps-submodule-deploy-key.pub
 
 ## E2E Test Integration
 
+### Image Drift Detection (`tests/e2e-image-drift.sh`)
+
+Compares HEAD against the latest `images/v*` tag. If any image-affecting paths changed, outputs `true` — the e2e must build a local image rather than pulling from CDN. Image-affecting paths: `images/layers/`, `images/scripts/`, `images/build.sh`, `images/packer.pkr.hcl`, `images/packer-user-data.pkrtpl.hcl`, `images/arch-config.sh`, `vendor/`.
+
+`templates/cloud-init/` is NOT considered image drift — these are VM launch templates, not baked image content. Cloud-init changes trigger the CDN-image e2e job.
+
+Called by `tests/ci-detect-e2e.sh` (ci.yml `changes` job wrapper) and directly by release.yml.
+
+### CI Change Detection (`tests/ci-detect-e2e.sh`)
+
+Wrapper for the ci.yml `changes` job. Handles both push and PR event types:
+1. Runs `e2e-image-drift.sh` for image drift → sets `needs_image_build`
+2. For PRs: checks PR files via `gh api` for `templates/cloud-init/` changes
+3. For pushes: checks `git diff $BEFORE_SHA..HEAD` for `templates/cloud-init/` changes
+4. `needs_e2e = cloud_init_changed OR needs_image_build`
+
+Security: fork PRs with image drift get `needs_image_build=true` but the `build-and-e2e` job won't run (gates on same-repo origin). Same-repo PRs (e.g., submodule bot) get the full local-build e2e via the `build` environment.
+
 ### Snap Confinement Preflight (`tests/ci-preflight.sh`)
 
 Fail-fast script that runs early in both `release.yml` and `images.yml` (amd64 job), before any substantive work. Checks:
@@ -281,10 +317,12 @@ Bash 3.2-compatible (auto-linted via `CLIENT_SCRIPTS` discovery).
 
 ### `release.yml` — E2E Gate
 
-After `make test` (unit + integration with coverage), before "Create GitHub Release":
-1. `MPS_E2E_INSTALL=true make test-e2e` — runs full E2E lifecycle using pull-from-registry flow. `MPS_E2E_INSTALL=true` exercises `install.sh`/`uninstall.sh` bookends, also installing multipass+jq as a dependency check.
-2. `make test-e2e-report` — merges coverage from all three tiers (unit/integration/e2e) into `coverage/lcov.info` + `coverage/summary.md`, enforcing 90% aggregate threshold.
-3. Coverage summary appended to `$GITHUB_STEP_SUMMARY`; artifacts uploaded (30-day retention).
+After validation and before "Create GitHub Release":
+1. **Detect image drift** — `tests/e2e-image-drift.sh` checks if image-affecting files changed since latest `images/v*` tag
+2. **Conditional local build** — if drift detected: SSH deploy key setup, submodule init, KVM check, `make image-base-amd64`
+3. `MPS_E2E_INSTALL=true make test-e2e` — uses local artifact (`MPS_E2E_IMAGE`) when available, otherwise pulls from CDN
+4. `make test-e2e-report` — merges coverage from all three tiers (unit/integration/e2e) into `coverage/lcov.info` + `coverage/summary.md`, enforcing 90% aggregate threshold.
+5. Coverage summary appended to `$GITHUB_STEP_SUMMARY`; artifacts uploaded (30-day retention).
 
 No PR comment step — releases are tag-triggered, not PRs.
 
