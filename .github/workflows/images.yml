@@ -33,7 +33,7 @@ jobs:
       flavors_json: ${{ steps.flavors.outputs.flavors_json }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
           fetch-tags: true
@@ -112,7 +112,7 @@ jobs:
     timeout-minutes: 240
     steps:
       - name: Checkout at tag
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ needs.resolve.outputs.tag }}
 
@@ -297,7 +297,7 @@ jobs:
         flavor: ${{ fromJson(needs.resolve.outputs.flavors_json) }}
     steps:
       - name: Checkout at tag
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ needs.resolve.outputs.tag }}
 
@@ -410,7 +410,7 @@ jobs:
     environment: publish
     steps:
       - name: Checkout at tag
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ needs.resolve.outputs.tag }}
 

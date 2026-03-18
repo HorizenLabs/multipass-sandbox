@@ -20,7 +20,7 @@ jobs:
     runs-on: warp-ubuntu-latest-x64-2x
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Lint
         run: make lint
@@ -89,7 +89,7 @@ jobs:
     runs-on: warp-ubuntu-latest-x64-2x
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Snap confinement preflight
         run: bash tests/ci-preflight.sh

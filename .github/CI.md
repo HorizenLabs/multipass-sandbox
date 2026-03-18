@@ -22,7 +22,7 @@ The mpsandbox project uses a fully containerized build system (Makefile + Docker
 Runner: `warp-ubuntu-latest-x64-2x` — Environment: *(none)*
 
 Steps:
-1. `actions/checkout@v4` (no submodules — lint/test don't need them)
+1. `actions/checkout@v6` (no submodules — lint/test don't need them)
 2. `make lint` (builds linter Docker image automatically via stamp dep)
 3. `make test` (runs all tests with coverage; enforces 90% minimum threshold via `coverage-report.sh`)
 4. Coverage job summary — appends `coverage/summary.md` to `$GITHUB_STEP_SUMMARY` (all events)
