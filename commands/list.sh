@@ -70,6 +70,9 @@ cmd_list() {
         local short_name
         short_name="$(mps_short_name "$full_name")"
 
+        # Resolve image label from mps metadata (falls back to Multipass release)
+        image="$(_mps_image_display_label "$short_name" "$image")"
+
         # Use em dash for missing IP
         if [[ -z "$ipv4" ]]; then
             ipv4="\u2014"

@@ -3,7 +3,8 @@
 #   _mps_read_meta_json, _mps_write_json, mps_instance_meta, mps_image_meta,
 #   mps_state_dir, mps_cache_dir, mps_resolve_cloud_init,
 #   mps_check_image_requirements, _mps_resolve_latest_version,
-#   mps_save_instance_meta, mps_resolve_workdir, _mps_read_cached_manifest
+#   mps_save_instance_meta, mps_resolve_workdir, _mps_read_cached_manifest,
+#   _mps_image_display_label
 
 load ../test_helper
 
@@ -492,4 +493,58 @@ teardown() { teardown_home_override; }
     echo '{"workdir":"/from/metadata"}' > "$meta_file"
     result="$(mps_resolve_workdir "mps-test" "/from/argument")"
     [[ "$result" == "/from/argument" ]]
+}
+
+# ================================================================
+# _mps_image_display_label
+# ================================================================
+
+@test "_mps_image_display_label: returns name:version for pulled image" {
+    local meta_file
+    meta_file="$(mps_instance_meta "testinst")"
+    mkdir -p "$(dirname "$meta_file")"
+    echo '{"image":{"name":"base","version":"1.0.0","source":"pulled"}}' > "$meta_file"
+    result="$(_mps_image_display_label "testinst" "Ubuntu 24.04 LTS")"
+    [[ "$result" == "base:1.0.0" ]]
+}
+
+@test "_mps_image_display_label: returns name:version for imported image" {
+    local meta_file
+    meta_file="$(mps_instance_meta "testinst")"
+    mkdir -p "$(dirname "$meta_file")"
+    echo '{"image":{"name":"base","version":"2.0.0","source":"imported"}}' > "$meta_file"
+    result="$(_mps_image_display_label "testinst" "Ubuntu 24.04 LTS")"
+    [[ "$result" == "base:2.0.0" ]]
+}
+
+@test "_mps_image_display_label: returns multipass release for stock image" {
+    local meta_file
+    meta_file="$(mps_instance_meta "testinst")"
+    mkdir -p "$(dirname "$meta_file")"
+    echo '{"image":{"name":"24.04","source":"stock"}}' > "$meta_file"
+    result="$(_mps_image_display_label "testinst" "Ubuntu 24.04 LTS")"
+    [[ "$result" == "Ubuntu 24.04 LTS" ]]
+}
+
+@test "_mps_image_display_label: returns multipass release when no metadata" {
+    result="$(_mps_image_display_label "nonexistent-inst" "Ubuntu 24.04 LTS")"
+    [[ "$result" == "Ubuntu 24.04 LTS" ]]
+}
+
+@test "_mps_image_display_label: returns name only when version is empty" {
+    local meta_file
+    meta_file="$(mps_instance_meta "testinst")"
+    mkdir -p "$(dirname "$meta_file")"
+    echo '{"image":{"name":"base","version":null,"source":"pulled"}}' > "$meta_file"
+    result="$(_mps_image_display_label "testinst" "")"
+    [[ "$result" == "base" ]]
+}
+
+@test "_mps_image_display_label: returns fallback when both empty" {
+    local meta_file
+    meta_file="$(mps_instance_meta "testinst")"
+    mkdir -p "$(dirname "$meta_file")"
+    echo '{"image":null}' > "$meta_file"
+    result="$(_mps_image_display_label "testinst" "")"
+    [[ -z "$result" ]]
 }

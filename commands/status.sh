@@ -143,12 +143,20 @@ cmd_status() {
     local short_name
     short_name="$(mps_short_name "$instance_name")"
 
-    if [[ -n "$image" ]]; then
-        local image_info="$image"
-        if [[ -n "$image_hash" ]]; then
-            image_info="${image} (${image_hash:0:12})"
+    local image_display
+    image_display="$(_mps_image_display_label "$short_name" "$image")"
+    if [[ -n "$image_display" ]]; then
+        # For stock/unknown images, append the Multipass hash; for mps images the version is sufficient
+        local img_source_check=""
+        local meta_file_check
+        meta_file_check="$(mps_instance_meta "$short_name")"
+        if [[ -f "$meta_file_check" ]]; then
+            img_source_check="$(_mps_read_meta_json "$meta_file_check" '.image.source')"
         fi
-        printf "  ${_color_bold}%-16s${_color_reset} %s\n" "Image:" "$image_info"
+        if [[ "$img_source_check" == "stock" || -z "$img_source_check" ]] && [[ -n "$image_hash" ]]; then
+            image_display="${image_display} (${image_hash:0:12})"
+        fi
+        printf "  ${_color_bold}%-16s${_color_reset} %s\n" "Image:" "$image_display"
     fi
 
     # ---- Image Status ----

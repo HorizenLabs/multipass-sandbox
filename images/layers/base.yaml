@@ -44,6 +44,8 @@ packages:
   - nano
   - zsh
   - screen
+  # Snap / mount support
+  - snapd
   # Python
   - python3
   - python3-venv
@@ -144,5 +146,11 @@ runcmd:
       export PATH="$HOME/.bun/bin:$PATH"
       bun install -g @charmland/crush opencode-ai @google/gemini-cli @openai/codex
     '
+
+  # ---------- multipass-sshfs (mount support for multipass) ----------
+  - |
+    systemctl enable snapd.socket
+    snap wait system seed.loaded
+    snap install multipass-sshfs
 
 final_message: "MPS base image provisioning complete."

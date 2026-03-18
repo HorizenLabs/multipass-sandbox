@@ -199,6 +199,7 @@ _run_install() {
     _hide_cmds=(multipass)
     source "$INSTALL_SCRIPT"
     OS=linux
+    snapd_running() { return 0; }
     confirm() { return 0; }
     run install_dependency "multipass"
     [[ "$status" -eq 0 ]]
@@ -211,9 +212,22 @@ _run_install() {
     _hide_cmds=(multipass)
     source "$INSTALL_SCRIPT"
     OS=linux
+    snapd_running() { return 0; }
     confirm() { return 1; }
     run install_dependency "multipass"
     [[ "$status" -eq 1 ]]
+}
+
+@test "install: install_dependency multipass missing linux+snap but snapd not running" {
+    export PATH="${stubs_dir}:${PATH}"
+    _hide_cmds=(multipass)
+    source "$INSTALL_SCRIPT"
+    OS=linux
+    snapd_running() { return 1; }
+    run install_dependency "multipass"
+    [[ "$status" -eq 1 ]]
+    [[ "$output" == *"snapd is installed but its socket is not available"* ]]
+    [[ "$output" == *"systemctl"* ]]
 }
 
 @test "install: install_dependency multipass missing linux no snap warns" {

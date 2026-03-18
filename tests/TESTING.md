@@ -179,7 +179,7 @@ not just BATS. E2E scripts get coverage for free by exporting the same env vars.
 | `_mps_sha256` | `common_utils.bats` | Hash file, includes filename, stdin, different content, 64 hex chars |
 | `_mps_md5` | `common_utils.bats` | Hash file, includes filename, 32 hex chars, different content |
 | `mps_require_cmd` | `common_utils.bats` | Existing cmd, silent success, missing cmd, multipass message, jq message, generic message |
-| `_mps_download_file` | `network.bats` | aria2c path (3 tests), curl fallback (3 tests), -d/-o flag correctness (1 test) |
+| `_mps_download_file` | `network.bats` | aria2c path (3 tests), curl fallback (3 tests), -d/-o flag correctness (1 test), curl --progress-bar flag (1 test) |
 | `_mps_remote_is_fresh` | `network.bats` | 304 fresh, 200 stale, missing ref, unreachable server |
 | `_mps_remote_fetch` | `network.bats` | First fetch, 304 cache hit, 200 update, network failure ± cache, mkdir |
 | `_mps_fetch_manifest` | `network.bats` | Fetch, empty URL, cache file, cached fallback |
@@ -193,7 +193,7 @@ not just BATS. E2E scripts get coverage for free by exporting the same env vars.
 | `mps_require_exists` | Integration | Calls `mp_instance_exists` (mocked multipass) |
 | `mps_require_running` | Integration | Calls `mp_instance_state` (mocked multipass) |
 | `mps_resolve_image` | Integration | Filesystem + auto-pull + arch detection |
-| `_mps_pull_image` | Integration | Network (manifest + download + checksum) |
+| `_mps_pull_image` | Integration | Network (manifest + download + checksum), interrupted download recovery (resume matching SHA, discard stale SHA, discard missing sidecar, failure preserves .part, clean artifacts) |
 | `_mps_resolve_project_mounts` | Integration | Metadata + config file parsing |
 | `mps_prepare_running_instance` | E2E | require_running + staleness + port forwards |
 | `mps_confirm` | Skip | Interactive stdin — not automatable |
@@ -245,7 +245,8 @@ fixture files on localhost. Tests both aria2c and curl download paths, HTTP cond
 |----------|-----------|-------|
 | `_mps_remote_is_fresh` | `network.bats` | 304 fresh, 200 stale, missing ref, unreachable |
 | `_mps_remote_fetch` | `network.bats` | First fetch, 304 cache, 200 update, failure ± cache, mkdir |
-| `_mps_download_file` | `network.bats` | aria2c (3), curl fallback (3), `-d`/`-o` flag (1) |
+| `_mps_download_file` | `network.bats` | aria2c (3), curl fallback (3), `-d`/`-o` flag (1), `--progress-bar` (1) |
+| `_mps_pull_image` | `network.bats` | Error paths (4), interrupted download recovery: resume/discard/preserve (10) |
 | `_mps_fetch_manifest` | `network.bats` | Fetch, empty URL, cache, cached fallback |
 | `_mps_check_image_staleness` | `network.bats` | up-to-date, stale, update, 304 fast, non-SemVer, no meta, manifest fallback |
 | `_mps_warn_image_staleness` | `network.bats` | Rebuild, update, silent (fresh/opt-out/non-SemVer) |

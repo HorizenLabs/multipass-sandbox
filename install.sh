@@ -23,6 +23,10 @@ detect_os() {
     esac
 }
 
+snapd_running() {
+    [[ -S /run/snapd.socket ]]
+}
+
 confirm() {
     local prompt="${1:-Are you sure?}"
     local response
@@ -50,12 +54,25 @@ install_dependency() {
     case "${cmd}:${OS}" in
         multipass:linux)
             if command -v snap &>/dev/null; then
+                if ! snapd_running; then
+                    warn "  snapd is installed but its socket is not available."
+                    warn "  Start the snapd service first:"
+                    warn "    sudo apt-get update && sudo apt-get install -y snapd"
+                    warn "    sudo systemctl unmask snapd.service"
+                    warn "    sudo systemctl enable --now snapd.service"
+                    warn "  Then re-run this installer."
+                    return 1
+                fi
                 if confirm "  Install $cmd via snap?"; then
                     sudo snap install multipass
                     return $?
                 fi
             else
-                warn "  snap not found. Install multipass manually:"
+                warn "  snap not found. Install snapd and multipass:"
+                warn "    sudo apt-get update && sudo apt-get install -y snapd"
+                warn "    sudo systemctl enable --now snapd.service"
+                warn "    sudo snap install multipass"
+                warn "  Or install multipass manually:"
                 warn "    https://github.com/canonical/multipass/releases"
             fi
             return 1
