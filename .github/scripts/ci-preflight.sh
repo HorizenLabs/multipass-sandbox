@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# tests/ci-preflight.sh — Snap confinement preflight for CI runners
+# .github/scripts/ci-preflight.sh — Snap confinement preflight for CI runners
 #
 # Fail-fast check ensuring the runner has strict snap confinement.
 # Run early in both images.yml and release.yml before substantive work.

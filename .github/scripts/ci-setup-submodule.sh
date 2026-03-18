@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# tests/ci-setup-submodule.sh — Configure SSH deploy key, init and verify submodule
+# .github/scripts/ci-setup-submodule.sh — Configure SSH deploy key, init and verify submodule
 #
 # Expects DEPLOY_KEY environment variable with the SSH private key.
 # Configures SSH, rewrites the HTTPS submodule URL to SSH, initializes
 # the submodule, and verifies it was checked out correctly.
 #
 # Usage (in CI):
-#   DEPLOY_KEY="${{ secrets.SUBMODULE_DEPLOY_KEY }}" bash tests/ci-setup-submodule.sh
+#   DEPLOY_KEY="${{ secrets.SUBMODULE_DEPLOY_KEY }}" bash .github/scripts/ci-setup-submodule.sh
 
 set -euo pipefail
 

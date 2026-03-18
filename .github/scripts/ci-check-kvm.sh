@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# tests/ci-check-kvm.sh — Load KVM module if available, warn if not
+# .github/scripts/ci-check-kvm.sh — Load KVM module if available, warn if not
 #
 # Attempts to modprobe kvm. KVM accelerates QEMU image builds
 # significantly; without it, builds fall back to TCG emulation (slower).
 #
 # Usage (in CI):
-#   bash tests/ci-check-kvm.sh
+#   bash .github/scripts/ci-check-kvm.sh
 
 set -euo pipefail
 

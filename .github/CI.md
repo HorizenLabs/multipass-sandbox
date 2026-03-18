@@ -32,8 +32,8 @@ Steps:
 ### Job: `changes` (always runs)
 Runner: `warp-ubuntu-latest-x64-2x` — Environment: *(none)*
 
-Detects whether the commit(s) include e2e-affecting changes. Runs on both push and PR events. Uses `tests/ci-detect-e2e.sh` which:
-1. Runs `tests/e2e-image-drift.sh` — compares HEAD against the latest `images/v*` tag for image-affecting paths (`images/layers/`, `images/scripts/`, `images/build.sh`, `images/packer.pkr.hcl`, `images/packer-user-data.pkrtpl.hcl`, `images/arch-config.sh`, `vendor/`)
+Detects whether the commit(s) include e2e-affecting changes. Runs on both push and PR events. Uses `.github/scripts/ci-detect-e2e.sh` which:
+1. Runs `.github/scripts/e2e-image-drift.sh` — compares HEAD against the latest `images/v*` tag for image-affecting paths (`images/layers/`, `images/scripts/`, `images/build.sh`, `images/packer.pkr.hcl`, `images/packer-user-data.pkrtpl.hcl`, `images/arch-config.sh`, `vendor/`)
 2. Checks for `templates/cloud-init/` changes (via `gh api` for PRs, `git diff` for pushes)
 
 Outputs:
@@ -166,7 +166,7 @@ Steps:
 3. Snap confinement preflight
 4. Validate tag version matches `VERSION` file
 5. Validate required secrets (B2 + CF via `_validate_required_vars`)
-6. **Detect image drift** — runs `tests/e2e-image-drift.sh` to check if image-affecting files changed since the latest `images/v*` tag
+6. **Detect image drift** — runs `.github/scripts/e2e-image-drift.sh` to check if image-affecting files changed since the latest `images/v*` tag
 7. **Conditional local image build** — if drift detected: configure SSH deploy key, init submodules, check KVM, `make image-base-amd64`. Requires `SUBMODULE_DEPLOY_KEY` in the `publish` environment.
 8. `make lint` + `make test`
 9. E2E test — uses `MPS_E2E_IMAGE` (local artifact) when image was built, otherwise pulls from CDN
@@ -288,15 +288,15 @@ rm mps-submodule-deploy-key mps-submodule-deploy-key.pub
 
 ## E2E Test Integration
 
-### Image Drift Detection (`tests/e2e-image-drift.sh`)
+### Image Drift Detection (`.github/scripts/e2e-image-drift.sh`)
 
 Compares HEAD against the latest `images/v*` tag. If any image-affecting paths changed, outputs `true` — the e2e must build a local image rather than pulling from CDN. Image-affecting paths: `images/layers/`, `images/scripts/`, `images/build.sh`, `images/packer.pkr.hcl`, `images/packer-user-data.pkrtpl.hcl`, `images/arch-config.sh`, `vendor/`.
 
 `templates/cloud-init/` is NOT considered image drift — these are VM launch templates, not baked image content. Cloud-init changes trigger the CDN-image e2e job.
 
-Called by `tests/ci-detect-e2e.sh` (ci.yml `changes` job wrapper) and directly by release.yml.
+Called by `.github/scripts/ci-detect-e2e.sh` (ci.yml `changes` job wrapper) and directly by release.yml.
 
-### CI Change Detection (`tests/ci-detect-e2e.sh`)
+### CI Change Detection (`.github/scripts/ci-detect-e2e.sh`)
 
 Wrapper for the ci.yml `changes` job. Handles both push and PR event types:
 1. Runs `e2e-image-drift.sh` for image drift → sets `needs_image_build`
@@ -306,7 +306,7 @@ Wrapper for the ci.yml `changes` job. Handles both push and PR event types:
 
 Security: fork PRs with image drift get `needs_image_build=true` but the `build-and-e2e` job won't run (gates on same-repo origin). Same-repo PRs (e.g., submodule bot) get the full local-build e2e via the `build` environment.
 
-### Snap Confinement Preflight (`tests/ci-preflight.sh`)
+### Snap Confinement Preflight (`.github/scripts/ci-preflight.sh`)
 
 Fail-fast script that runs early in both `release.yml` and `images.yml` (amd64 job), before any substantive work. Checks:
 1. **AppArmor kernel module** — `/sys/module/apparmor/parameters/enabled == Y`
@@ -318,7 +318,7 @@ Bash 3.2-compatible (auto-linted via `CLIENT_SCRIPTS` discovery).
 ### `release.yml` — E2E Gate
 
 After validation and before "Create GitHub Release":
-1. **Detect image drift** — `tests/e2e-image-drift.sh` checks if image-affecting files changed since latest `images/v*` tag
+1. **Detect image drift** — `.github/scripts/e2e-image-drift.sh` checks if image-affecting files changed since latest `images/v*` tag
 2. **Conditional local build** — if drift detected: SSH deploy key setup, submodule init, KVM check, `make image-base-amd64`
 3. `MPS_E2E_INSTALL=true make test-e2e` — uses local artifact (`MPS_E2E_IMAGE`) when available, otherwise pulls from CDN
 4. `make test-e2e-report` — merges coverage from all three tiers (unit/integration/e2e) into `coverage/lcov.info` + `coverage/summary.md`, enforcing 90% aggregate threshold.

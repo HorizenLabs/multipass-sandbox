@@ -39,7 +39,7 @@ jobs:
           maintainer-keys: ${{ vars.MAINTAINER_KEYS }}
 
       - name: Snap confinement preflight
-        run: bash tests/ci-preflight.sh
+        run: bash .github/scripts/ci-preflight.sh
 
       - name: Validate version matches VERSION file
         run: |
@@ -63,7 +63,7 @@ jobs:
       - name: Detect image drift
         id: image-drift
         run: |
-          drift="$(bash tests/e2e-image-drift.sh)"
+          drift="$(bash .github/scripts/e2e-image-drift.sh)"
           echo "detected=$drift" >> "$GITHUB_OUTPUT"
           echo "Image drift: $drift"
 
@@ -71,11 +71,11 @@ jobs:
         if: steps.image-drift.outputs.detected == 'true'
         env:
           DEPLOY_KEY: ${{ secrets.SUBMODULE_DEPLOY_KEY }}
-        run: bash tests/ci-setup-submodule.sh
+        run: bash .github/scripts/ci-setup-submodule.sh
 
       - name: Check KVM
         if: steps.image-drift.outputs.detected == 'true'
-        run: bash tests/ci-check-kvm.sh
+        run: bash .github/scripts/ci-check-kvm.sh
 
       - name: Build base image
         if: steps.image-drift.outputs.detected == 'true'

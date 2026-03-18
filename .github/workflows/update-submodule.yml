@@ -20,7 +20,7 @@ jobs:
       - name: Setup submodule
         env:
           DEPLOY_KEY: ${{ secrets.SUBMODULE_DEPLOY_KEY }}
-        run: bash tests/ci-setup-submodule.sh
+        run: bash .github/scripts/ci-setup-submodule.sh
 
       - name: Check for submodule updates
         id: check

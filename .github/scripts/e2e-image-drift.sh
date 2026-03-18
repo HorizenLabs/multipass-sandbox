@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# tests/e2e-image-drift.sh — Detect image-affecting changes since last images/v* tag
+# .github/scripts/e2e-image-drift.sh — Detect image-affecting changes since last images/v* tag
 #
 # Compares HEAD against the latest images/v* tag. If any image-affecting
 # paths have changed, outputs "true"; otherwise "false".
@@ -7,8 +7,8 @@
 # Requires: git with tags fetched (fetch-depth: 0, fetch-tags: true)
 #
 # Usage:
-#   bash tests/e2e-image-drift.sh          # prints true/false to stdout
-#   if bash tests/e2e-image-drift.sh | grep -q true; then ...
+#   bash .github/scripts/e2e-image-drift.sh          # prints true/false to stdout
+#   if bash .github/scripts/e2e-image-drift.sh | grep -q true; then ...
 
 set -euo pipefail
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# tests/ci-detect-e2e.sh — Determine whether CI should run e2e and/or build a local image
+# .github/scripts/ci-detect-e2e.sh — Determine whether CI should run e2e and/or build a local image
 #
 # Called by the "changes" job in ci.yml. Writes needs_e2e and needs_image_build
 # to $GITHUB_OUTPUT (or stdout if GITHUB_OUTPUT is unset, for local testing).
@@ -10,7 +10,7 @@
 #   BEFORE_SHA  — previous HEAD SHA (push events only)
 #   GH_TOKEN    — GitHub token for API calls (pull_request events only)
 #
-# Image drift detection uses tests/e2e-image-drift.sh (compares HEAD against
+# Image drift detection uses .github/scripts/e2e-image-drift.sh (compares HEAD against
 # the latest images/v* tag). Cloud-init detection uses the GitHub API for PRs
 # or git diff for pushes.
 

@@ -73,7 +73,7 @@ jobs:
 
       - name: Detect e2e-affecting changes
         id: detect
-        run: bash tests/ci-detect-e2e.sh
+        run: bash .github/scripts/ci-detect-e2e.sh
         env:
           GH_TOKEN: ${{ github.token }}
           EVENT_NAME: ${{ github.event_name }}
@@ -97,13 +97,13 @@ jobs:
       - name: Setup submodule
         env:
           DEPLOY_KEY: ${{ secrets.SUBMODULE_DEPLOY_KEY }}
-        run: bash tests/ci-setup-submodule.sh
+        run: bash .github/scripts/ci-setup-submodule.sh
 
       - name: Check KVM
-        run: bash tests/ci-check-kvm.sh
+        run: bash .github/scripts/ci-check-kvm.sh
 
       - name: Snap confinement preflight
-        run: bash tests/ci-preflight.sh
+        run: bash .github/scripts/ci-preflight.sh
 
       - name: Build base image
         run: make image-base-amd64
@@ -122,7 +122,7 @@ jobs:
         uses: actions/checkout@v6
 
       - name: Snap confinement preflight
-        run: bash tests/ci-preflight.sh
+        run: bash .github/scripts/ci-preflight.sh
 
       - name: E2E test
         run: MPS_E2E_INSTALL=true make test-e2e
