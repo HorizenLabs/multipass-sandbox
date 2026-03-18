@@ -6,9 +6,10 @@ The mpsandbox project uses a fully containerized build system (Makefile + Docker
 
 ## Workflows
 
-1. `.github/workflows/ci.yml` — lint + test
+1. `.github/workflows/ci.yml` — lint + test + e2e
 2. `.github/workflows/images.yml` — image build + publish + CF cache purge
 3. `.github/workflows/release.yml` — tool release
+4. `.github/workflows/update-submodule.yml` — automated submodule update PRs
 
 ## Workflow 1: `ci.yml` — Lint + Test
 
@@ -185,6 +186,17 @@ Steps:
 
 Clients fetch this file (at most once per 24h) to compare against the local `VERSION` file. If the remote version is newer, or the `commit_sha` doesn't match (force-pushed tag), a one-line warning is printed to stderr with update instructions.
 
+## Workflow 4: `update-submodule.yml` — Automated Submodule Updates
+
+**Trigger**: `workflow_dispatch` (manual) or scheduled
+**Runner**: `warp-ubuntu-latest-x64-2x`
+
+### Job: `update-submodule`
+Runner: `warp-ubuntu-latest-x64-2x`
+Environment: `submodule`
+
+Checks the `vendor/hl-claude-marketplace` submodule for upstream updates. If the remote HEAD has advanced, creates a PR via the GitHub API using the `mpsandbox[bot]` GitHub App. Uses `SUBMODULE_DEPLOY_KEY` for submodule checkout and `MPS_BOT_APP_ID` + `MPS_BOT_PRIVATE_KEY` for PR creation with signed commits via the Git Data API.
+
 ## Pipeline Architecture
 
 ```
@@ -313,7 +325,7 @@ Fail-fast script that runs early in both `release.yml` and `images.yml` (amd64 j
 2. **Snap strict confinement** — `snap debug confinement == strict`
 3. **Snap seed loaded** — `sudo snap wait system seed.loaded` (prevents snap install hangs on GH runners)
 
-Bash 3.2-compatible (auto-linted via `CLIENT_SCRIPTS` discovery).
+Shellchecked via `BASH_SCRIPTS` in the Makefile. Not subject to Bash 3.2 compat (runs only on Ubuntu CI runners with Bash 5+).
 
 ### `release.yml` — E2E Gate
 
