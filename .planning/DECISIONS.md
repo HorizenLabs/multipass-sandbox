@@ -69,10 +69,10 @@ Each layer YAML contains an `x-mps:` top-level block (cloud-init silently ignore
 
 | Flavor | Disk Size | Actual Usage |
 |---|---|---|
-| base | 7G | 4.6 GiB |
-| protocol-dev | 10G | 7.2 GiB |
-| smart-contract-dev | 11G | 8.3 GiB |
-| smart-contract-audit | 13G | 9.8 GiB |
+| base | 8G | 4.5 GB |
+| protocol-dev | 11G | 7.4 GB |
+| smart-contract-dev | 12G | 8.5 GB |
+| smart-contract-audit | 14G | 9.9 GB |
 
 ## Secure Dependency Installation
 

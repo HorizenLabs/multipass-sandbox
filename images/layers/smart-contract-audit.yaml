@@ -4,7 +4,7 @@
 
 x-mps:
   description: "smart-contract-dev + Slither + Mythril (amd64) + Echidna + Medusa + Halmos (amd64)"
-  disk_size: 13G
+  disk_size: 14G
   min_profile: standard
   min_disk: 15G
   min_memory: 4G

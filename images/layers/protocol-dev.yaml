@@ -4,7 +4,7 @@
 
 x-mps:
   description: "base + C/C++ toolchain + Go + Rust"
-  disk_size: 10G
+  disk_size: 11G
   min_profile: lite
   min_disk: 15G
   min_memory: 2G
