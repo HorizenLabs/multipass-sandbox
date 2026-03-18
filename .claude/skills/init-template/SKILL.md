@@ -78,34 +78,48 @@ Use `AskUserQuestion`:
 
 Use `AskUserQuestion` with up to 4 questions in a single call (all single-select, no `multiSelect`):
 
-**Question 1** — "Keep the default HorizenLabs plugins?" (hl-product-ideation, zkverify-product-development, context-utils)
-- **Yes (Recommended)** — Keep the default plugins enabled
-- **No** — Remove them from the template
+**Question 1** — "Enable HorizenLabs product ideation skills?" (discovery workflow, market research, PRD generator, tech specs, personas, user flows, stakeholder decks, mockup briefs)
+- **Yes** — Install `hl-product-ideation`
+- **No** — Skip
 
-**Question 2** — "Enable Trail of Bits security skills?" (~20 security-focused plugins)
+**Question 2** — "Enable zkVerify development skills?" (proof submission, SDK, smart contracts, RPC, pallet dev, Groth16/FFLONK/SP1/Noir/RISC Zero/Plonky2/EZKL builders)
+- **Yes** — Install `zkverify-product-development`
+- **No** — Skip
+
+**Question 3** — "Enable zkVerify verifier assessment skills?" (Rust stable toolchain compat, no_std support, verifier pallet integration feasibility)
+- **Yes** — Install `zkverify-verifier-assessment`
+- **No** — Skip
+
+**Question 4** — "Enable context handoff utilities?" (save/resume work across sessions)
+- **Yes** — Install `context-utils`
+- **No** — Skip
+
+Then a second `AskUserQuestion` call for third-party plugins and frameworks:
+
+**Question 1** — "Enable Trail of Bits security skills?" (~20 security-focused plugins)
 - **All** — Install all ~20 Trail of Bits plugins
 - **Pick a subset** — Choose specific plugins in the next step
 - **No** — Skip Trail of Bits
 
-**Question 3** — "Enable GSD framework?" (meta-prompting and spec-driven development)
+**Question 2** — "Enable GSD framework?" (meta-prompting and spec-driven development)
 - **Yes** — Enable GSD
 - **No** — Skip
 
-**Question 4** — "Enable SuperClaude framework?" (slash commands and MCP servers)
+**Question 3** — "Enable SuperClaude framework?" (slash commands and MCP servers)
 - **Yes** — Enable SuperClaude
 - **No** — Skip
 
-Then a second `AskUserQuestion` call for the remaining frameworks:
-
-**Question 1** — "Enable Superpowers?" (plugin marketplace skills)
+**Question 4** — "Enable Superpowers?" (plugin marketplace skills)
 - **Yes** — Enable Superpowers
 - **No** — Skip
 
-**Question 2** — "Enable BMAD Method?" (spec-driven development methodology)
+Then a third `AskUserQuestion` call for remaining frameworks:
+
+**Question 1** — "Enable BMAD Method?" (spec-driven development methodology)
 - **Yes** — Enable BMAD
 - **No** — Skip
 
-**Question 3** — "Enable GitHub Spec Kit?" (spec-driven CLI for AI coding agents)
+**Question 2** — "Enable GitHub Spec Kit?" (spec-driven CLI for AI coding agents)
 - **Yes** — Enable Spec Kit
 - **No** — Skip
 

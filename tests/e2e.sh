@@ -488,9 +488,10 @@ phase_cloud_init() {
     local plugin_list
     plugin_list="$(_ubuntu_exec 'claude plugin list' 2>&1)" || true
 
-    # HorizenLabs (always active)
+    # HorizenLabs (enabled via e2e cloud-init)
     assert_contains "plugin: hl-product-ideation" "$plugin_list" "hl-product-ideation"
     assert_contains "plugin: zkverify-product-development" "$plugin_list" "zkverify-product-development"
+    assert_contains "plugin: zkverify-verifier-assessment" "$plugin_list" "zkverify-verifier-assessment"
     assert_contains "plugin: context-utils" "$plugin_list" "context-utils"
 
     # Trail of Bits (spot-check)

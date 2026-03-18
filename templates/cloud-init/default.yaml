@@ -19,15 +19,21 @@ runcmd:
   # To install:  claude plugin install <plugin>@<marketplace>
   # To disable:  claude plugin disable <plugin>@<marketplace>
   # To remove:   claude plugin uninstall <plugin>@<marketplace>
-  - |
-    sudo -u ubuntu bash -c '
-      export HOME=/home/ubuntu
-      export PATH="$HOME/.claude/bin:$HOME/.local/bin:$PATH"
-      # HorizenLabs marketplace (hl-agent-skills)
-      claude plugin install hl-product-ideation@hl-agent-skills --scope user
-      claude plugin install zkverify-product-development@hl-agent-skills --scope user
-      claude plugin install context-utils@hl-agent-skills --scope user
-    '
+  # --- HorizenLabs marketplace skills (uncomment to enable) ---
+  # Product ideation, zkVerify development, verifier assessment, and context utilities.
+  # Use /init-template to selectively enable the plugins relevant to your project.
+#:example
+  # - |
+  #   sudo -u ubuntu bash -c '
+  #     export HOME=/home/ubuntu
+  #     export PATH="$HOME/.claude/bin:$HOME/.local/bin:$PATH"
+  #     # HorizenLabs marketplace (hl-agent-skills)
+  #     claude plugin install hl-product-ideation@hl-agent-skills --scope user
+  #     claude plugin install zkverify-product-development@hl-agent-skills --scope user
+  #     claude plugin install zkverify-verifier-assessment@hl-agent-skills --scope user
+  #     claude plugin install context-utils@hl-agent-skills --scope user
+  #   '
+#:end
   # --- Trail of Bits security skills (uncomment to enable) ---
 #:example
   # - |
