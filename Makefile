@@ -38,6 +38,7 @@ docker run --rm \
 	-e HOST_UID=$(HOST_UID) \
 	-e HOST_GID=$(HOST_GID) \
 	-e TARGET_ARCH=$(1) \
+	-e GITHUB_TOKEN \
 	$(KVM_FLAG) \
 	$(BUILDER_IMAGE):$(BUILDER_TAG)
 endef
@@ -64,7 +65,9 @@ PUBLISHER_DEPS  := docker/Dockerfile.publisher docker/entrypoint.sh
 
 # Common deps shared by all image builds
 IMAGE_COMMON_DEPS := images/packer.pkr.hcl images/packer-user-data.pkrtpl.hcl \
-    images/build.sh images/arch-config.sh images/scripts/post-provision.sh
+    images/build.sh images/arch-config.sh images/scripts/post-provision.sh \
+    images/scripts/install-base.sh images/scripts/install-protocol-dev.sh \
+    images/scripts/install-smart-contract-dev.sh images/scripts/install-smart-contract-audit.sh
 
 # Per-flavor layer deps (each flavor depends only on its own layer file)
 IMAGE_LAYERS_base                  := images/layers/base.yaml

@@ -100,6 +100,36 @@ variable "iso_checksum" {
   default = ""
 }
 
+variable "flavor" {
+  type    = string
+  default = "base"
+}
+
+variable "yq_version" {
+  type    = string
+  default = ""
+}
+
+variable "shellcheck_version" {
+  type    = string
+  default = ""
+}
+
+variable "hadolint_version" {
+  type    = string
+  default = ""
+}
+
+variable "cosign_version" {
+  type    = string
+  default = ""
+}
+
+variable "echidna_version" {
+  type    = string
+  default = ""
+}
+
 locals {
   base_cloud_init = trimprefix(
     file("${path.root}/cloud-init.yaml"),
@@ -166,10 +196,60 @@ build {
     destination = "/home/ubuntu/.local/share/hl-claude-marketplace"
   }
 
-  # Wait for cloud-init to finish, then register Claude Code plugin marketplaces
+  # Wait for cloud-init to finish (packages, write_files, groups, users)
+  # Exit code 2 = done with recoverable errors (e.g., final_message warnings) — acceptable
+  provisioner "shell" {
+    inline           = ["cloud-init status --wait"]
+    execute_command  = "chmod +x {{ .Path }}; sudo bash {{ .Path }}"
+    valid_exit_codes = [0, 2]
+  }
+
+  # Per-layer install scripts (each self-selects based on FLAVOR env var)
+  # env_var_format + "sudo env" passes vars through sudo's env_reset
+  provisioner "shell" {
+    script = "scripts/install-base.sh"
+    environment_vars = [
+      "FLAVOR=${var.flavor}",
+      "YQ_VERSION=${var.yq_version}",
+      "SHELLCHECK_VERSION=${var.shellcheck_version}",
+      "HADOLINT_VERSION=${var.hadolint_version}",
+    ]
+    env_var_format  = "%s=%s "
+    execute_command = "chmod +x {{ .Path }}; sudo env {{ .Vars }} bash {{ .Path }}"
+  }
+
+  provisioner "shell" {
+    script = "scripts/install-protocol-dev.sh"
+    environment_vars = [
+      "FLAVOR=${var.flavor}",
+    ]
+    env_var_format  = "%s=%s "
+    execute_command = "chmod +x {{ .Path }}; sudo env {{ .Vars }} bash {{ .Path }}"
+  }
+
+  provisioner "shell" {
+    script = "scripts/install-smart-contract-dev.sh"
+    environment_vars = [
+      "FLAVOR=${var.flavor}",
+    ]
+    env_var_format  = "%s=%s "
+    execute_command = "chmod +x {{ .Path }}; sudo env {{ .Vars }} bash {{ .Path }}"
+  }
+
+  provisioner "shell" {
+    script = "scripts/install-smart-contract-audit.sh"
+    environment_vars = [
+      "FLAVOR=${var.flavor}",
+      "COSIGN_VERSION=${var.cosign_version}",
+      "ECHIDNA_VERSION=${var.echidna_version}",
+    ]
+    env_var_format  = "%s=%s "
+    execute_command = "chmod +x {{ .Path }}; sudo env {{ .Vars }} bash {{ .Path }}"
+  }
+
+  # Register Claude Code plugin marketplaces (after install-base.sh installs Claude Code)
   provisioner "shell" {
     inline = [
-      "cloud-init status --wait",
       "export HOME=/home/ubuntu",
       ". \"$HOME/.profile\" 2>/dev/null || true",
       "claude plugin marketplace list --json | jq -e '.[] | select(.name==\"hl-agent-skills\")' >/dev/null 2>&1 || claude plugin marketplace add \"$HOME/.local/share/hl-claude-marketplace\"",
