@@ -337,7 +337,7 @@ Pre-built images come in four flavors. Each builds on the previous, adding speci
 
 **protocol-dev** adds: build-essential, clang, LLVM, lld, cmake, Go (latest stable), Rust (stable via rustup + cargo-audit), protobuf, SSL/crypto dev libraries.
 
-**smart-contract-dev** adds: Solana CLI + Anchor (amd64-only, via avm), Foundry (forge, cast, anvil, chisel), Hardhat, Solhint.
+**smart-contract-dev** adds: Solana CLI + Anchor (amd64-only), Foundry (forge, cast, anvil, chisel), Hardhat, Solhint.
 
 **smart-contract-audit** adds: Slither, solc-select, Mythril + Halmos (amd64-only, via uv), Aderyn, Echidna (sigstore-verified), Medusa, cosign.
 

@@ -4,7 +4,7 @@ Decisions made during planning sessions, preserved to avoid re-asking. For conve
 
 ## Image Layer Contents
 
-Cloud-init layers in `images/layers/` are merged at build time to produce the toolchain for each flavor. A separate minimal `templates/cloud-init/default.yaml` provides commented-out examples for VM launch customization.
+Cloud-init layers in `images/layers/` provide **declarative** config only (`packages:`, `write_files:`, `x-mps:` metadata). All **imperative** tool installs are in per-layer Packer shell provisioner scripts (`images/scripts/install-*.sh`) which run with `set -euo pipefail` for hard failure detection. A separate minimal `templates/cloud-init/default.yaml` provides commented-out examples for VM launch customization.
 
 **base layer** (all flavors):
 - Docker: Official apt repo (`docker-ce`, `docker-ce-cli`, `containerd.io`, `docker-buildx-plugin`, `docker-compose-plugin`). V2 plugin only.
@@ -21,7 +21,7 @@ Cloud-init layers in `images/layers/` are merged at build time to produce the to
 - Rust: Via `rustup`, per-user (`~ubuntu/.cargo`), plus `cargo-audit`
 
 **smart-contract-dev layer** (smart-contract-dev and above):
-- Solana CLI + Anchor (amd64-only, via cargo/avm)
+- Solana CLI + Anchor (amd64-only, anchor-cli via crates.io — avm broken in non-interactive builds)
 - Foundry (forge, cast, anvil, chisel)
 - Hardhat + Solhint (via bun)
 
@@ -32,7 +32,7 @@ Cloud-init layers in `images/layers/` are merged at build time to produce the to
 
 ## Image Flavors
 
-Composable cloud-init layers merged at build time with `yq eval-all '. as $item ireduce ({}; . *+ $item)'` (`*+` = deep merge with array append).
+Composable cloud-init layers merged at build time with `yq eval-all '. as $item ireduce ({}; . *+ $item)'` (`*+` = deep merge with array append). Layers provide declarative config; per-layer install scripts in `images/scripts/` handle imperative tool installs as Packer shell provisioners. `images/scripts/validate-image.sh` asserts all expected tools are present before the image is finalized.
 
 | Flavor | Layers | Use case |
 |---|---|---|
@@ -61,7 +61,7 @@ Backblaze B2 for storage, Cloudflare proxy for public serving. Files at bucket r
 
 ## Image Flavor Metadata
 
-Each layer YAML contains an `x-mps:` top-level block (cloud-init silently ignores unknown keys).
+Each layer YAML contains an `x-mps:` top-level block. `build.sh` extracts metadata (e.g., `disk_size`) then strips `x-mps:` before passing the YAML to Packer, so cloud-init receives clean config (no schema warnings).
 
 **Fields**: `disk_size`, `min_profile`, `min_disk`, `min_memory`, `min_cpus`
 
@@ -92,7 +92,7 @@ Non-OS dependencies installed with integrity verification where possible.
 | yq | builder, publisher | SHA256 from rhash `checksums` file |
 | Bash 3.2.57 | bash32 | GPG signature (Chet Ramey, `7C0135FB…64EA74AB`) |
 
-Cloud-init layers: yq (rhash checksums), hadolint (.sha256 sidecar), cosign (cosign_checksums.txt), Echidna (sigstore bundle via cosign), shellcheck (no checksums published).
+Install provisioner scripts (`images/scripts/install-*.sh`): yq (rhash checksums), hadolint (.sha256 sidecar), cosign (cosign_checksums.txt), Echidna (sigstore bundle via cosign), shellcheck (no checksums published).
 
 ## Claude Code Plugin Marketplaces
 
