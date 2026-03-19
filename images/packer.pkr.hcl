@@ -120,6 +120,11 @@ variable "hadolint_version" {
   default = ""
 }
 
+variable "anchor_version" {
+  type    = string
+  default = ""
+}
+
 variable "cosign_version" {
   type    = string
   default = ""
@@ -197,11 +202,9 @@ build {
   }
 
   # Wait for cloud-init to finish (packages, write_files, groups, users)
-  # Exit code 2 = done with recoverable errors (e.g., final_message warnings) — acceptable
   provisioner "shell" {
-    inline           = ["cloud-init status --wait"]
-    execute_command  = "chmod +x {{ .Path }}; sudo bash {{ .Path }}"
-    valid_exit_codes = [0, 2]
+    inline          = ["cloud-init status --wait"]
+    execute_command = "chmod +x {{ .Path }}; sudo bash {{ .Path }}"
   }
 
   # Per-layer install scripts (each self-selects based on FLAVOR env var)
@@ -231,6 +234,7 @@ build {
     script = "scripts/install-smart-contract-dev.sh"
     environment_vars = [
       "FLAVOR=${var.flavor}",
+      "ANCHOR_VERSION=${var.anchor_version}",
     ]
     env_var_format  = "%s=%s "
     execute_command = "chmod +x {{ .Path }}; sudo env {{ .Vars }} bash {{ .Path }}"

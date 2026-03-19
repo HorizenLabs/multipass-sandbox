@@ -165,7 +165,15 @@ SHELLCHECK_VERSION=$(_resolve_gh_latest "koalaman/shellcheck" "v0.11.0")
 HADOLINT_VERSION=$(_resolve_gh_latest "hadolint/hadolint" "v2.14.0")
 echo "  yq: ${YQ_VERSION}, shellcheck: ${SHELLCHECK_VERSION}, hadolint: ${HADOLINT_VERSION}"
 
-# Audit-layer tools (only resolve when needed)
+# Per-layer tools (only resolve when needed)
+ANCHOR_VERSION=""
+case "$FLAVOR" in
+    smart-contract-dev|smart-contract-audit)
+        ANCHOR_VERSION=$(_resolve_gh_latest "coral-xyz/anchor" "v0.32.1")
+        echo "  anchor: ${ANCHOR_VERSION}"
+        ;;&  # fall through
+esac
+
 COSIGN_VERSION=""
 ECHIDNA_VERSION=""
 case "$FLAVOR" in
@@ -187,6 +195,10 @@ if [[ -z "${PACKER_DISK_SIZE:-}" ]]; then
 fi
 echo "Disk size: ${PACKER_DISK_SIZE}"
 
+# Strip x-mps metadata — only used by build.sh above, not by cloud-init.
+# Leaving it causes cloud-init schema validation warnings (exit code 2).
+yq 'del(.x-mps)' -i cloud-init.yaml
+
 # ---------- Build extra Packer variables for chained builds ----------
 PACKER_EXTRA_VARS=()
 if [[ -n "$BASE_IMAGE" ]]; then
@@ -202,6 +214,7 @@ PACKER_EXTRA_VARS+=(
     -var "yq_version=${YQ_VERSION}"
     -var "shellcheck_version=${SHELLCHECK_VERSION}"
     -var "hadolint_version=${HADOLINT_VERSION}"
+    -var "anchor_version=${ANCHOR_VERSION}"
     -var "cosign_version=${COSIGN_VERSION}"
     -var "echidna_version=${ECHIDNA_VERSION}"
 )

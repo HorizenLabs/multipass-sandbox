@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+_ts() { echo "[$(date '+%H:%M:%S')] $*"; }
 
 # MPS Image: Post-install validation
 # Asserts that every tool expected for the current FLAVOR is present.
@@ -8,7 +9,7 @@ set -euo pipefail
 # Environment variables (set by Packer):
 #   FLAVOR — image flavor (base, protocol-dev, etc.)
 
-echo "=== validate-image.sh (flavor: ${FLAVOR:-base}) ==="
+_ts "=== validate-image.sh (flavor: ${FLAVOR:-base}) ==="
 
 PASS=0
 FAIL=0
@@ -118,6 +119,8 @@ case "${FLAVOR:-base}" in
         assert_user_cmd_arch amd64 anchor "\$HOME/.cargo/bin:"
         assert_user_cmd forge "\$HOME/.foundry/bin:"
         assert_user_cmd cast "\$HOME/.foundry/bin:"
+        assert_user_cmd anvil "\$HOME/.foundry/bin:"
+        assert_user_cmd chisel "\$HOME/.foundry/bin:"
         assert_user_cmd hardhat "\$HOME/.bun/bin:"
         assert_user_cmd solhint "\$HOME/.bun/bin:"
         ;;&  # fall through
@@ -140,7 +143,7 @@ esac
 
 # ---------- Summary ----------
 echo ""
-echo "=== Validation: ${PASS} passed, ${FAIL} failed ==="
+_ts "=== Validation: ${PASS} passed, ${FAIL} failed ==="
 
 if [ "$FAIL" -gt 0 ]; then
     echo "ERROR: ${FAIL} tool(s) missing from ${FLAVOR:-base} image" >&2

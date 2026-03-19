@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+_ts() { echo "[$(date '+%H:%M:%S')] $*"; }
 
 # MPS Image: Smart-contract-audit layer install script
 # Installs: cosign, Slither, Mythril (amd64), Halmos (amd64), Aderyn, Echidna, Medusa
@@ -12,14 +13,14 @@ set -euo pipefail
 # Self-select: only run for smart-contract-audit
 case "${FLAVOR:-}" in
     smart-contract-audit) ;;
-    *) echo "=== install-smart-contract-audit.sh: skipping (flavor: ${FLAVOR:-base}) ==="; exit 0 ;;
+    *) _ts "=== install-smart-contract-audit.sh: skipping (flavor: ${FLAVOR:-base}) ==="; exit 0 ;;
 esac
 
-echo "=== install-smart-contract-audit.sh (flavor: ${FLAVOR}) ==="
+_ts "=== install-smart-contract-audit.sh (flavor: ${FLAVOR}) ==="
 
 # ---------- cosign (SHA256-verified, sigstore verification tool) ----------
 if ! command -v cosign &>/dev/null; then
-    echo "--- Installing cosign ${COSIGN_VERSION} ---"
+    _ts "--- Installing cosign ${COSIGN_VERSION} ---"
     ARCH=$(dpkg --print-architecture)
     COSIGN_FILE="cosign-linux-${ARCH}"
     curl -fsSL "https://github.com/sigstore/cosign/releases/download/${COSIGN_VERSION}/${COSIGN_FILE}" -o /tmp/"${COSIGN_FILE}"
@@ -31,8 +32,9 @@ fi
 
 # ---------- Solidity security: static analysis (via uv) ----------
 if ! sudo -u ubuntu bash -c 'export HOME=/home/ubuntu; export PATH="$HOME/.local/bin:$PATH"; command -v slither &>/dev/null'; then
-    echo "--- Installing Slither + solc-select ---"
+    _ts "--- Installing Slither + solc-select ---"
     sudo -u ubuntu bash -c '
+        set -euo pipefail
         export HOME=/home/ubuntu
         export PATH="$HOME/.local/bin:$PATH"
         uv tool install slither-analyzer
@@ -43,8 +45,9 @@ fi
 # ---------- Mythril + Halmos (amd64 only — z3-solver has no arm64 wheel) ----------
 if [ "$(dpkg --print-architecture)" = "amd64" ]; then
     if ! sudo -u ubuntu bash -c 'export HOME=/home/ubuntu; export PATH="$HOME/.local/bin:$PATH"; command -v myth &>/dev/null'; then
-        echo "--- Installing Mythril + Halmos ---"
+        _ts "--- Installing Mythril + Halmos ---"
         sudo -u ubuntu bash -c '
+            set -euo pipefail
             export HOME=/home/ubuntu
             export PATH="$HOME/.local/bin:$PATH"
             uv tool install mythril
@@ -52,13 +55,14 @@ if [ "$(dpkg --print-architecture)" = "amd64" ]; then
         '
     fi
 else
-    echo "Skipping Mythril + Halmos (amd64-only, z3-solver requires source build on arm64)"
+    _ts "Skipping Mythril + Halmos (amd64-only, z3-solver requires source build on arm64)"
 fi
 
 # ---------- Solidity security: Aderyn (Cyfrin installer) ----------
 if ! sudo -u ubuntu bash -c 'export HOME=/home/ubuntu; command -v aderyn &>/dev/null || [ -f "$HOME/.aderyn/bin/aderyn" ]'; then
-    echo "--- Installing Aderyn ---"
+    _ts "--- Installing Aderyn ---"
     sudo -u ubuntu bash -c '
+        set -euo pipefail
         export HOME=/home/ubuntu
         curl --proto "=https" --tlsv1.2 -LsSf https://github.com/cyfrin/aderyn/releases/latest/download/aderyn-installer.sh | bash
     '
@@ -66,7 +70,7 @@ fi
 
 # ---------- Solidity security: Echidna fuzzer (sigstore-verified) ----------
 if ! command -v echidna &>/dev/null; then
-    echo "--- Installing Echidna ${ECHIDNA_VERSION} ---"
+    _ts "--- Installing Echidna ${ECHIDNA_VERSION} ---"
     ARCH=$(uname -m)
     EC_FILE="echidna-${ECHIDNA_VERSION#v}-${ARCH}-linux.tar.gz"
     curl -fsSL "https://github.com/crytic/echidna/releases/download/${ECHIDNA_VERSION}/${EC_FILE}" -o /tmp/"${EC_FILE}"
@@ -83,8 +87,9 @@ fi
 
 # ---------- Solidity security: Medusa fuzzer (via go install) ----------
 if ! sudo -u ubuntu bash -c 'export HOME=/home/ubuntu; export PATH="/usr/local/go/bin:$HOME/go/bin:$PATH"; command -v medusa &>/dev/null'; then
-    echo "--- Installing Medusa ---"
+    _ts "--- Installing Medusa ---"
     sudo -u ubuntu bash -c '
+        set -euo pipefail
         export HOME=/home/ubuntu
         export PATH="/usr/local/go/bin:$HOME/go/bin:$PATH"
         export GOPATH="$HOME/go"
@@ -92,4 +97,4 @@ if ! sudo -u ubuntu bash -c 'export HOME=/home/ubuntu; export PATH="/usr/local/g
     '
 fi
 
-echo "=== install-smart-contract-audit.sh complete ==="
+_ts "=== install-smart-contract-audit.sh complete ==="
