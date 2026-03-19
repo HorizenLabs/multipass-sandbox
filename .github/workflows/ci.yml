@@ -43,7 +43,7 @@ jobs:
 
       - name: Coverage PR comment
         if: "!cancelled() && github.event_name == 'pull_request' && hashFiles('coverage/lcov.info') != ''"
-        uses: zgosalvez/github-actions-report-lcov@v4
+        uses: zgosalvez/github-actions-report-lcov@v7
         with:
           coverage-files: coverage/lcov.info
           minimum-coverage: 90
@@ -53,7 +53,7 @@ jobs:
 
       - name: Upload coverage artifact
         if: "!cancelled() && hashFiles('coverage/lcov.info') != ''"
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: coverage
           path: coverage/

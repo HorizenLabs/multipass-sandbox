@@ -61,7 +61,7 @@ jobs:
       - name: Generate app token
         if: steps.check.outputs.has_updates == 'true' && steps.existing.outputs.skip == 'false'
         id: app-token
-        uses: actions/create-github-app-token@v2
+        uses: actions/create-github-app-token@v3
         with:
           app-id: ${{ secrets.MPS_BOT_APP_ID }}
           private-key: ${{ secrets.MPS_BOT_PRIVATE_KEY }}
