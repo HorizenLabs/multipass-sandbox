@@ -13,6 +13,7 @@
 
 # --- Run commands on first boot ---
 runcmd:
+  - ":"  # no-op (runcmd must have at least one entry to avoid cloud-init error)
   # --- Claude Code: enable plugin marketplace skills ---
   # Marketplaces are pre-registered in the image. Enable plugins here.
   # To list available plugins: claude plugin marketplace list
