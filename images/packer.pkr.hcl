@@ -258,6 +258,16 @@ build {
     execute_command = "chmod +x {{ .Path }}; sudo -u ubuntu bash {{ .Path }}"
   }
 
+  # Validate all expected tools are present before finalizing the image
+  provisioner "shell" {
+    script = "scripts/validate-image.sh"
+    environment_vars = [
+      "FLAVOR=${var.flavor}",
+    ]
+    env_var_format  = "%s=%s "
+    execute_command = "chmod +x {{ .Path }}; sudo env {{ .Vars }} bash {{ .Path }}"
+  }
+
   provisioner "shell" {
     scripts = [
       "scripts/post-provision.sh",
