@@ -28,10 +28,10 @@ if [ "$(dpkg --print-architecture)" = "amd64" ]; then
             # Solana CLI
             sh -c "$(curl -fsSL https://release.anza.xyz/stable/install)"
             echo "export PATH=\"\$HOME/.local/share/solana/install/active_release/bin:\$PATH\"" >> "$HOME/.bashrc"
-            # Anchor CLI via crates.io (avm is broken in non-interactive
-            # builds: RC version URL derivation 404s, binary conflicts,
-            # interactive prompts on failure; --git has refspec issues)
-            cargo install anchor-cli --version "'"${ANCHOR_VERSION#v}"'" --force
+            # Anchor CLI via AVM (pre-built binary download since 0.31.0)
+            cargo install --git https://github.com/solana-foundation/anchor --tag "'"v${ANCHOR_VERSION#v}"'" avm --force
+            avm install "'"${ANCHOR_VERSION#v}"'"
+            avm use "'"${ANCHOR_VERSION#v}"'"
         '
     fi
 else
