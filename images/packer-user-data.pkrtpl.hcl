@@ -1,9 +1,10 @@
 #cloud-config
 # Packer build-time overrides (cleaned up in post-provisioning)
-output: {all: '| tee -a /dev/ttyS0'}
 chpasswd:
-  list: |
-    ubuntu:ubuntu
+  users:
+    - name: ubuntu
+      password: ubuntu
+      type: text
   expire: false
 ssh_pwauth: true
 

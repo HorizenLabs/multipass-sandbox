@@ -42,27 +42,4 @@ packages:
   - protobuf-compiler
   - libprotobuf-dev
 
-runcmd:
-  # ---------- Go (latest stable from golang.org) ----------
-  - |
-    ARCH=$(dpkg --print-architecture)
-    GO_VERSION=$(curl -fsSL "https://go.dev/dl/?mode=json" | jq -r ".[0].version")
-    curl -fsSL "https://go.dev/dl/${GO_VERSION}.linux-${ARCH}.tar.gz" | tar -C /usr/local -xzf -
-    # Add to system-wide profile
-    printf '%s\n' \
-      'export PATH=$PATH:/usr/local/go/bin' \
-      'export GOPATH=$HOME/go' \
-      'export PATH=$PATH:$GOPATH/bin' \
-      > /etc/profile.d/golang.sh
-    chmod +x /etc/profile.d/golang.sh
-
-  # ---------- Rust via rustup (as ubuntu user) ----------
-  - |
-    sudo -u ubuntu bash -c '
-      export HOME=/home/ubuntu
-      curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
-      source "$HOME/.cargo/env"
-      cargo install cargo-audit
-    '
-
 final_message: "MPS protocol-dev image provisioning complete."

@@ -137,6 +137,53 @@ fi
 
 cd "$SCRIPT_DIR"
 
+# ---------- Resolve tool versions from GitHub releases ----------
+# Authenticated if GITHUB_TOKEN available (CI: 5000 req/hr), unauthenticated
+# with pinned fallback for local builds (60 req/hr shared IP).
+_resolve_gh_latest() {
+    local repo="$1" fallback="$2"
+    local version=""
+    if [[ -n "${GITHUB_TOKEN:-}" ]]; then
+        version=$(curl -fsSL -H "Authorization: token ${GITHUB_TOKEN}" \
+            "https://api.github.com/repos/${repo}/releases/latest" 2>/dev/null \
+            | jq -r '.tag_name // empty') || true
+    else
+        version=$(curl -fsSL \
+            "https://api.github.com/repos/${repo}/releases/latest" 2>/dev/null \
+            | jq -r '.tag_name // empty') || true
+    fi
+    if [[ -z "$version" ]]; then
+        echo "  WARN: Failed to resolve ${repo} latest, using fallback: ${fallback}" >&2
+        version="$fallback"
+    fi
+    echo "$version"
+}
+
+echo "Resolving tool versions..."
+YQ_VERSION=$(_resolve_gh_latest "mikefarah/yq" "v4.52.4")
+SHELLCHECK_VERSION=$(_resolve_gh_latest "koalaman/shellcheck" "v0.11.0")
+HADOLINT_VERSION=$(_resolve_gh_latest "hadolint/hadolint" "v2.14.0")
+echo "  yq: ${YQ_VERSION}, shellcheck: ${SHELLCHECK_VERSION}, hadolint: ${HADOLINT_VERSION}"
+
+# Per-layer tools (only resolve when needed)
+ANCHOR_VERSION=""
+case "$FLAVOR" in
+    smart-contract-dev|smart-contract-audit)
+        ANCHOR_VERSION=$(_resolve_gh_latest "coral-xyz/anchor" "v0.32.1")
+        echo "  anchor: ${ANCHOR_VERSION}"
+        ;;&  # fall through
+esac
+
+COSIGN_VERSION=""
+ECHIDNA_VERSION=""
+case "$FLAVOR" in
+    smart-contract-audit)
+        COSIGN_VERSION=$(_resolve_gh_latest "sigstore/cosign" "v2.5.0")
+        ECHIDNA_VERSION=$(_resolve_gh_latest "crytic/echidna" "v2.3.1")
+        echo "  cosign: ${COSIGN_VERSION}, echidna: ${ECHIDNA_VERSION}"
+        ;;
+esac
+
 # ---------- Merge layers with yq ----------
 echo "Merging cloud-init layers..."
 yq eval-all '. as $item ireduce ({}; . *+ $item)' "${LAYERS[@]}" > cloud-init.yaml
@@ -148,6 +195,10 @@ if [[ -z "${PACKER_DISK_SIZE:-}" ]]; then
 fi
 echo "Disk size: ${PACKER_DISK_SIZE}"
 
+# Strip x-mps metadata — only used by build.sh above, not by cloud-init.
+# Leaving it causes cloud-init schema validation warnings (exit code 2).
+yq 'del(.x-mps)' -i cloud-init.yaml
+
 # ---------- Build extra Packer variables for chained builds ----------
 PACKER_EXTRA_VARS=()
 if [[ -n "$BASE_IMAGE" ]]; then
@@ -156,6 +207,17 @@ if [[ -n "$BASE_IMAGE" ]]; then
         -var "iso_checksum=file:${BASE_IMAGE}.sha256"
     )
 fi
+
+# Pass flavor and resolved tool versions to Packer provisioners
+PACKER_EXTRA_VARS+=(
+    -var "flavor=${FLAVOR}"
+    -var "yq_version=${YQ_VERSION}"
+    -var "shellcheck_version=${SHELLCHECK_VERSION}"
+    -var "hadolint_version=${HADOLINT_VERSION}"
+    -var "anchor_version=${ANCHOR_VERSION}"
+    -var "cosign_version=${COSIGN_VERSION}"
+    -var "echidna_version=${ECHIDNA_VERSION}"
+)
 
 # ---------- Determine architectures ----------
 if [[ -n "${TARGET_ARCH:-}" ]]; then

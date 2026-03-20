@@ -21,11 +21,14 @@ Internal CLI tool for spinning up isolated VM-based development environments usi
 - `commands/*.sh` — One file per subcommand (create, up, down, destroy, shell, exec, list, status, ssh-config, image, mount, port, transfer), each exports `cmd_<name>()` function
 - `completions/mps.bash` — Bash tab-completion via `_mps_completions()`, installed by `install.sh`
 - `templates/cloud-init/` — Minimal cloud-init templates for VM launch customization
-- `images/layers/` — Composable cloud-init layer files (base, protocol-dev, smart-contract-dev, smart-contract-audit)
-- `images/build.sh` — Image build script (takes flavor arg, merges layers with yq)
+- `images/layers/` — Composable cloud-init layer files (base, protocol-dev, smart-contract-dev, smart-contract-audit). Declarative only: `packages:`, `write_files:`, `x-mps:` metadata. No `runcmd:`.
+- `images/build.sh` — Image build script (takes flavor arg, merges layers with yq, resolves tool versions from GitHub API via `_resolve_gh_latest()` with `GITHUB_TOKEN` auth in CI and pinned fallbacks locally)
+- `images/scripts/install-{base,protocol-dev,smart-contract-dev,smart-contract-audit}.sh` — Per-layer Packer shell provisioner scripts (`set -euo pipefail`). Each self-selects via `FLAVOR` env var, idempotent for layered amd64 chain builds.
+- `images/scripts/validate-image.sh` — Post-install Packer provisioner that asserts all expected tools are present (hard failure if missing)
+- `images/scripts/post-provision.sh` — Post-build cleanup (kernel, apt cache, cloud-init reset, zero free space)
 - `images/packer.pkr.hcl`, `packer-user-data.pkrtpl.hcl`, `arch-config.sh` — Packer build config (template, cloud-init wrapper, per-arch variable resolution)
 - `images/publish.sh`, `update-manifest.sh`, `generate-index.sh`, `publish-release-meta.sh` — B2 publish pipeline (`lib/publish-common.sh` for shared helpers)
-- `images/artifacts/` — Built QCOW2 images (gitignored); `images/scripts/post-provision.sh` — post-build cleanup
+- `images/artifacts/` — Built QCOW2 images (gitignored)
 - `templates/profiles/` — Resource profiles (micro, lite, standard, heavy) with auto-scaling CPU/memory
 - `VERSION` — Tool version (SemVer), read by `bin/mps` at startup
 - `config/defaults.env` — Shipped defaults

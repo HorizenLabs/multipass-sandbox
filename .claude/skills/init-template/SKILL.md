@@ -56,7 +56,7 @@ Use `AskUserQuestion`:
 > - `smart-contract-dev` → read all three above + `images/layers/smart-contract-dev.yaml`
 > - `smart-contract-audit` → read all four layer files
 >
-> Extract the `packages:` lists and `runcmd:` tool installations. Use this knowledge to warn if the developer tries to install something already baked in.
+> Extract the `packages:` lists and review the corresponding install scripts in `images/scripts/install-*.sh` for tool installations. Use this knowledge to warn if the developer tries to install something already baked in.
 
 ### Step 3 — Read the default template
 
