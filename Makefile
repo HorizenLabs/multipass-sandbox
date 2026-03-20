@@ -43,7 +43,7 @@ docker run --rm \
 endef
 
 # ---------- File sets ----------
-BASH_SCRIPTS    := $(shell find bin/ lib/ commands/ images/ completions/ tests/ -type f \( -name '*.sh' -o -name '*.bash' -o -name '*.bats' -o -name 'mps' -o -name 'multipass' \) 2>/dev/null | grep -v '.ps1') install.sh uninstall.sh
+BASH_SCRIPTS    := $(shell find bin/ lib/ commands/ images/ completions/ tests/ .github/scripts/ -type f \( -name '*.sh' -o -name '*.bash' -o -name '*.bats' -o -name 'mps' -o -name 'multipass' \) 2>/dev/null | grep -v '.ps1') install.sh uninstall.sh
 CLIENT_SCRIPTS  := $(shell find bin/ lib/ commands/ completions/ tests/ -type f \( -name '*.sh' -o -name '*.bash' -o -name 'mps' -o -name 'multipass' \) 2>/dev/null | grep -v '.ps1' | grep -v 'tests/coverage-') install.sh uninstall.sh
 PS_SCRIPTS      := $(shell find . -name '*.ps1' 2>/dev/null)
 YAML_FILES      := $(shell find templates/ images/layers/ .github/ISSUE_TEMPLATE/ -name '*.yaml' -o -name '*.yml' 2>/dev/null)

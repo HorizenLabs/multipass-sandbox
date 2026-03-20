@@ -9,17 +9,14 @@ permissions:
 
 jobs:
   release:
-    runs-on: warp-ubuntu-latest-x64-2x
+    runs-on: warp-ubuntu-latest-x64-4x
     environment: publish
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
           fetch-tags: true
-
-      - name: Fetch tag objects
-        run: git fetch origin 'refs/tags/*:refs/tags/*' --force
 
       - name: Resolve tag and version
         id: resolve
@@ -42,7 +39,7 @@ jobs:
           maintainer-keys: ${{ vars.MAINTAINER_KEYS }}
 
       - name: Snap confinement preflight
-        run: bash tests/ci-preflight.sh
+        run: bash .github/scripts/ci-preflight.sh
 
       - name: Validate version matches VERSION file
         run: |
@@ -63,6 +60,27 @@ jobs:
           CF_ZONE_ID: ${{ secrets.CF_ZONE_ID }}
           CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
 
+      - name: Detect image drift
+        id: image-drift
+        run: |
+          drift="$(bash .github/scripts/e2e-image-drift.sh)"
+          echo "detected=$drift" >> "$GITHUB_OUTPUT"
+          echo "Image drift: $drift"
+
+      - name: Setup submodule
+        if: steps.image-drift.outputs.detected == 'true'
+        env:
+          DEPLOY_KEY: ${{ secrets.SUBMODULE_DEPLOY_KEY }}
+        run: bash .github/scripts/ci-setup-submodule.sh
+
+      - name: Check KVM
+        if: steps.image-drift.outputs.detected == 'true'
+        run: bash .github/scripts/ci-check-kvm.sh
+
+      - name: Build base image
+        if: steps.image-drift.outputs.detected == 'true'
+        run: make image-base-amd64
+
       - name: Lint
         run: make lint
 
@@ -70,7 +88,13 @@ jobs:
         run: make test
 
       - name: E2E test
-        run: MPS_E2E_INSTALL=true make test-e2e
+        run: |
+          if [[ -f images/artifacts/mps-base-amd64.qcow2.img ]]; then
+            MPS_E2E_IMAGE=images/artifacts/mps-base-amd64.qcow2.img \
+              MPS_E2E_INSTALL=true make test-e2e
+          else
+            MPS_E2E_INSTALL=true make test-e2e
+          fi
 
       - name: Aggregate coverage (unit + integration + e2e)
         run: make test-e2e-report
@@ -84,14 +108,14 @@ jobs:
 
       - name: Upload coverage artifact
         if: "!cancelled()"
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: coverage
           path: coverage/
           retention-days: 30
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v2  # TODO: bump to v3 when Node 24 version is released
         with:
           tag_name: ${{ steps.resolve.outputs.tag }}
           name: mps ${{ steps.resolve.outputs.version }}

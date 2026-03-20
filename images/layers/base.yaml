@@ -4,7 +4,7 @@
 
 x-mps:
   description: "Ubuntu 24.04 + Docker + Node.js + Python + dev tools + AI assistants"
-  disk_size: 7G
+  disk_size: 8G
   min_profile: micro
   min_disk: 10G
   min_memory: 1G

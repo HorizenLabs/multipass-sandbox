@@ -39,7 +39,8 @@ Internal CLI tool for spinning up isolated VM-based development environments usi
 - `.github/actions/verify-gpg-tag/` — Composite action for GPG tag signature verification
 - `vendor/hl-claude-marketplace` — Git submodule: private Claude Code plugin marketplace (relative URL)
 - `.claude/skills/` — Claude Code skills (`audit-docs`: doc staleness audit, `init-template`: cloud-init template generator)
-- `tests/` — BATS test suites (`unit/`, `integration/`), shared `test_helper.bash`, `stubs/` (multipass, ssh, sudo, http_server.py), coverage scripts (`coverage-trap.sh`, `coverage-report.sh`), `tap-summary.sh`, `capture-fixtures.sh`, `ci-preflight.sh` (snap confinement checks), `e2e.sh` (full VM lifecycle), `TESTING.md` (strategy and coverage map)
+- `tests/` — BATS test suites (`unit/`, `integration/`), shared `test_helper.bash`, `stubs/` (multipass, ssh, sudo, http_server.py), coverage scripts (`coverage-trap.sh`, `coverage-report.sh`), `tap-summary.sh`, `capture-fixtures.sh`, `e2e.sh` (full VM lifecycle), `TESTING.md` (strategy and coverage map)
+- `.github/scripts/` — CI helper scripts: `ci-preflight.sh` (snap confinement checks), `ci-setup-submodule.sh` (SSH deploy key + submodule init), `ci-check-kvm.sh` (KVM module loading), `ci-detect-e2e.sh` (e2e change detection for ci.yml), `e2e-image-drift.sh` (image drift detection vs latest tag)
 - `.planning/` — Implementation plan, architecture decisions, status tracking
 
 ## Commands
@@ -143,8 +144,8 @@ The Makefile detects host uid:gid and the entrypoint uses setpriv to step down f
 ## Workflow
 
 - After modifying any linted or tested file, run `make lint` and `make test` before committing. Linted files:
-  - **Bash**: `bin/mps`, `lib/*.sh`, `commands/*.sh`, `completions/*.bash`, `tests/**/*.bats`, `tests/**/*.bash`, `tests/**/*.sh`, `tests/stubs/multipass`, `images/**/*.sh`, `install.sh`, `uninstall.sh`
-  - **Bash 3.2 compat**: `bin/mps`, `lib/*.sh`, `commands/*.sh`, `completions/*.bash`, `tests/**/*.bash`, `tests/**/*.sh` (excluding `coverage-*`), `tests/stubs/multipass`, `install.sh`, `uninstall.sh` (client scripts only — no `images/`, `*.bats`, or `tests/coverage-*`; BATS 3.2 compat is verified by `make test` which runs under both bash versions)
+  - **Bash**: `bin/mps`, `lib/*.sh`, `commands/*.sh`, `completions/*.bash`, `tests/**/*.bats`, `tests/**/*.bash`, `tests/**/*.sh`, `tests/stubs/multipass`, `images/**/*.sh`, `.github/scripts/*.sh`, `install.sh`, `uninstall.sh`
+  - **Bash 3.2 compat**: `bin/mps`, `lib/*.sh`, `commands/*.sh`, `completions/*.bash`, `tests/**/*.bash`, `tests/**/*.sh` (excluding `coverage-*`), `tests/stubs/multipass`, `install.sh`, `uninstall.sh` (client scripts only — no `images/`, `.github/scripts/`, `*.bats`, or `tests/coverage-*`; BATS 3.2 compat is verified by `make test` which runs under both bash versions)
   - **PowerShell**: `*.ps1`
   - **Dockerfile**: `docker/Dockerfile.builder`, `docker/Dockerfile.linter`, `docker/Dockerfile.publisher`, `docker/Dockerfile.bash32`
   - **Makefile**: `Makefile`

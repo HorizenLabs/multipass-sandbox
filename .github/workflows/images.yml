@@ -33,7 +33,7 @@ jobs:
       flavors_json: ${{ steps.flavors.outputs.flavors_json }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
           fetch-tags: true
@@ -112,32 +112,17 @@ jobs:
     timeout-minutes: 240
     steps:
       - name: Checkout at tag
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ needs.resolve.outputs.tag }}
 
       - name: Snap confinement preflight
-        run: bash tests/ci-preflight.sh
+        run: bash .github/scripts/ci-preflight.sh
 
-      - name: Configure SSH for submodule
+      - name: Setup submodule
         env:
           DEPLOY_KEY: ${{ secrets.SUBMODULE_DEPLOY_KEY }}
-        run: |
-          mkdir -p ~/.ssh
-          echo "$DEPLOY_KEY" > ~/.ssh/submodule_key
-          chmod 600 ~/.ssh/submodule_key
-          ssh-keyscan github.com >> ~/.ssh/known_hosts 2>/dev/null
-          cat >> ~/.ssh/config <<'SSH'
-          Host github-submodule
-            HostName github.com
-            IdentityFile ~/.ssh/submodule_key
-            IdentitiesOnly yes
-          SSH
-          # Relative submodule URL resolves to HTTPS — rewrite to SSH with deploy key
-          git config --global url."git@github-submodule:HorizenLabs/hl-claude-marketplace".insteadOf "https://github.com/HorizenLabs/hl-claude-marketplace"
-
-      - name: Init submodules
-        run: git submodule update --init --recursive
+        run: bash .github/scripts/ci-setup-submodule.sh
 
       - name: Validate required secrets
         run: |
@@ -149,23 +134,8 @@ jobs:
           CF_ZONE_ID: ${{ secrets.CF_ZONE_ID }}
           CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
 
-      - name: Verify submodule
-        run: |
-          if [[ ! -f vendor/hl-claude-marketplace/.git ]] && [[ ! -d vendor/hl-claude-marketplace/.git ]]; then
-            echo "::error::Submodule vendor/hl-claude-marketplace not initialized"
-            exit 1
-          fi
-
       - name: Check KVM
-        run: |
-          if [[ ! -e /dev/kvm ]]; then
-            sudo modprobe kvm 2>/dev/null || true
-          fi
-          if [[ -e /dev/kvm ]]; then
-            echo "KVM available"
-          else
-            echo "::warning::KVM not available — builds will use TCG (slower)"
-          fi
+        run: bash .github/scripts/ci-check-kvm.sh
 
       - name: Build Docker images
         run: |
@@ -297,29 +267,14 @@ jobs:
         flavor: ${{ fromJson(needs.resolve.outputs.flavors_json) }}
     steps:
       - name: Checkout at tag
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ needs.resolve.outputs.tag }}
 
-      - name: Configure SSH for submodule
+      - name: Setup submodule
         env:
           DEPLOY_KEY: ${{ secrets.SUBMODULE_DEPLOY_KEY }}
-        run: |
-          mkdir -p ~/.ssh
-          echo "$DEPLOY_KEY" > ~/.ssh/submodule_key
-          chmod 600 ~/.ssh/submodule_key
-          ssh-keyscan github.com >> ~/.ssh/known_hosts 2>/dev/null
-          cat >> ~/.ssh/config <<'SSH'
-          Host github-submodule
-            HostName github.com
-            IdentityFile ~/.ssh/submodule_key
-            IdentitiesOnly yes
-          SSH
-          # Relative submodule URL resolves to HTTPS — rewrite to SSH with deploy key
-          git config --global url."git@github-submodule:HorizenLabs/hl-claude-marketplace".insteadOf "https://github.com/HorizenLabs/hl-claude-marketplace"
-
-      - name: Init submodules
-        run: git submodule update --init --recursive
+        run: bash .github/scripts/ci-setup-submodule.sh
 
       - name: Validate required secrets
         run: |
@@ -331,23 +286,8 @@ jobs:
           CF_ZONE_ID: ${{ secrets.CF_ZONE_ID }}
           CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
 
-      - name: Verify submodule
-        run: |
-          if [[ ! -f vendor/hl-claude-marketplace/.git ]] && [[ ! -d vendor/hl-claude-marketplace/.git ]]; then
-            echo "::error::Submodule vendor/hl-claude-marketplace not initialized"
-            exit 1
-          fi
-
       - name: Check KVM
-        run: |
-          if [[ ! -e /dev/kvm ]]; then
-            sudo modprobe kvm 2>/dev/null || true
-          fi
-          if [[ -e /dev/kvm ]]; then
-            echo "KVM available"
-          else
-            echo "::warning::KVM not available — builds will use TCG (slower)"
-          fi
+        run: bash .github/scripts/ci-check-kvm.sh
 
       - name: Build Docker images
         run: |
@@ -410,7 +350,7 @@ jobs:
     environment: publish
     steps:
       - name: Checkout at tag
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ needs.resolve.outputs.tag }}
 

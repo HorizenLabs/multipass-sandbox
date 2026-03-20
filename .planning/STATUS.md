@@ -31,7 +31,7 @@ A blockchain software development company needs an internal tool to spin up isol
 - **Phase 8 — Update Documentation**: README, help messages, GitHub templates, CODEOWNERS
 - **Phase 9 — User Acceptance Testing (Alpha)**: Bash 3.2 compat linting, mount/port/metadata refactors, instance staleness detection, CLI update check, installer fixes, dead code audits, documentation updates
 - **Phase 10 — Bash Completion**: Self-describing tab-completion via `mps __complete` hidden subcommand. `_complete_<cmd>()` metadata functions in all 13 command files, `completions/mps.bash` thin generic script, installer/uninstaller support, Makefile lint integration. Dynamic completion for instance names, profiles, images, cloud-init templates.
-- **Phase 11 — Testing**: 917 BATS tests (unit + integration, dual Bash 4+/3.2) + 16-phase E2E lifecycle (~90 assertions). Xtrace-based coverage (90% minimum gate). CI: lint+test on PR, E2E gate on release, build→e2e→upload on image publish. See [tests/TESTING.md](../tests/TESTING.md).
+- **Phase 11 — Testing**: 968 BATS tests (unit + integration, dual Bash 4+/3.2) + 16-phase E2E lifecycle (~90 assertions). Xtrace-based coverage (90% minimum gate). CI: lint+test on PR, E2E gate on release, build→e2e→upload on image publish. See [tests/TESTING.md](../tests/TESTING.md).
 
 ## Phase 12 — PowerShell Parity (Windows): NOT STARTED
 

@@ -4,7 +4,7 @@
 
 x-mps:
   description: "protocol-dev + Solana/Anchor (amd64) + Foundry + Hardhat"
-  disk_size: 11G
+  disk_size: 12G
   min_profile: lite
   min_disk: 15G
   min_memory: 4G

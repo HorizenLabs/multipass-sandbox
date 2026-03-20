@@ -351,8 +351,8 @@ the full wiring: argument resolution → state checks → `mp_*` calls → metad
 
 | Command | Test File | Tests | Notes |
 |---------|-----------|-------|-------|
-| `cmd_list` | `cmd_query.bats` | 7 | Formatted table, state text, IP, `--json`, empty list, call log, image column |
-| `cmd_status` | `cmd_query.bats` | 8 | Detailed info, `--json`, image hash, staleness, mount origins, docker, stopped skip, nonexistent |
+| `cmd_list` | `cmd_query.bats` | 9 | Formatted table, state text, IP, `--json`, empty list, call log, image column, mps image label, stock fallback |
+| `cmd_status` | `cmd_query.bats` | 15 | Detailed info, `--json`, image hash (stock), mps image label, staleness (5 variants), mount origins (2), docker, stopped skip, nonexistent, config mounts |
 | `cmd_down` | `cmd_lifecycle.bats` | 7 | Stop, `--force`, already-stopped, nonexistent, port reset, adhoc mount cleanup, success message |
 | `cmd_destroy` | `cmd_lifecycle.bats` | 7 | Purge, metadata removal, ports file, SSH config, nonexistent, `--force`, success message |
 | `cmd_create` | `cmd_lifecycle.bats` | 10 | Launch+cloud-init+meta, call log args, metadata JSON, explicit name, `--no-mount`, `--profile`, already-exists, summary, auto-mount, sidecar extraction |
@@ -456,21 +456,21 @@ Multipass stub for VM discovery, `du` stub, `brew` stub, stdin piping for intera
 | File | Tests | Tier | Directory |
 |------|-------|------|-----------|
 | `cmd_parsing.bats` | 105 | Unit | `tests/unit/` |
-| `common_parsing.bats` | 21 | Unit | `tests/unit/` |
+| `common_parsing.bats` | 45 | Unit | `tests/unit/` |
 | `common_naming.bats` | 38 | Unit | `tests/unit/` |
 | `common_logging.bats` | 8 | Unit | `tests/unit/` |
 | `common_config.bats` | 23 | Unit | `tests/unit/` |
-| `common_resources.bats` | 19 | Unit | `tests/unit/` |
+| `common_resources.bats` | 25 | Unit | `tests/unit/` |
 | `common_paths.bats` | 30 | Unit | `tests/unit/` |
-| `common_meta.bats` | 56 | Unit | `tests/unit/` |
+| `common_meta.bats` | 62 | Unit | `tests/unit/` |
 | `common_ports.bats` | 15 | Unit | `tests/unit/` |
 | `common_updates.bats` | 19 | Unit | `tests/unit/` |
 | `common_utils.bats` | 23 | Unit | `tests/unit/` |
 | `completion.bats` | 69 | Unit | `tests/unit/` |
 | `stub_smoke.bats` | 20 | Integration | `tests/integration/` |
-| `mp_lifecycle.bats` | 40 | Integration | `tests/integration/` |
-| `network.bats` | 61 | Integration | `tests/integration/` |
-| `cmd_query.bats` | 21 | Integration | `tests/integration/` |
+| `mp_lifecycle.bats` | 41 | Integration | `tests/integration/` |
+| `network.bats` | 71 | Integration | `tests/integration/` |
+| `cmd_query.bats` | 24 | Integration | `tests/integration/` |
 | `cmd_lifecycle.bats` | 67 | Integration | `tests/integration/` |
 | `cmd_exec.bats` | 27 | Integration | `tests/integration/` |
 | `cmd_port.bats` | 20 | Integration | `tests/integration/` |
@@ -481,11 +481,11 @@ Multipass stub for VM discovery, `du` stub, `brew` stub, stdin piping for intera
 | `completion_driver.bats` | 36 | Integration | `tests/integration/` |
 | `completion_instances.bats` | 8 | Integration | `tests/integration/` |
 | `entry_point.bats` | 11 | Integration | `tests/integration/` |
-| `install.bats` | 37 | Integration | `tests/integration/` |
+| `install.bats` | 38 | Integration | `tests/integration/` |
 | `uninstall.bats` | 26 | Integration | `tests/integration/` |
-| **Total** | **917** | | |
+| **Total** | **968** | | |
 
-*Last updated: 2026-02-26*
+*Last updated: 2026-03-18*
 
 ### E2E Test Coverage Map
 
