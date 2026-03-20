@@ -821,6 +821,65 @@ METAJSON
 }
 
 # ================================================================
+# cmd_create: mount recovery on partial launch failure
+# ================================================================
+
+@test "cmd_create: recovers failed mount when launch returns partial success" {
+    local mount_dir="${HOME}/test-project"
+    mkdir -p "$mount_dir"
+    local phys_dir
+    phys_dir="$(cd "$mount_dir" && pwd -P)"
+
+    # Stub mp_launch to simulate partial mount failure (returns 2 = VM running, mounts failed)
+    mp_launch() { return 2; }
+    export -f mp_launch
+
+    # Stub mp_get_mounts to return empty (multipass removed the failed mount from spec)
+    mp_get_mounts() { echo ""; }
+    export -f mp_get_mounts
+
+    # No-op sleep to avoid retry delay in tests
+    sleep() { :; }
+    export -f sleep
+
+    run cmd_create --name test-recover "$mount_dir"
+    [[ "$status" -eq 0 ]]
+    log="$(cat "$MOCK_MP_CALL_LOG")"
+    # Should have retried the mount via separate multipass mount call
+    [[ "$log" == *"mount ${phys_dir} mps-test-recover:${phys_dir}"* ]]
+}
+
+@test "cmd_create: skips recovery for mounts that survived launch" {
+    local mount_dir="${HOME}/test-project"
+    mkdir -p "$mount_dir"
+    local phys_dir
+    phys_dir="$(cd "$mount_dir" && pwd -P)"
+
+    # Stub mp_launch to simulate partial mount failure
+    mp_launch() { return 2; }
+    export -f mp_launch
+
+    # Stub mp_get_mounts to return the mount as already present
+    mp_get_mounts() {
+        cat <<MOUNTS
+{"${phys_dir}": {"source_path": "${phys_dir}", "uid_mappings": ["1000:default"], "gid_mappings": ["1000:default"]}}
+MOUNTS
+    }
+    export -f mp_get_mounts
+
+    sleep() { :; }
+    export -f sleep
+
+    run cmd_create --name test-skip-recover "$mount_dir"
+    [[ "$status" -eq 0 ]]
+    log="$(cat "$MOCK_MP_CALL_LOG")"
+    # Should NOT have called mount (mount was already present)
+    local mount_count
+    mount_count="$(grep -c "^multipass mount " "$MOCK_MP_CALL_LOG" || true)"
+    [[ "$mount_count" -eq 0 ]]
+}
+
+# ================================================================
 # cmd_create / cmd_up: port count display in summary
 # ================================================================
 

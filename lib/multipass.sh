@@ -42,6 +42,14 @@ mp_launch() {
     mps_log_debug "Running: ${cmd[*]}"
 
     if ! ${cmd[@]+"${cmd[@]}"}; then
+        # Check if instance launched despite mount failures (e.g. sshfs timeout).
+        # Multipass returns non-zero when mounts fail even if the VM is running.
+        local state=""
+        state="$(mp_instance_state "$instance_name" 2>/dev/null)" || true
+        if [[ "$state" == "Running" ]]; then
+            mps_log_warn "Instance '${_display}' launched with mount errors (will retry)"
+            return 2
+        fi
         mps_die "Failed to launch instance '${_display}'"
     fi
 

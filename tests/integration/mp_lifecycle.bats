@@ -124,6 +124,14 @@ teardown() { teardown_home_override; }
     [[ "$output" == *"Failed to launch"* ]]
 }
 
+@test "mp_launch: returns 2 when instance Running despite mount failure" {
+    export MOCK_MP_LAUNCH_EXIT=1
+    # mps-fixture-primary has a Running fixture — simulates mount timeout
+    run mp_launch "mps-fixture-primary" "base" "2" "2G" "20G" "" "--mount" "/tmp:/mnt"
+    [[ "$status" -eq 2 ]]
+    [[ "$output" == *"mount errors"* ]]
+}
+
 # ================================================================
 # mp_start
 # ================================================================
