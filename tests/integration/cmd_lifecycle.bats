@@ -821,6 +821,65 @@ METAJSON
 }
 
 # ================================================================
+# cmd_create: mount recovery on partial launch failure
+# ================================================================
+
+@test "cmd_create: recovers failed mount when launch returns partial success" {
+    local mount_dir="${HOME}/test-project"
+    mkdir -p "$mount_dir"
+    local phys_dir
+    phys_dir="$(cd "$mount_dir" && pwd -P)"
+
+    # Stub mp_launch to simulate partial mount failure (returns 2 = VM running, mounts failed)
+    mp_launch() { return 2; }
+    export -f mp_launch
+
+    # Stub mp_get_mounts to return empty (multipass removed the failed mount from spec)
+    mp_get_mounts() { echo ""; }
+    export -f mp_get_mounts
+
+    # No-op sleep to avoid retry delay in tests
+    sleep() { :; }
+    export -f sleep
+
+    run cmd_create --name test-recover "$mount_dir"
+    [[ "$status" -eq 0 ]]
+    log="$(cat "$MOCK_MP_CALL_LOG")"
+    # Should have retried the mount via separate multipass mount call
+    [[ "$log" == *"mount ${phys_dir} mps-test-recover:${phys_dir}"* ]]
+}
+
+@test "cmd_create: skips recovery for mounts that survived launch" {
+    local mount_dir="${HOME}/test-project"
+    mkdir -p "$mount_dir"
+    local phys_dir
+    phys_dir="$(cd "$mount_dir" && pwd -P)"
+
+    # Stub mp_launch to simulate partial mount failure
+    mp_launch() { return 2; }
+    export -f mp_launch
+
+    # Stub mp_get_mounts to return the mount as already present
+    mp_get_mounts() {
+        cat <<MOUNTS
+{"${phys_dir}": {"source_path": "${phys_dir}", "uid_mappings": ["1000:default"], "gid_mappings": ["1000:default"]}}
+MOUNTS
+    }
+    export -f mp_get_mounts
+
+    sleep() { :; }
+    export -f sleep
+
+    run cmd_create --name test-skip-recover "$mount_dir"
+    [[ "$status" -eq 0 ]]
+    log="$(cat "$MOCK_MP_CALL_LOG")"
+    # Should NOT have called mount (mount was already present)
+    local mount_count
+    mount_count="$(grep -c "^multipass mount " "$MOCK_MP_CALL_LOG" || true)"
+    [[ "$mount_count" -eq 0 ]]
+}
+
+# ================================================================
 # cmd_create / cmd_up: port count display in summary
 # ================================================================
 
@@ -909,6 +968,90 @@ METAJSON
     local mount_count
     mount_count="$(grep -c "^multipass mount " "$MOCK_MP_CALL_LOG" || true)"
     [[ "$mount_count" -eq 0 ]]
+}
+
+# ================================================================
+# _mps_lazy_restore_mounts: re-establish mounts after silent drop
+# ================================================================
+
+@test "_mps_lazy_restore_mounts: re-establishes missing auto-mount" {
+    # Fixture: Running instance with NO mounts (simulates post-reboot drop)
+    _mock_fixture_state "fixture-primary" "Running" '{}' '["10.0.0.1"]'
+
+    # Metadata with workdir pointing to a real directory
+    local mount_dir="${HOME}/project"
+    mkdir -p "$mount_dir"
+    local phys_dir
+    phys_dir="$(cd "$mount_dir" && pwd -P)"
+
+    cat > "${HOME}/mps/instances/fixture-primary.json" <<METAJSON
+{
+    "name": "fixture-primary",
+    "full_name": "mps-fixture-primary",
+    "workdir": "${phys_dir}",
+    "image": null
+}
+METAJSON
+
+    run _mps_lazy_restore_mounts "mps-fixture-primary" "fixture-primary"
+    [[ "$status" -eq 0 ]]
+    log="$(cat "$MOCK_MP_CALL_LOG")"
+    [[ "$log" == *"mount ${phys_dir} mps-fixture-primary:${phys_dir}"* ]]
+}
+
+@test "_mps_lazy_restore_mounts: skips mounts already present" {
+    # Default running-mounted fixture has mounts at /mnt/test-a and /mnt/test-b
+    # Set workdir to /mnt/test-a — it's already mounted, so nothing should happen
+    cat > "${HOME}/mps/instances/fixture-primary.json" <<'METAJSON'
+{
+    "name": "fixture-primary",
+    "full_name": "mps-fixture-primary",
+    "workdir": "/mnt/test-a",
+    "image": null
+}
+METAJSON
+
+    run _mps_lazy_restore_mounts "mps-fixture-primary" "fixture-primary"
+    [[ "$status" -eq 0 ]]
+    local mount_count
+    mount_count="$(grep -c "^multipass mount " "$MOCK_MP_CALL_LOG" || true)"
+    [[ "$mount_count" -eq 0 ]]
+}
+
+@test "_mps_lazy_restore_mounts: no-op without metadata" {
+    # No metadata file — nothing to restore
+    run _mps_lazy_restore_mounts "mps-fixture-primary" "fixture-primary"
+    [[ "$status" -eq 0 ]]
+    local mount_count
+    mount_count="$(grep -c "^multipass mount " "$MOCK_MP_CALL_LOG" || true)"
+    [[ "$mount_count" -eq 0 ]]
+}
+
+@test "cmd_up: Running instance re-establishes dropped mount" {
+    # Fixture: Running instance with no mounts
+    _mock_fixture_state "fixture-primary" "Running" '{}' '["10.0.0.1"]'
+
+    # Metadata with workdir
+    local mount_dir="${HOME}/project"
+    mkdir -p "$mount_dir"
+    local phys_dir
+    phys_dir="$(cd "$mount_dir" && pwd -P)"
+
+    cat > "${HOME}/mps/instances/fixture-primary.json" <<METAJSON
+{
+    "name": "fixture-primary",
+    "full_name": "mps-fixture-primary",
+    "workdir": "${phys_dir}",
+    "image": null
+}
+METAJSON
+
+    run cmd_up --name fixture-primary --no-mount
+    [[ "$status" -eq 0 ]]
+    [[ "$output" == *"already running"* ]]
+    log="$(cat "$MOCK_MP_CALL_LOG")"
+    # Should have re-established the mount
+    [[ "$log" == *"mount ${phys_dir} mps-fixture-primary:${phys_dir}"* ]]
 }
 
 # ================================================================

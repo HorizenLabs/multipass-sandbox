@@ -164,11 +164,13 @@ cmd_create() {
 
     # ---- Build extra arguments for mp_launch ----
     local -a extra_args=()
+    local -a expected_mounts=()
 
     # Primary mount (passed as --mount to multipass launch)
     if [[ -n "${MPS_MOUNT_SOURCE:-}" && -n "${MPS_MOUNT_TARGET:-}" ]]; then
         mps_validate_mount_source "$MPS_MOUNT_SOURCE"
         extra_args+=(--mount "${MPS_MOUNT_SOURCE}:${MPS_MOUNT_TARGET}")
+        expected_mounts+=("${MPS_MOUNT_SOURCE}:${MPS_MOUNT_TARGET}")
         mps_log_debug "Primary mount: ${MPS_MOUNT_SOURCE} -> ${MPS_MOUNT_TARGET}"
     fi
 
@@ -183,6 +185,7 @@ cmd_create() {
         fi
         mps_validate_mount_source "$mount_src"
         extra_args+=(--mount "${mount_src}:${mount_dst}")
+        expected_mounts+=("${mount_src}:${mount_dst}")
         mps_log_debug "Extra mount: ${mount_src} -> ${mount_dst}"
     done
 
@@ -195,15 +198,22 @@ cmd_create() {
             local cfg_src="${cfg_mount%%:*}"
             mps_validate_mount_source "$cfg_src"
             extra_args+=(--mount "$cfg_mount")
+            expected_mounts+=("$cfg_mount")
             mps_log_debug "Config mount: ${cfg_mount}"
         done
     fi
 
     # ---- Launch ----
-    mp_launch "$instance_name" "$image" "$cpus" "$memory" "$disk" "$cloud_init_path" ${extra_args[@]+"${extra_args[@]}"}
+    local launch_rc=0
+    mp_launch "$instance_name" "$image" "$cpus" "$memory" "$disk" "$cloud_init_path" ${extra_args[@]+"${extra_args[@]}"} || launch_rc=$?
 
     # ---- Wait for cloud-init ----
     mp_wait_cloud_init "$instance_name"
+
+    # ---- Recover any mounts that failed during launch ----
+    if [[ $launch_rc -eq 2 ]]; then
+        _create_recover_mounts "$instance_name" ${expected_mounts[@]+"${expected_mounts[@]}"}
+    fi
 
     # ---- Build metadata JSON sub-objects ----
     local short_name
@@ -323,6 +333,41 @@ cmd_create() {
     fi
     echo ""
     mps_log_info "Connect with: mps shell --name ${short_name}"
+}
+
+_create_recover_mounts() {
+    local instance_name="$1"
+    shift
+    # Remaining args are source:target pairs
+    local _display
+    _display="$(mps_short_name "$instance_name")"
+
+    local actual_mounts
+    actual_mounts="$(mp_get_mounts "$instance_name")" || true
+
+    local mount_pair
+    for mount_pair in "$@"; do
+        local m_src="${mount_pair%%:*}"
+        local m_tgt="${mount_pair#*:}"
+
+        # Check if this mount target exists in actual mounts
+        if [[ -n "$actual_mounts" ]] && \
+           echo "$actual_mounts" | jq -e --arg t "$m_tgt" 'has($t)' >/dev/null 2>&1; then
+            continue
+        fi
+
+        mps_log_info "Retrying failed mount: ${m_src} → ${_display}:${m_tgt}..."
+        local retry
+        for retry in 1 2 3; do
+            sleep 3
+            if mp_mount "$m_src" "$instance_name" "$m_tgt"; then
+                break
+            fi
+            if [[ $retry -eq 3 ]]; then
+                mps_log_warn "Mount '${m_src}' → '${_display}:${m_tgt}' failed after ${retry} retries"
+            fi
+        done
+    done
 }
 
 _complete_create() {

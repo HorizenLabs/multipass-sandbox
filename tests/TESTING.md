@@ -223,7 +223,7 @@ Integration tests using the mock `multipass` stub with call-log assertions and c
 | `mp_info` | `mp_lifecycle.bats` | Full JSON for known instance; dies on unknown |
 | `mp_info_field` | `mp_lifecycle.bats` | Field extraction (state, image_release); empty for missing |
 | `mp_instance_state` | `mp_lifecycle.bats` | Returns state for existing; "nonexistent" for unknown |
-| `mp_launch` | `mp_lifecycle.bats` | Arg construction via call log, defaults, cloud-init, extras, failure |
+| `mp_launch` | `mp_lifecycle.bats` | Arg construction via call log, defaults, cloud-init, extras, failure, returns 2 on partial mount failure (VM Running) |
 | `mp_start` | `mp_lifecycle.bats` | Call log, success message, dies on failure |
 | `mp_stop` | `mp_lifecycle.bats` | No --force by default, --force when true, dies on failure |
 | `mp_delete` | `mp_lifecycle.bats` | --purge by default, omit when false, dies on failure |
@@ -355,8 +355,10 @@ the full wiring: argument resolution → state checks → `mp_*` calls → metad
 | `cmd_status` | `cmd_query.bats` | 15 | Detailed info, `--json`, image hash (stock), mps image label, staleness (5 variants), mount origins (2), docker, stopped skip, nonexistent, config mounts |
 | `cmd_down` | `cmd_lifecycle.bats` | 7 | Stop, `--force`, already-stopped, nonexistent, port reset, adhoc mount cleanup, success message |
 | `cmd_destroy` | `cmd_lifecycle.bats` | 7 | Purge, metadata removal, ports file, SSH config, nonexistent, `--force`, success message |
-| `cmd_create` | `cmd_lifecycle.bats` | 10 | Launch+cloud-init+meta, call log args, metadata JSON, explicit name, `--no-mount`, `--profile`, already-exists, summary, auto-mount, sidecar extraction |
-| `cmd_up` | `cmd_lifecycle.bats` | 8 | Nonexistent→create, stopped→start, running→noop, suspended→start, mount restore, IP output, instance name, unexpected state |
+| `cmd_create` | `cmd_lifecycle.bats` | 14 | Launch+cloud-init+meta, call log args, metadata JSON, explicit name, `--no-mount`, `--profile`, already-exists, summary, auto-mount, sidecar extraction, mount recovery on partial launch, skip recovery for present mounts |
+| `_create_recover_mounts` | `cmd_create_recover.bats` | 7 | Retry missing, no-op empty args, skip present, mixed present/missing, 2nd attempt success, all retries exhausted, multiple mounts |
+| `_mps_lazy_restore_mounts` | `common_lazy_mounts.bats` | 8 | Re-establish from metadata, no-op no metadata, null workdir, skip present, missing source dir, mount failure warning, config mounts from .mps.env, mixed present/missing |
+| `cmd_up` | `cmd_lifecycle.bats` | 12 | Nonexistent→create, stopped→start, running→noop, suspended→start, mount restore, IP output, instance name, unexpected state, lazy restore dropped mount, skip present mount, no-op without metadata, Running re-establishes dropped mount |
 | `cmd_shell` | `cmd_exec.bats` | 5 | Call log, `--workdir`, metadata workdir, nonexistent, not running |
 | `cmd_exec` | `cmd_exec.bats` | 5 | `--` separator, `--workdir`, metadata workdir, exit code forwarding, not running |
 | `cmd_transfer` | `cmd_exec.bats` | 5 | Host→guest, guest→host, not-running error, direction message, prepare check |
@@ -467,11 +469,13 @@ Multipass stub for VM discovery, `du` stub, `brew` stub, stdin piping for intera
 | `common_updates.bats` | 19 | Unit | `tests/unit/` |
 | `common_utils.bats` | 23 | Unit | `tests/unit/` |
 | `completion.bats` | 69 | Unit | `tests/unit/` |
+| `cmd_create_recover.bats` | 7 | Unit | `tests/unit/` |
+| `common_lazy_mounts.bats` | 8 | Unit | `tests/unit/` |
 | `stub_smoke.bats` | 20 | Integration | `tests/integration/` |
-| `mp_lifecycle.bats` | 41 | Integration | `tests/integration/` |
+| `mp_lifecycle.bats` | 42 | Integration | `tests/integration/` |
 | `network.bats` | 71 | Integration | `tests/integration/` |
 | `cmd_query.bats` | 24 | Integration | `tests/integration/` |
-| `cmd_lifecycle.bats` | 67 | Integration | `tests/integration/` |
+| `cmd_lifecycle.bats` | 73 | Integration | `tests/integration/` |
 | `cmd_exec.bats` | 27 | Integration | `tests/integration/` |
 | `cmd_port.bats` | 20 | Integration | `tests/integration/` |
 | `cmd_ssh_config.bats` | 19 | Integration | `tests/integration/` |
@@ -483,9 +487,9 @@ Multipass stub for VM discovery, `du` stub, `brew` stub, stdin piping for intera
 | `entry_point.bats` | 11 | Integration | `tests/integration/` |
 | `install.bats` | 38 | Integration | `tests/integration/` |
 | `uninstall.bats` | 26 | Integration | `tests/integration/` |
-| **Total** | **968** | | |
+| **Total** | **990** | | |
 
-*Last updated: 2026-03-18*
+*Last updated: 2026-03-20*
 
 ### E2E Test Coverage Map
 
@@ -502,9 +506,10 @@ Multipass stub for VM discovery, `du` stub, `brew` stub, stdin piping for intera
 | 8 | Lazy Ports | 2 | trigger, port list 19000 active |
 | 9 | Transfer | 2 | host->guest, guest->host |
 | 10 | Mounts | 7 | config present, adhoc add, bidirectional, 3 origins, remove |
+| 10b | Lazy Mount Restore | 3 | raw umount, exec triggers restore, mount functional |
 | 11 | Ports | 4 | unprivileged forward, privileged forward, port list |
 | 12 | Down/Up | 14 | tunnels alive, down state, ports dead, exec error, up state, mount restore, lazy re-establish, re-forward, service restart |
 | 13 | Destroy | 3 | not in list, metadata removed, SSH config removed |
 | 14 | Image Remove | 1 | image not in list |
 | 15 | Uninstall | 2 | mps not found, completion removed |
-| **Total** | | **~90** | |
+| **Total** | | **~93** | |
