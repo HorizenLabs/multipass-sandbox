@@ -249,11 +249,13 @@ METAJSON
     [[ "$log" == *"--name mps-my-explicit-name"* ]]
 }
 
-@test "cmd_create --no-mount: skips mount args in launch call" {
+@test "cmd_create --no-mount: skips all mount operations" {
     run cmd_create --name test-nomount --no-mount
     [[ "$status" -eq 0 ]]
     log="$(cat "$MOCK_MP_CALL_LOG")"
     [[ "$log" != *"--mount"* ]]
+    # No separate mount calls either
+    [[ "$(grep -c "^multipass mount" "$MOCK_MP_CALL_LOG")" -eq 0 ]]
 }
 
 @test "cmd_create --profile micro: applies profile resources" {
@@ -293,7 +295,7 @@ METAJSON
     [[ "$output" == *"Disk:"* ]]
 }
 
-@test "cmd_create: auto-mount includes --mount in launch args" {
+@test "cmd_create: auto-mount applied as separate mount call after launch" {
     # Use a mount path under fake HOME so validate_mount_source passes
     local mount_dir="${HOME}/test-project"
     mkdir -p "$mount_dir"
@@ -304,7 +306,12 @@ METAJSON
     run cmd_create --name test-mount "$mount_dir"
     [[ "$status" -eq 0 ]]
     log="$(cat "$MOCK_MP_CALL_LOG")"
-    [[ "$log" == *"--mount ${phys_dir}:${phys_dir}"* ]]
+    # Mount should NOT be in the launch command
+    local launch_line
+    launch_line="$(grep "^multipass launch" "$MOCK_MP_CALL_LOG" || true)"
+    [[ "$launch_line" != *"--mount"* ]]
+    # Mount should be a separate call after launch
+    [[ "$log" == *"multipass mount ${phys_dir} mps-test-mount:${phys_dir}"* ]]
 }
 
 @test "cmd_create: image metadata extraction from sidecar" {
@@ -472,7 +479,7 @@ METAJSON
 # cmd_create: --mount flag (extra mounts)
 # ================================================================
 
-@test "cmd_create --mount: extra mount appears in launch args" {
+@test "cmd_create --mount: extra mount applied as separate mount call" {
     local mount_src="${HOME}/extra-src"
     mkdir -p "$mount_src"
     local phys_src
@@ -481,10 +488,15 @@ METAJSON
     run cmd_create --name test-extra-mount --no-mount --mount "${mount_src}:/mnt/extra"
     [[ "$status" -eq 0 ]]
     log="$(cat "$MOCK_MP_CALL_LOG")"
-    [[ "$log" == *"--mount ${phys_src}:/mnt/extra"* ]]
+    # Not in launch command
+    local launch_line
+    launch_line="$(grep "^multipass launch" "$MOCK_MP_CALL_LOG" || true)"
+    [[ "$launch_line" != *"--mount"* ]]
+    # Separate mount call
+    [[ "$log" == *"multipass mount ${phys_src} mps-test-extra-mount:/mnt/extra"* ]]
 }
 
-@test "cmd_create --mount: multiple extra mounts all appear in launch args" {
+@test "cmd_create --mount: multiple extra mounts all applied separately" {
     local src_a="${HOME}/mount-a"
     local src_b="${HOME}/mount-b"
     mkdir -p "$src_a" "$src_b"
@@ -493,8 +505,44 @@ METAJSON
         --mount "${src_a}:/mnt/a" --mount "${src_b}:/mnt/b"
     [[ "$status" -eq 0 ]]
     log="$(cat "$MOCK_MP_CALL_LOG")"
-    [[ "$log" == *"--mount"*"/mnt/a"* ]]
-    [[ "$log" == *"--mount"*"/mnt/b"* ]]
+    # Not in launch command
+    local launch_line
+    launch_line="$(grep "^multipass launch" "$MOCK_MP_CALL_LOG" || true)"
+    [[ "$launch_line" != *"--mount"* ]]
+    # Separate mount calls
+    [[ "$log" == *"multipass mount"*"/mnt/a"* ]]
+    [[ "$log" == *"multipass mount"*"/mnt/b"* ]]
+}
+
+# ================================================================
+# cmd_create: graceful mount failure
+# ================================================================
+
+@test "cmd_create: mount failure does not kill create flow" {
+    export MOCK_MP_MOUNT_EXIT=1
+    local mount_dir="${HOME}/test-project"
+    mkdir -p "$mount_dir"
+
+    run cmd_create --name test-mount-fail "$mount_dir"
+    [[ "$status" -eq 0 ]]
+    # Instance metadata should still be saved
+    [[ -f "${HOME}/mps/instances/test-mount-fail.json" ]]
+    # Should warn about mount failure
+    [[ "$output" == *"mounts failed"* ]]
+    # Should still show ready message
+    [[ "$output" == *"is ready"* ]]
+    # Summary should indicate partial mount
+    [[ "$output" == *"partial"* ]]
+}
+
+@test "cmd_create: mount failure shows retry hint" {
+    export MOCK_MP_MOUNT_EXIT=1
+    local mount_dir="${HOME}/test-project"
+    mkdir -p "$mount_dir"
+
+    run cmd_create --name test-mount-hint "$mount_dir"
+    [[ "$status" -eq 0 ]]
+    [[ "$output" == *"mps mount add"* ]]
 }
 
 # ================================================================
@@ -806,7 +854,7 @@ METAJSON
 # cmd_create: MPS_MOUNTS config mounts
 # ================================================================
 
-@test "cmd_create: MPS_MOUNTS adds config mounts to launch args" {
+@test "cmd_create: MPS_MOUNTS config mounts applied as separate mount calls" {
     local cfg_src="${HOME}/config-mount-src"
     mkdir -p "$cfg_src"
     local phys_cfg_src
@@ -817,7 +865,12 @@ METAJSON
     run cmd_create --name test-cfgmount --no-mount
     [[ "$status" -eq 0 ]]
     log="$(cat "$MOCK_MP_CALL_LOG")"
-    [[ "$log" == *"--mount ${phys_cfg_src}:/mnt/test"* ]]
+    # Not in launch command
+    local launch_line
+    launch_line="$(grep "^multipass launch" "$MOCK_MP_CALL_LOG" || true)"
+    [[ "$launch_line" != *"--mount"* ]]
+    # Separate mount call
+    [[ "$log" == *"multipass mount ${phys_cfg_src} mps-test-cfgmount:/mnt/test"* ]]
 }
 
 # ================================================================

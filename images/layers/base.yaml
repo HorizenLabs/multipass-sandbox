@@ -48,6 +48,12 @@ packages:
   - python3
   - python3-venv
 
+snap:
+  commands:
+    # Pre-install multipass-sshfs so host mounts work without snap store access
+    # (e.g., on WSL2 where the guest snap store may be unreachable at mount time)
+    - snap install multipass-sshfs
+
 groups:
   - docker
 

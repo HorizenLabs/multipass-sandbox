@@ -59,6 +59,14 @@ make install
 
 The installer checks for `multipass` and `jq`, creates `~/mps/` directories, symlinks `mps` onto your PATH, and offers to update your shell profile if needed. Override the install directory with `MPS_INSTALL_DIR`.
 
+**WSL2 (Windows Subsystem for Linux):** Use the dedicated WSL2 installer, which handles systemd, snapd, and multipass setup before delegating to `install.sh`:
+
+```bash
+./install-wsl.sh
+```
+
+The script checks that systemd is enabled (required for snap/multipass on WSL2), installs snapd and multipass if missing, then runs the standard installer. If systemd is not enabled, it prints instructions to configure `/etc/wsl.conf` and restart WSL.
+
 > **Snap Confinement (Ubuntu):** Multipass installed via snap cannot access hidden directories (dotdirs) directly under `$HOME` — this is an AppArmor restriction of the snap `home` interface. MPS uses `~/mps/` (not `~/.mps/`) to avoid this. If you provide paths under a hidden directory (e.g., `~/.secret/project` as a mount source, transfer path, or cloud-init file), MPS will detect active snap confinement and refuse the operation with a clear error. Workaround: move files to a non-hidden path or copy them to a staging directory.
 
 ### Uninstall

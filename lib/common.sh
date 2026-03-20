@@ -1254,6 +1254,14 @@ mps_detect_os() {
     esac
 }
 
+# Detect WSL2 environment (Windows Subsystem for Linux).
+# Checks WSL_DISTRO_NAME env var first (fastest), then kernel version string.
+_mps_is_wsl() {
+    if [[ -n "${WSL_DISTRO_NAME:-}" ]]; then return 0; fi
+    if uname -r 2>/dev/null | grep -qi "microsoft"; then return 0; fi
+    return 1
+}
+
 # Convert host path to guest mount path
 # Linux/macOS: identity (same path)
 # Windows: C:\Users\foo → /c/Users/foo

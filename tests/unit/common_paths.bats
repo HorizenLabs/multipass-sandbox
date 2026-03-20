@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
 # Tests for path/OS/arch functions in lib/common.sh:
-#   mps_detect_os, mps_detect_arch, mps_host_to_guest_path,
+#   mps_detect_os, _mps_is_wsl, mps_detect_arch, mps_host_to_guest_path,
 #   mps_resolve_mount_source, mps_resolve_mount, mps_validate_mount_source,
 #   mps_parse_extra_mounts
 
@@ -22,6 +22,55 @@ teardown() {
     result="$(mps_detect_os)"
     # We're running in Docker Linux
     [[ "$result" == "linux" ]]
+}
+
+# ================================================================
+# _mps_is_wsl
+# ================================================================
+
+@test "_mps_is_wsl: returns true when WSL_DISTRO_NAME is set" {
+    WSL_DISTRO_NAME="Ubuntu" run _mps_is_wsl
+    [[ "$status" -eq 0 ]]
+}
+
+@test "_mps_is_wsl: returns false when not on WSL" {
+    unset WSL_DISTRO_NAME 2>/dev/null || true
+    # Stub uname to return a non-WSL kernel (Docker on WSL2 shares the host kernel)
+    local stub_dir="${TEST_TEMP_DIR}/wsl_uname"
+    mkdir -p "$stub_dir"
+    cat > "${stub_dir}/uname" <<'STUB'
+#!/usr/bin/env bash
+if [[ "$1" == "-r" ]]; then echo "5.15.0-generic"; else /usr/bin/uname "$@"; fi
+STUB
+    chmod +x "${stub_dir}/uname"
+    PATH="${stub_dir}:${PATH}" run _mps_is_wsl
+    [[ "$status" -ne 0 ]]
+}
+
+@test "_mps_is_wsl: returns true when uname -r contains microsoft" {
+    unset WSL_DISTRO_NAME 2>/dev/null || true
+    local stub_dir="${TEST_TEMP_DIR}/wsl_uname"
+    mkdir -p "$stub_dir"
+    cat > "${stub_dir}/uname" <<'STUB'
+#!/usr/bin/env bash
+if [[ "$1" == "-r" ]]; then echo "5.15.0-microsoft-standard-WSL2"; else /usr/bin/uname "$@"; fi
+STUB
+    chmod +x "${stub_dir}/uname"
+    PATH="${stub_dir}:${PATH}" run _mps_is_wsl
+    [[ "$status" -eq 0 ]]
+}
+
+@test "_mps_is_wsl: case-insensitive kernel match" {
+    unset WSL_DISTRO_NAME 2>/dev/null || true
+    local stub_dir="${TEST_TEMP_DIR}/wsl_uname"
+    mkdir -p "$stub_dir"
+    cat > "${stub_dir}/uname" <<'STUB'
+#!/usr/bin/env bash
+if [[ "$1" == "-r" ]]; then echo "6.6.87-Microsoft-WSL"; else /usr/bin/uname "$@"; fi
+STUB
+    chmod +x "${stub_dir}/uname"
+    PATH="${stub_dir}:${PATH}" run _mps_is_wsl
+    [[ "$status" -eq 0 ]]
 }
 
 # ================================================================

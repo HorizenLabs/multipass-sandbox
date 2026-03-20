@@ -165,11 +165,14 @@ cmd_create() {
     # ---- Build extra arguments for mp_launch ----
     local -a extra_args=()
 
-    # Primary mount (passed as --mount to multipass launch)
+    # ---- Collect mount specs (applied after launch, not during) ----
+    local -a mount_specs=()
+
+    # Primary mount
     if [[ -n "${MPS_MOUNT_SOURCE:-}" && -n "${MPS_MOUNT_TARGET:-}" ]]; then
         mps_validate_mount_source "$MPS_MOUNT_SOURCE"
-        extra_args+=(--mount "${MPS_MOUNT_SOURCE}:${MPS_MOUNT_TARGET}")
-        mps_log_debug "Primary mount: ${MPS_MOUNT_SOURCE} -> ${MPS_MOUNT_TARGET}"
+        mount_specs+=("${MPS_MOUNT_SOURCE}:${MPS_MOUNT_TARGET}")
+        mps_log_debug "Primary mount (deferred): ${MPS_MOUNT_SOURCE} -> ${MPS_MOUNT_TARGET}"
     fi
 
     # Extra mounts from --mount flags
@@ -182,8 +185,8 @@ cmd_create() {
             mount_src="$(cd "$mount_src" 2>/dev/null && pwd)" || mps_die "Mount source does not exist: ${mount_src}"
         fi
         mps_validate_mount_source "$mount_src"
-        extra_args+=(--mount "${mount_src}:${mount_dst}")
-        mps_log_debug "Extra mount: ${mount_src} -> ${mount_dst}"
+        mount_specs+=("${mount_src}:${mount_dst}")
+        mps_log_debug "Extra mount (deferred): ${mount_src} -> ${mount_dst}"
     done
 
     # Extra mounts from MPS_MOUNTS config
@@ -194,13 +197,34 @@ cmd_create() {
         for cfg_mount in $config_mounts; do
             local cfg_src="${cfg_mount%%:*}"
             mps_validate_mount_source "$cfg_src"
-            extra_args+=(--mount "$cfg_mount")
-            mps_log_debug "Config mount: ${cfg_mount}"
+            mount_specs+=("$cfg_mount")
+            mps_log_debug "Config mount (deferred): ${cfg_mount}"
         done
     fi
 
-    # ---- Launch ----
+    # ---- Launch (without mounts — they are applied post-launch) ----
     mp_launch "$instance_name" "$image" "$cpus" "$memory" "$disk" "$cloud_init_path" ${extra_args[@]+"${extra_args[@]}"}
+
+    # ---- Apply mounts (post-launch, graceful on failure) ----
+    local mount_failed=false
+    local mount_spec
+    for mount_spec in ${mount_specs[@]+"${mount_specs[@]}"}; do
+        local m_src="${mount_spec%%:*}"
+        local m_dst="${mount_spec#*:}"
+        if ! mp_mount "$m_src" "$instance_name" "$m_dst"; then
+            mount_failed=true
+        fi
+    done
+
+    if [[ "$mount_failed" == "true" ]]; then
+        local _short
+        _short="$(mps_short_name "$instance_name")"
+        mps_log_warn "One or more mounts failed. Instance is running but some mounts are unavailable."
+        mps_log_warn "Retry with: mps mount add <source>:<target> --name ${_short}"
+        if _mps_is_wsl; then
+            mps_log_warn "On WSL2, try: multipass set local.privileged-mounts=true"
+        fi
+    fi
 
     # ---- Wait for cloud-init ----
     mp_wait_cloud_init "$instance_name"
@@ -308,7 +332,12 @@ cmd_create() {
     printf "  %-14s %s\n" "Memory:" "$memory"
     printf "  %-14s %s\n" "Disk:" "$disk"
     if [[ -n "${MPS_MOUNT_SOURCE:-}" ]]; then
-        printf "  %-14s %s -> %s\n" "Mount:" "$MPS_MOUNT_SOURCE" "$MPS_MOUNT_TARGET"
+        if [[ "$mount_failed" == "true" ]]; then
+            printf "  %-14s %s -> %s %s(partial - see warnings above)%s\n" \
+                "Mount:" "$MPS_MOUNT_SOURCE" "$MPS_MOUNT_TARGET" "$_color_yellow" "$_color_reset"
+        else
+            printf "  %-14s %s -> %s\n" "Mount:" "$MPS_MOUNT_SOURCE" "$MPS_MOUNT_TARGET"
+        fi
     fi
     local port_fwd_count
     port_fwd_count="$(mps_port_forward_count "$short_name")"
