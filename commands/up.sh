@@ -107,6 +107,9 @@ cmd_up() {
         Running)
             mps_log_info "Instance '${short_name}' is already running."
 
+            # Re-establish any mounts silently dropped (e.g. after host reboot)
+            _mps_lazy_restore_mounts "$instance_name" "$short_name"
+
             # Staleness checks (image + instance)
             _up_staleness_checks "$short_name"
 

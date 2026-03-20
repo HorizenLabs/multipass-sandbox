@@ -466,7 +466,7 @@ mps_require_running() {
 }
 
 # Validate instance is running, warn about staleness, and re-establish port
-# forwards.  Echoes short_name to stdout; all logging goes to stderr.
+# forwards and mounts.  Echoes short_name to stdout; all logging goes to stderr.
 mps_prepare_running_instance() {
     local instance_name="$1"
     mps_require_running "$instance_name"
@@ -474,7 +474,46 @@ mps_prepare_running_instance() {
     short_name="$(mps_short_name "$instance_name")"
     _mps_warn_instance_staleness "$short_name"
     mps_auto_forward_ports "$instance_name" "$short_name" "Re-established"
+    _mps_lazy_restore_mounts "$instance_name" "$short_name"
     echo "$short_name"
+}
+
+# Re-establish persistent mounts (auto-mount + config mounts) that were
+# silently dropped — e.g. by multipass after a host reboot when the sshfs
+# mount setup times out.  Compares expected mounts from metadata/config
+# against actual mounts and re-mounts any that are missing.
+_mps_lazy_restore_mounts() {
+    local instance_name="$1"
+    local short_name="$2"
+
+    local expected
+    expected="$(_mps_resolve_project_mounts "$short_name")"
+    [[ -n "$expected" ]] || return 0
+
+    local actual_mounts
+    actual_mounts="$(mp_get_mounts "$instance_name")" || true
+
+    local mount_pair
+    for mount_pair in $expected; do
+        local m_src="${mount_pair%%:*}"
+        local m_tgt="${mount_pair#*:}"
+
+        # Already present — nothing to do
+        if [[ -n "$actual_mounts" ]] && \
+           echo "$actual_mounts" | jq -e --arg t "$m_tgt" 'has($t)' >/dev/null 2>&1; then
+            continue
+        fi
+
+        # Source must still exist on host
+        if [[ ! -d "$m_src" ]]; then
+            mps_log_debug "Skipping mount restore (source missing): ${m_src}"
+            continue
+        fi
+
+        mps_log_info "Re-establishing mount: ${m_src} → ${short_name}:${m_tgt}"
+        mp_mount "$m_src" "$instance_name" "$m_tgt" || \
+            mps_log_warn "Could not re-establish mount '${m_src}' → '${short_name}:${m_tgt}'"
+    done
 }
 
 # ---------- Workdir Resolution ----------

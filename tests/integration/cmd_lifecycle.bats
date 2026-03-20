@@ -971,6 +971,90 @@ METAJSON
 }
 
 # ================================================================
+# _mps_lazy_restore_mounts: re-establish mounts after silent drop
+# ================================================================
+
+@test "_mps_lazy_restore_mounts: re-establishes missing auto-mount" {
+    # Fixture: Running instance with NO mounts (simulates post-reboot drop)
+    _mock_fixture_state "fixture-primary" "Running" '{}' '["10.0.0.1"]'
+
+    # Metadata with workdir pointing to a real directory
+    local mount_dir="${HOME}/project"
+    mkdir -p "$mount_dir"
+    local phys_dir
+    phys_dir="$(cd "$mount_dir" && pwd -P)"
+
+    cat > "${HOME}/mps/instances/fixture-primary.json" <<METAJSON
+{
+    "name": "fixture-primary",
+    "full_name": "mps-fixture-primary",
+    "workdir": "${phys_dir}",
+    "image": null
+}
+METAJSON
+
+    run _mps_lazy_restore_mounts "mps-fixture-primary" "fixture-primary"
+    [[ "$status" -eq 0 ]]
+    log="$(cat "$MOCK_MP_CALL_LOG")"
+    [[ "$log" == *"mount ${phys_dir} mps-fixture-primary:${phys_dir}"* ]]
+}
+
+@test "_mps_lazy_restore_mounts: skips mounts already present" {
+    # Default running-mounted fixture has mounts at /mnt/test-a and /mnt/test-b
+    # Set workdir to /mnt/test-a — it's already mounted, so nothing should happen
+    cat > "${HOME}/mps/instances/fixture-primary.json" <<'METAJSON'
+{
+    "name": "fixture-primary",
+    "full_name": "mps-fixture-primary",
+    "workdir": "/mnt/test-a",
+    "image": null
+}
+METAJSON
+
+    run _mps_lazy_restore_mounts "mps-fixture-primary" "fixture-primary"
+    [[ "$status" -eq 0 ]]
+    local mount_count
+    mount_count="$(grep -c "^multipass mount " "$MOCK_MP_CALL_LOG" || true)"
+    [[ "$mount_count" -eq 0 ]]
+}
+
+@test "_mps_lazy_restore_mounts: no-op without metadata" {
+    # No metadata file — nothing to restore
+    run _mps_lazy_restore_mounts "mps-fixture-primary" "fixture-primary"
+    [[ "$status" -eq 0 ]]
+    local mount_count
+    mount_count="$(grep -c "^multipass mount " "$MOCK_MP_CALL_LOG" || true)"
+    [[ "$mount_count" -eq 0 ]]
+}
+
+@test "cmd_up: Running instance re-establishes dropped mount" {
+    # Fixture: Running instance with no mounts
+    _mock_fixture_state "fixture-primary" "Running" '{}' '["10.0.0.1"]'
+
+    # Metadata with workdir
+    local mount_dir="${HOME}/project"
+    mkdir -p "$mount_dir"
+    local phys_dir
+    phys_dir="$(cd "$mount_dir" && pwd -P)"
+
+    cat > "${HOME}/mps/instances/fixture-primary.json" <<METAJSON
+{
+    "name": "fixture-primary",
+    "full_name": "mps-fixture-primary",
+    "workdir": "${phys_dir}",
+    "image": null
+}
+METAJSON
+
+    run cmd_up --name fixture-primary --no-mount
+    [[ "$status" -eq 0 ]]
+    [[ "$output" == *"already running"* ]]
+    log="$(cat "$MOCK_MP_CALL_LOG")"
+    # Should have re-established the mount
+    [[ "$log" == *"mount ${phys_dir} mps-fixture-primary:${phys_dir}"* ]]
+}
+
+# ================================================================
 # _status_human_bytes: small-value branches
 # ================================================================
 
