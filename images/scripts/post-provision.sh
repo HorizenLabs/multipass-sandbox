@@ -20,30 +20,31 @@ passwd -l ubuntu
 rm -f /etc/ssh/sshd_config.d/50-packer-build.conf
 sed -i 's/^PasswordAuthentication yes/PasswordAuthentication no/' /etc/ssh/sshd_config
 
-# Remove old (non-HWE) kernel if present.  In chained builds (protocol-dev
+# Remove all non-HWE kernel packages.  The cloud image ships a non-HWE
+# kernel (e.g., 6.8.0-101), package_upgrade may add another (6.8.0-106),
+# and install-base.sh installs the HWE kernel (e.g., 6.17.0-19).  Purge
+# everything that isn't the HWE version.  In chained builds (protocol-dev
 # etc.) the base image already has only the HWE kernel, so this is a no-op.
-if dpkg -l linux-image-virtual 2>/dev/null | grep -q '^ii'; then
-  # Derive version from the metapackage, e.g. "6.8.0.50.52" → "6.8.0"
-  OLD_KVER="$(dpkg-query -W -f='${Version}' linux-image-virtual | cut -d. -f1-3)"
+HWE_KVER="$(dpkg-query -W -f='${Version}' linux-image-virtual-hwe-24.04-edge 2>/dev/null | cut -d. -f1-3)"
+if [ -n "$HWE_KVER" ]; then
   # Allow removing the running kernel — this is a Packer build; the VM will
   # be shut down and captured as an image.  The kernel prerm calls
   # linux-check-removal which normally aborts on running-kernel removal.
-  # DEBIAN_FRONTEND=noninteractive makes it quietly succeed (per manpage).
-  # As belt-and-suspenders, also swap in a no-op script in case the
-  # noninteractive path isn't honoured (see https://askubuntu.com/a/1313030).
   export DEBIAN_FRONTEND=noninteractive
   if [ -f /usr/bin/linux-check-removal ]; then
     mv /usr/bin/linux-check-removal /usr/bin/linux-check-removal.orig
     printf '#!/bin/sh\nexit 0\n' > /usr/bin/linux-check-removal
     chmod +x /usr/bin/linux-check-removal
   fi
-  apt-get purge -y linux-virtual linux-headers-virtual linux-image-virtual
-  # Purge every versioned package whose NAME contains the old version.
-  # Shared packages (linux-libc-dev, linux-tools-common) only carry the
-  # version in dpkg's VERSION column, not their name, so they're safe.
+  # Purge non-HWE metapackages
+  apt-get purge -y linux-virtual linux-headers-virtual linux-image-virtual \
+      linux-headers-generic 2>/dev/null || true
+  # Purge all versioned kernel packages whose name does NOT contain the HWE
+  # version.  Shared packages (linux-libc-dev, linux-tools-common) only carry
+  # the version in dpkg's VERSION column, not their name, so they're safe.
   # shellcheck disable=SC2046
   dpkg -l 'linux-*' 2>/dev/null \
-    | awk -v ver="$OLD_KVER" '/^ii/ && $2 ~ ver {print $2}' \
+    | awk -v keep="$HWE_KVER" '/^(ii|rc)/ && $2 ~ /^linux-(image|modules|headers|tools)-[0-9]/ && $2 !~ keep {print $2}' \
     | xargs -r apt-get purge -y
   # Restore original script (linux-base may already be purged at this point)
   if [ -f /usr/bin/linux-check-removal.orig ]; then
