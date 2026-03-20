@@ -649,6 +649,34 @@ phase_mounts() {
 }
 
 # ============================================================
+# Phase 10b: Lazy Mount Restore
+# ============================================================
+
+phase_lazy_mount_restore() {
+    _e2e_log_phase "10b: Lazy Mount Restore"
+
+    # Remove the auto-mount via raw multipass (simulates post-reboot drop)
+    multipass umount "${FULL_NAME}:${E2E_TMPDIR}/project" 2>/dev/null || true
+
+    # Verify mount is actually gone
+    local mount_out
+    mount_out="$("${MPS_ROOT}/bin/mps" mount list 2>&1)"
+    assert_not_contains "auto-mount removed" "$mount_out" "auto"
+
+    # Trigger lazy restore via mps exec
+    "${MPS_ROOT}/bin/mps" exec -- echo trigger-lazy-mount-restore >/dev/null 2>&1 || true
+
+    # Verify auto-mount is back
+    mount_out="$("${MPS_ROOT}/bin/mps" mount list 2>&1)"
+    assert_contains "auto-mount lazy restored" "$mount_out" "auto"
+
+    # Verify mount is functional (can read file through it)
+    local content
+    content="$("${MPS_ROOT}/bin/mps" exec -- cat "${E2E_TMPDIR}/project/.mps.env" 2>/dev/null)" || true
+    assert_contains "auto-mount functional after restore" "$content" "MPS_PORTS"
+}
+
+# ============================================================
 # Phase 11: Port Forwarding
 # ============================================================
 
@@ -921,6 +949,7 @@ phase_ssh
 phase_lazy_ports
 phase_transfer
 phase_mounts
+phase_lazy_mount_restore
 phase_ports
 phase_down_up_tunnels
 phase_destroy
